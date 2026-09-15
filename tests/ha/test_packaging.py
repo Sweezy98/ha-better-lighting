@@ -27,6 +27,35 @@ def test_translations_match_strings() -> None:
     assert english == STRINGS
 
 
+def test_german_covers_exactly_the_same_strings() -> None:
+    """A translation with holes in it is worse than none at all.
+
+    Home Assistant falls back to English per missing key, so a partial file
+    produces a form that is half one language and half the other.
+    """
+    english = json.loads((COMPONENT / "translations" / "en.json").read_text())
+    german = json.loads((COMPONENT / "translations" / "de.json").read_text())
+
+    def flatten(node, prefix=""):
+        if isinstance(node, dict):
+            merged = {}
+            for key, value in node.items():
+                merged |= flatten(value, f"{prefix}.{key}")
+            return merged
+        return {prefix: node}
+
+    flat_en, flat_de = flatten(english), flatten(german)
+    assert set(flat_en) == set(flat_de)
+
+    # Placeholders are substituted by Home Assistant, so losing one in
+    # translation produces a message with a hole in it.
+    placeholder = re.compile(r"\{[a-z_]+\}")
+    for key, value in flat_en.items():
+        assert set(placeholder.findall(value)) == set(
+            placeholder.findall(flat_de[key])
+        ), f"{key} lost or gained a placeholder in translation"
+
+
 def test_every_service_is_declared_everywhere() -> None:
     source = (COMPONENT / "services.py").read_text()
     registered = set(re.findall(r'^SERVICE_\w+ = "(\w+)"', source, re.M))

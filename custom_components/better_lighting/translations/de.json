@@ -1,0 +1,1139 @@
+{
+  "title": "Better Lighting",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Better Lighting",
+        "description": "Dies sind die hausweiten Standardwerte. Jeder Raum übernimmt sie, und jeder Raum oder jede einzelne Lampe kann sie später überschreiben.",
+        "data": {
+          "interval": "Aktualisierungsintervall",
+          "transition": "Übergangsdauer",
+          "min_brightness_pct": "Minimale Helligkeit",
+          "max_brightness_pct": "Maximale Helligkeit",
+          "min_color_temp_k": "Wärmste Farbtemperatur",
+          "max_color_temp_k": "Kälteste Farbtemperatur",
+          "brightness_mode": "Helligkeitsverlauf"
+        },
+        "data_description": {
+          "interval": "Wie oft die Lampen im adaptiven Modus nachgeführt werden.",
+          "min_brightness_pct": "Helligkeit zum dunkelsten Zeitpunkt des Tages. Das formt den Verlauf; einzelne Lampen begrenzen ihn zusätzlich.",
+          "max_brightness_pct": "Helligkeit zum hellsten Zeitpunkt des Tages.",
+          "brightness_mode": "„Sonne“ bleibt tagsüber auf Maximum und regelt nur nachts herunter. „Weich“ blendet rund um Sonnenauf- und -untergang gleichmäßig über und beginnt, bevor die Sonne weg ist."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Erweitert",
+            "data": {
+              "initial_transition": "Übergangsdauer beim Einschalten",
+              "scene_transition": "Übergangsdauer beim Szenenwechsel",
+              "brightness_mode_time_dark": "Dauer des Übergangs zur dunklen Seite",
+              "brightness_mode_time_light": "Dauer des Übergangs zur hellen Seite",
+              "sunrise_offset": "Versatz zum Sonnenaufgang",
+              "sunset_offset": "Versatz zum Sonnenuntergang",
+              "night_brightness_pct": "Helligkeit im Nachtmodus",
+              "night_color_temp_k": "Farbtemperatur im Nachtmodus",
+              "prefer_rgb_color": "RGB gegenüber Farbtemperatur bevorzugen",
+              "take_over_control": "Manuelle Änderungen erkennen",
+              "autoreset_manual_seconds": "Manuelle Änderung vergessen nach",
+              "separate_turn_on_commands": "Helligkeit und Farbe getrennt senden",
+              "send_split_delay_ms": "Wartezeit zwischen getrennten Befehlen",
+              "intercept_member_calls": "Aufrufe direkt an einzelne Lampen abfangen"
+            },
+            "data_description": {
+              "take_over_control": "Wenn jemand eine Lampe von Hand ändert, wird sie nicht mehr nachgeführt, bis sie wieder ausgeschaltet wird oder die Zeit unten abläuft.",
+              "separate_turn_on_commands": "Manche Leuchtmittel verlieren die Farbe, wenn die Helligkeit im selben Befehl kommt. Nur für solche aktivieren.",
+              "intercept_member_calls": "Nur nötig, wenn die Schalter direkt auf einzelne Leuchtmittel statt auf den Raum wirken. Fällt automatisch zurück, wenn nicht verfügbar."
+            }
+          }
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Better Lighting ist bereits eingerichtet. Räume, Szenen und Schalter werden über den vorhandenen Eintrag hinzugefügt."
+    },
+    "error": {
+      "invalid_value": "Dieser Wert ist ungültig."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Globale Standardwerte",
+        "description": "Änderungen wirken sich auf jeden Raum aus, der sie nicht überschrieben hat.",
+        "data": {
+          "interval": "Aktualisierungsintervall",
+          "transition": "Übergangsdauer",
+          "min_brightness_pct": "Minimale Helligkeit",
+          "max_brightness_pct": "Maximale Helligkeit",
+          "min_color_temp_k": "Wärmste Farbtemperatur",
+          "max_color_temp_k": "Kälteste Farbtemperatur",
+          "brightness_mode": "Helligkeitsverlauf"
+        },
+        "sections": {
+          "advanced": {
+            "name": "Erweitert",
+            "data": {
+              "initial_transition": "Übergangsdauer beim Einschalten",
+              "scene_transition": "Übergangsdauer beim Szenenwechsel",
+              "brightness_mode_time_dark": "Dauer des Übergangs zur dunklen Seite",
+              "brightness_mode_time_light": "Dauer des Übergangs zur hellen Seite",
+              "sunrise_offset": "Versatz zum Sonnenaufgang",
+              "sunset_offset": "Versatz zum Sonnenuntergang",
+              "night_brightness_pct": "Helligkeit im Nachtmodus",
+              "night_color_temp_k": "Farbtemperatur im Nachtmodus",
+              "prefer_rgb_color": "RGB gegenüber Farbtemperatur bevorzugen",
+              "take_over_control": "Manuelle Änderungen erkennen",
+              "autoreset_manual_seconds": "Manuelle Änderung vergessen nach",
+              "separate_turn_on_commands": "Helligkeit und Farbe getrennt senden",
+              "send_split_delay_ms": "Wartezeit zwischen getrennten Befehlen",
+              "intercept_member_calls": "Aufrufe direkt an einzelne Lampen abfangen"
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "invalid_value": "Dieser Wert ist ungültig."
+    }
+  },
+  "config_subentries": {
+    "zone": {
+      "title": "Raum",
+      "entry_type": "Raum",
+      "initiate_flow": {
+        "user": "Raum hinzufügen",
+        "reconfigure": "Raum neu konfigurieren"
+      },
+      "step": {
+        "user": {
+          "title": "Raum hinzufügen",
+          "description": "Ein Raum sind die gemeinsam gesteuerten Lampen eines Zimmers. Jede Lampe kann nur zu einem Raum gehören.",
+          "data": {
+            "name": "Name",
+            "lights": "Lampen",
+            "icon": "Symbol",
+            "area_id": "Bereich"
+          },
+          "data_description": {
+            "lights": "Die Lampen in diesem Zimmer. Eine Lampe darf nur zu einem Raum gehören, damit manuelle Änderungen und Szenensteuerung immer eindeutig bleiben."
+          },
+          "sections": {
+            "group": {
+              "name": "Gruppenverhalten",
+              "data": {
+                "all": "Nur als „an“ melden, wenn jede Lampe an ist",
+                "hide_members": "Einzelne Lampen ausblenden",
+                "remember_on_state": "Merken, welche Lampen an waren",
+                "brightness_strategy": "Gemeldete Helligkeit",
+                "expand_light_groups": "Verschachtelte Lichtgruppen auflösen"
+              },
+              "data_description": {
+                "remember_on_state": "Beim Wiedereinschalten nur die Lampen einschalten, die beim Ausschalten an waren.",
+                "brightness_strategy": "Wie aus den eingeschalteten Lampen ein Helligkeitswert gebildet wird."
+              }
+            },
+            "adaptive": {
+              "name": "Adaptives Licht",
+              "data": {
+                "adaptive_override_enabled": "Globale Standardwerte überschreiben",
+                "min_brightness_pct": "Minimale Helligkeit",
+                "max_brightness_pct": "Maximale Helligkeit",
+                "min_color_temp_k": "Wärmste Farbtemperatur",
+                "max_color_temp_k": "Kälteste Farbtemperatur",
+                "brightness_mode": "Helligkeitsverlauf",
+                "transition": "Übergangsdauer",
+                "interval": "Aktualisierungsintervall",
+                "adaptive_default_on": "Mit eingeschaltetem adaptivem Licht starten"
+              },
+              "data_description": {
+                "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist."
+              }
+            },
+            "night": {
+              "name": "Nachtmodus",
+              "data": {
+                "night_source_entity": "Nachtmodus folgt",
+                "night_behavior": "Was der Nachtmodus tut",
+                "night_brightness_pct": "Helligkeit im Nachtmodus",
+                "night_color_temp_k": "Farbtemperatur im Nachtmodus",
+                "night_transition": "Übergangsdauer im Nachtmodus",
+                "night_ignore_presence": "Anwesenheit im Nachtmodus ignorieren",
+                "night_scene_id": "Nachtszene"
+              },
+              "data_description": {
+                "night_source_entity": "Ein vorhandener Helfer oder Sensor, der an ist, wenn das Haus schläft. Der Nachtschalter dieses Raums spiegelt ihn.",
+                "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
+                "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist."
+              }
+            },
+            "power": {
+              "name": "Wiedereinschalten",
+              "data": {
+                "restore_on_power_cycle": "Nachdem der Raum ausgeschaltet wurde",
+                "resume_max_age_minutes": "Letzte Szene vergessen nach"
+              },
+              "data_description": {
+                "resume_max_age_minutes": "Damit ein über Nacht ausgeschalteter Raum am nächsten Morgen adaptiv startet und nicht in der Abendessen-Szene von gestern."
+              }
+            },
+            "presence": {
+              "name": "Anwesenheit",
+              "data": {
+                "presence_entity": "Anwesenheitssensor",
+                "presence_clear_delay": "Raum als leer betrachten nach",
+                "presence_on_action": "Wenn jemand hereinkommt",
+                "presence_on_scene_id": "Anzuwendende Szene",
+                "presence_off_action": "Wenn der Raum leer wird",
+                "presence_covers": "Nur wenn diese Rollläden geschlossen sind",
+                "cover_condition": "Rollladen-Bedingung",
+                "presence_on_only_when_off": "Nur auf einen ausgeschalteten Raum wirken",
+                "presence_respects_manual": "Von Hand eingestellten Raum in Ruhe lassen",
+                "cover_unknown_blocks": "Nicht auslesbarer Rollladen blockiert"
+              },
+              "data_description": {
+                "presence_clear_delay": "Anwesenheitssensoren flackern. Die Wartezeit verhindert, dass ein Raum ausgeschaltet wird, während noch jemand darin ist.",
+                "presence_covers": "Damit das Licht nur angeht, wenn die Rollläden unten und der Raum wirklich dunkel ist. Ein Rollladen, der geschlossen wird, während jemand schon im Raum ist, zählt ebenfalls.",
+                "presence_on_only_when_off": "Wer einen bereits von Hand beleuchteten Raum betritt, soll ihn nicht umgestellt vorfinden.",
+                "presence_respects_manual": "Hinter jemandem auszuschalten, der den Raum von Hand eingestellt hat, ist die unfreundlichste Auslegung eines leeren Raums.",
+                "cover_unknown_blocks": "Die Bedingung steht für „hier ist es dunkel“, und ein nicht auslesbarer Rollladen ist dafür kein Beleg."
+              }
+            },
+            "insect": {
+              "name": "Offene Fenster",
+              "data": {
+                "window_entities": "Tür- und Fenstersensoren",
+                "insect_scene_id": "Anzuwendende Szene",
+                "insect_only_when_on": "Nur wenn der Raum bereits beleuchtet ist",
+                "insect_open_delay": "Wartezeit vor Reaktion auf ein offenes Fenster",
+                "insect_close_delay": "Wartezeit vor Reaktion auf ein geschlossenes Fenster",
+                "insect_overridable_by_press": "Ein Tastendruck setzt ihn außer Kraft"
+              },
+              "data_description": {
+                "insect_scene_id": "Üblicherweise ein tiefes Bernstein, das deutlich weniger Insekten anzieht als weißes Licht.",
+                "insect_only_when_on": "Ein offenes Fenster ist kein Grund, einen dunklen Raum zu beleuchten.",
+                "insect_close_delay": "Verhindert, dass ein zuschlagendes Fenster den Raum flackern lässt."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Raum neu konfigurieren",
+          "data": {
+            "name": "Name",
+            "lights": "Lampen",
+            "icon": "Symbol",
+            "area_id": "Bereich"
+          },
+          "sections": {
+            "group": {
+              "name": "Gruppenverhalten",
+              "data": {
+                "all": "Nur als „an“ melden, wenn jede Lampe an ist",
+                "hide_members": "Einzelne Lampen ausblenden",
+                "remember_on_state": "Merken, welche Lampen an waren",
+                "brightness_strategy": "Gemeldete Helligkeit",
+                "expand_light_groups": "Verschachtelte Lichtgruppen auflösen"
+              }
+            },
+            "adaptive": {
+              "name": "Adaptives Licht",
+              "data": {
+                "adaptive_override_enabled": "Globale Standardwerte überschreiben",
+                "min_brightness_pct": "Minimale Helligkeit",
+                "max_brightness_pct": "Maximale Helligkeit",
+                "min_color_temp_k": "Wärmste Farbtemperatur",
+                "max_color_temp_k": "Kälteste Farbtemperatur",
+                "brightness_mode": "Helligkeitsverlauf",
+                "transition": "Übergangsdauer",
+                "interval": "Aktualisierungsintervall",
+                "adaptive_default_on": "Mit eingeschaltetem adaptivem Licht starten"
+              },
+              "data_description": {
+                "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist."
+              }
+            },
+            "night": {
+              "name": "Nachtmodus",
+              "data": {
+                "night_source_entity": "Nachtmodus folgt",
+                "night_behavior": "Was der Nachtmodus tut",
+                "night_brightness_pct": "Helligkeit im Nachtmodus",
+                "night_color_temp_k": "Farbtemperatur im Nachtmodus",
+                "night_transition": "Übergangsdauer im Nachtmodus",
+                "night_ignore_presence": "Anwesenheit im Nachtmodus ignorieren",
+                "night_scene_id": "Nachtszene"
+              },
+              "data_description": {
+                "night_source_entity": "Ein vorhandener Helfer oder Sensor, der an ist, wenn das Haus schläft. Der Nachtschalter dieses Raums spiegelt ihn.",
+                "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
+                "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist."
+              }
+            },
+            "power": {
+              "name": "Wiedereinschalten",
+              "data": {
+                "restore_on_power_cycle": "Nachdem der Raum ausgeschaltet wurde",
+                "resume_max_age_minutes": "Letzte Szene vergessen nach"
+              },
+              "data_description": {
+                "resume_max_age_minutes": "Damit ein über Nacht ausgeschalteter Raum am nächsten Morgen adaptiv startet und nicht in der Abendessen-Szene von gestern."
+              }
+            },
+            "presence": {
+              "name": "Anwesenheit",
+              "data": {
+                "presence_entity": "Anwesenheitssensor",
+                "presence_clear_delay": "Raum als leer betrachten nach",
+                "presence_on_action": "Wenn jemand hereinkommt",
+                "presence_on_scene_id": "Anzuwendende Szene",
+                "presence_off_action": "Wenn der Raum leer wird",
+                "presence_covers": "Nur wenn diese Rollläden geschlossen sind",
+                "cover_condition": "Rollladen-Bedingung",
+                "presence_on_only_when_off": "Nur auf einen ausgeschalteten Raum wirken",
+                "presence_respects_manual": "Von Hand eingestellten Raum in Ruhe lassen",
+                "cover_unknown_blocks": "Nicht auslesbarer Rollladen blockiert"
+              },
+              "data_description": {
+                "presence_clear_delay": "Anwesenheitssensoren flackern. Die Wartezeit verhindert, dass ein Raum ausgeschaltet wird, während noch jemand darin ist.",
+                "presence_covers": "Damit das Licht nur angeht, wenn die Rollläden unten und der Raum wirklich dunkel ist. Ein Rollladen, der geschlossen wird, während jemand schon im Raum ist, zählt ebenfalls.",
+                "presence_on_only_when_off": "Wer einen bereits von Hand beleuchteten Raum betritt, soll ihn nicht umgestellt vorfinden.",
+                "presence_respects_manual": "Hinter jemandem auszuschalten, der den Raum von Hand eingestellt hat, ist die unfreundlichste Auslegung eines leeren Raums.",
+                "cover_unknown_blocks": "Die Bedingung steht für „hier ist es dunkel“, und ein nicht auslesbarer Rollladen ist dafür kein Beleg."
+              }
+            },
+            "insect": {
+              "name": "Offene Fenster",
+              "data": {
+                "window_entities": "Tür- und Fenstersensoren",
+                "insect_scene_id": "Anzuwendende Szene",
+                "insect_only_when_on": "Nur wenn der Raum bereits beleuchtet ist",
+                "insect_open_delay": "Wartezeit vor Reaktion auf ein offenes Fenster",
+                "insect_close_delay": "Wartezeit vor Reaktion auf ein geschlossenes Fenster",
+                "insect_overridable_by_press": "Ein Tastendruck setzt ihn außer Kraft"
+              },
+              "data_description": {
+                "insect_scene_id": "Üblicherweise ein tiefes Bernstein, das deutlich weniger Insekten anzieht als weißes Licht.",
+                "insect_only_when_on": "Ein offenes Fenster ist kein Grund, einen dunklen Raum zu beleuchten.",
+                "insect_close_delay": "Verhindert, dass ein zuschlagendes Fenster den Raum flackern lässt."
+              }
+            }
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "Dieser Wert ist ungültig.",
+        "no_lights": "Mindestens eine Lampe auswählen.",
+        "light_in_other_zone": "Eine dieser Lampen gehört bereits zu einem anderen Raum. Eine Lampe kann nur in einem Raum sein."
+      },
+      "abort": {
+        "reconfigure_successful": "Raum aktualisiert."
+      }
+    },
+    "light_profile": {
+      "title": "Lampenabgleich",
+      "entry_type": "Lampenabgleich",
+      "initiate_flow": {
+        "user": "Lampenabgleich hinzufügen",
+        "reconfigure": "Lampenabgleich neu konfigurieren"
+      },
+      "step": {
+        "user": {
+          "title": "Lampe abgleichen",
+          "description": "Eine einzelne Lampe so anpassen, dass sie zu ihren Nachbarn passt. Versätze sind ein Abgleich und werden zuerst angewendet; Minimum und Maximum sind eine Betriebsgrenze und werden danach angewendet — ein Abgleich kann eine Lampe also nie über eine gesetzte Grenze hinaus treiben.",
+          "data": {
+            "light_entity": "Lampe",
+            "enabled": "Aktiviert",
+            "brightness_offset_pct": "Helligkeitsversatz",
+            "color_temp_offset_k": "Farbtemperaturversatz",
+            "min_brightness_pct": "Minimale Helligkeit",
+            "max_brightness_pct": "Maximale Helligkeit"
+          },
+          "data_description": {
+            "brightness_offset_pct": "Prozentpunkte, die auf den Wert des Verlaufs addiert werden. Negativer Wert für eine Lampe, die zu hell wirkt.",
+            "color_temp_offset_k": "Kelvin, die zur Farbtemperatur des Verlaufs addiert werden. Negativ ist wärmer. Gilt auch für reine Farbleuchtmittel.",
+            "min_brightness_pct": "Eine absolute Untergrenze für diese Lampe, keine Verschiebung des Raumbereichs. Eine Lampe, die unter 15 % flackert, wird auf 15 gesetzt."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Erweitert",
+              "data": {
+                "min_color_temp_k": "Kälteste erlaubte Farbtemperatur",
+                "max_color_temp_k": "Wärmste erlaubte Farbtemperatur",
+                "brightness_multiplier": "Helligkeitsfaktor",
+                "clamp_to_device_limits": "Eigene Grenzen der Lampe beachten",
+                "adapt_brightness": "Helligkeit nachführen",
+                "adapt_color": "Farbe nachführen",
+                "prefer_rgb_color": "RGB gegenüber Farbtemperatur bevorzugen"
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Lampe abgleichen",
+          "description": "Eine einzelne Lampe so anpassen, dass sie zu ihren Nachbarn passt. Versätze sind ein Abgleich und werden zuerst angewendet; Minimum und Maximum sind eine Betriebsgrenze und werden danach angewendet — ein Abgleich kann eine Lampe also nie über eine gesetzte Grenze hinaus treiben.",
+          "data": {
+            "light_entity": "Lampe",
+            "enabled": "Aktiviert",
+            "brightness_offset_pct": "Helligkeitsversatz",
+            "color_temp_offset_k": "Farbtemperaturversatz",
+            "min_brightness_pct": "Minimale Helligkeit",
+            "max_brightness_pct": "Maximale Helligkeit"
+          },
+          "data_description": {
+            "brightness_offset_pct": "Prozentpunkte, die auf den Wert des Verlaufs addiert werden. Negativer Wert für eine Lampe, die zu hell wirkt.",
+            "color_temp_offset_k": "Kelvin, die zur Farbtemperatur des Verlaufs addiert werden. Negativ ist wärmer. Gilt auch für reine Farbleuchtmittel.",
+            "min_brightness_pct": "Eine absolute Untergrenze für diese Lampe, keine Verschiebung des Raumbereichs. Eine Lampe, die unter 15 % flackert, wird auf 15 gesetzt."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Erweitert",
+              "data": {
+                "min_color_temp_k": "Kälteste erlaubte Farbtemperatur",
+                "max_color_temp_k": "Wärmste erlaubte Farbtemperatur",
+                "brightness_multiplier": "Helligkeitsfaktor",
+                "clamp_to_device_limits": "Eigene Grenzen der Lampe beachten",
+                "adapt_brightness": "Helligkeit nachführen",
+                "adapt_color": "Farbe nachführen",
+                "prefer_rgb_color": "RGB gegenüber Farbtemperatur bevorzugen"
+              }
+            }
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "Dieser Wert ist ungültig.",
+        "profile_exists": "Für diese Lampe gibt es bereits einen Abgleich."
+      },
+      "abort": {
+        "reconfigure_successful": "Abgleich aktualisiert."
+      }
+    },
+    "scene": {
+      "title": "Szene",
+      "entry_type": "Szene",
+      "initiate_flow": {
+        "user": "Szene hinzufügen",
+        "reconfigure": "Szene neu konfigurieren"
+      },
+      "step": {
+        "user": {
+          "title": "Szene",
+          "description": "Eine Szene ist ein Rezept, kein Raum. Einmal definieren und überall anwenden. Gut überlegen, was sie übernimmt: Was sie in Ruhe lässt, folgt weiter der Sonne.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "override_mode": "Diese Szene setzt",
+            "brightness_pct": "Helligkeit",
+            "color_format": "Farbe angegeben als",
+            "transition": "Übergangsdauer",
+            "scene_zones": "Szene anbieten in"
+          },
+          "data_description": {
+            "override_mode": "„Helligkeit“ legt die Helligkeit fest und lässt die Farbe weiter der Sonne folgen. „Farbe“ macht es umgekehrt. „Beides“ legt das Aussehen vollständig fest. „Weder noch“ wählt nur, welche Lampen an sind.",
+            "color_format": "Der nächste Schritt fragt nach der Farbe selbst. „Keine Farbe“ wählen für eine Szene, die nur die Helligkeit setzt.",
+            "scene_zones": "Leer lassen für eine Szene, die das ganze Haus nutzt, etwa eine Nachtszene. Wird ein Raum angegeben, erscheint die Szene in keiner anderen Raumliste und trägt den Raum vor ihrem Namen — so können eine Lese-Szene im Wohnzimmer und eine im Schlafzimmer beide einfach „Lesen“ heißen."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Verhalten",
+              "data": {
+                "on_lights_only": "Nur Lampen beeinflussen, die bereits an sind",
+                "ignore_presence": "Anwesenheitssensoren ignorieren, solange aktiv",
+                "others": "Lampen, die diese Szene nicht nennt",
+                "on_unsupported_color": "Wenn eine Lampe diese Farbe nicht darstellen kann"
+              },
+              "data_description": {
+                "on_lights_only": "Den Raum anpassen, ohne ihn zu erhellen. Ausgeschaltete Lampen bleiben aus.",
+                "others": "„Adaptiv“ lässt sie weiter der Sonne folgen, was meist gewünscht ist.",
+                "on_unsupported_color": "„Adaptiv“ belässt sie bei ihrem normalen Weiß, was ehrlich zeigt: Dieses Leuchtmittel kann keine Farbe."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Szene",
+          "description": "Eine Szene ist ein Rezept, kein Raum. Einmal definieren und überall anwenden. Gut überlegen, was sie übernimmt: Was sie in Ruhe lässt, folgt weiter der Sonne.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "override_mode": "Diese Szene setzt",
+            "brightness_pct": "Helligkeit",
+            "color_format": "Farbe angegeben als",
+            "transition": "Übergangsdauer",
+            "scene_zones": "Szene anbieten in"
+          },
+          "data_description": {
+            "override_mode": "„Helligkeit“ legt die Helligkeit fest und lässt die Farbe weiter der Sonne folgen. „Farbe“ macht es umgekehrt. „Beides“ legt das Aussehen vollständig fest. „Weder noch“ wählt nur, welche Lampen an sind.",
+            "color_format": "Der nächste Schritt fragt nach der Farbe selbst. „Keine Farbe“ wählen für eine Szene, die nur die Helligkeit setzt.",
+            "scene_zones": "Leer lassen für eine Szene, die das ganze Haus nutzt, etwa eine Nachtszene. Wird ein Raum angegeben, erscheint die Szene in keiner anderen Raumliste und trägt den Raum vor ihrem Namen — so können eine Lese-Szene im Wohnzimmer und eine im Schlafzimmer beide einfach „Lesen“ heißen."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Verhalten",
+              "data": {
+                "on_lights_only": "Nur Lampen beeinflussen, die bereits an sind",
+                "ignore_presence": "Anwesenheitssensoren ignorieren, solange aktiv",
+                "others": "Lampen, die diese Szene nicht nennt",
+                "on_unsupported_color": "Wenn eine Lampe diese Farbe nicht darstellen kann"
+              },
+              "data_description": {
+                "on_lights_only": "Den Raum anpassen, ohne ihn zu erhellen. Ausgeschaltete Lampen bleiben aus.",
+                "others": "„Adaptiv“ lässt sie weiter der Sonne folgen, was meist gewünscht ist.",
+                "on_unsupported_color": "„Adaptiv“ belässt sie bei ihrem normalen Weiß, was ehrlich zeigt: Dieses Leuchtmittel kann keine Farbe."
+              }
+            }
+          }
+        },
+        "color": {
+          "title": "Szenenfarbe",
+          "description": "Farbe für diese Szene auswählen.",
+          "data": {
+            "color_temp_kelvin": "Farbtemperatur",
+            "rgb_color": "Farbe",
+            "color_name": "Farbname"
+          },
+          "data_description": {
+            "color_name": "Ein CSS-Farbname, etwa „coral“ oder „warmwhite“."
+          }
+        },
+        "lights": {
+          "title": "Einzelne Lampen",
+          "description": "Benannte Lampen:\n\n{lights}\n\nAlles, was hier nicht benannt wird, übernimmt Helligkeit und Farbe der Szene. Eine Lampe benennen, um ihr eigene Werte zu geben, sie auszuschalten, während der Rest des Raums leuchtet, oder sie unberührt zu lassen.",
+          "menu_options": {
+            "add_light": "Lampe benennen",
+            "remove_light": "Lampe nicht mehr benennen",
+            "finish": "Fertig"
+          }
+        },
+        "add_light": {
+          "title": "Lampe benennen",
+          "description": "Benannte Lampen:\n\n{lights}",
+          "data": {
+            "light": "Lampe",
+            "action": "Was mit ihr geschieht",
+            "brightness_pct": "Helligkeit",
+            "color_format": "Farbe für diese Lampe"
+          },
+          "data_description": {
+            "brightness_pct": "Leer lassen, um die Helligkeit der Szene zu verwenden.",
+            "color_format": "„Farbe der Sonne überlassen“ lässt diese Lampe die Helligkeit der Szene übernehmen, während ihre Farbe weiter nachgeführt wird — nützlich für eine Schreibtischlampe in einer Filmszene. Nach der Farbe selbst wird als Nächstes gefragt."
+          }
+        },
+        "remove_light": {
+          "title": "Lampe nicht mehr benennen",
+          "description": "Benannte Lampen:\n\n{lights}",
+          "data": {
+            "light": "Lampe"
+          }
+        },
+        "light_color": {
+          "title": "Farbe für {light}",
+          "data": {
+            "color_temp_kelvin": "Farbtemperatur",
+            "rgb_color": "Farbe",
+            "warm_white": "Warmweiß-Kanal",
+            "cold_white": "Kaltweiß-Kanal"
+          },
+          "data_description": {
+            "warm_white": "RGBWW-Streifen haben weiße LEDs hinter den farbigen. Beide auf null lassen für eine reine Farbe; den Warmkanal anheben, damit ein Streifen zu einem Holzboden passt."
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "Dieser Wert ist ungültig.",
+        "light_required": "Eine Lampe auswählen."
+      },
+      "abort": {
+        "reconfigure_successful": "Szene aktualisiert."
+      }
+    },
+    "controller": {
+      "title": "Lichtschalter",
+      "entry_type": "Lichtschalter",
+      "initiate_flow": {
+        "user": "Lichtschalter hinzufügen",
+        "reconfigure": "Lichtschalter neu konfigurieren"
+      },
+      "step": {
+        "user": {
+          "title": "Lichtschalter",
+          "description": "Ein Schalter und die Reihenfolge, die er durchschaltet. Zwei Schalter in einem Raum können unterschiedliche Reihenfolgen haben — der am Herd erreicht also zuerst „Kochen“, während der an der Tür etwas anderes tut.",
+          "data": {
+            "name": "Name",
+            "zone_id": "Raum",
+            "binding_type": "Wie dieser Schalter erkannt wird",
+            "binding_entity": "Schalter-Entität",
+            "is_default": "Einfaches Ein/Aus des Raumlichts übernehmen"
+          },
+          "data_description": {
+            "binding_type": "„Entität beobachten“ ist die einzige Option, die erkennen kann, welcher Schalter gedrückt wurde — nur so können zwei Schalter in einem Raum unterschiedlich durchschalten.",
+            "binding_entity": "Die Entität, auf die der Schalter meldet. Tastergeräte erscheinen meist als Event-Entität, andere als Sensor oder binärer Sensor.",
+            "is_default": "Ein einfaches light.turn_on auf das Raumlicht wird diesem Schalter zugeordnet. Das kann nur ein Schalter pro Raum, da Home Assistant nicht erkennen kann, welcher Schalter es gesendet hat."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Erweitert",
+              "data": {
+                "adaptive_position": "Position von „Adaptiv“ in der Abfolge",
+                "off_at_end": "Abfolge mit Ausschalten beenden",
+                "wrap_around": "Am Ende zum Anfang zurückspringen",
+                "on_foreign_state": "Wenn der Raum in etwas ist, das nicht auf dieser Liste steht",
+                "double_press_action": "Doppeldruck",
+                "long_press_action": "Langer Druck",
+                "press_states": "Werte, die als Druck gelten",
+                "double_press_states": "Werte, die als Doppeldruck gelten",
+                "long_press_states": "Werte, die als langer Druck gelten",
+                "press_attribute": "Attribut, das den Druck enthält",
+                "min_press_interval_ms": "Wiederholungen ignorieren schneller als",
+                "coalesce_window_ms": "Tastendrücke zusammenfassen innerhalb"
+              },
+              "data_description": {
+                "on_foreign_state": "„Neu beginnen“ startet die eigene Liste dieses Schalters von vorn, landet also auf „Adaptiv“ — meist das gewünschte Verhalten.",
+                "press_states": "Die Vorgaben decken die meisten Zigbee- und Z-Wave-Taster ab. Eigene Begriffe ergänzen, falls das Gerät andere verwendet.",
+                "press_attribute": "Event-Entitäten führen den relevanten Wert in einem Attribut statt im Zustand. Auf event_type belassen, sofern das Gerät nichts anderes verwendet.",
+                "coalesce_window_ms": "Drei schnelle Tastendrücke springen drei Schritte auf einmal, statt durch die beiden dazwischen zu blitzen."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Lichtschalter",
+          "description": "Ein Schalter und die Reihenfolge, die er durchschaltet. Zwei Schalter in einem Raum können unterschiedliche Reihenfolgen haben — der am Herd erreicht also zuerst „Kochen“, während der an der Tür etwas anderes tut.",
+          "data": {
+            "name": "Name",
+            "zone_id": "Raum",
+            "binding_type": "Wie dieser Schalter erkannt wird",
+            "binding_entity": "Schalter-Entität",
+            "is_default": "Einfaches Ein/Aus des Raumlichts übernehmen"
+          },
+          "data_description": {
+            "binding_type": "„Entität beobachten“ ist die einzige Option, die erkennen kann, welcher Schalter gedrückt wurde — nur so können zwei Schalter in einem Raum unterschiedlich durchschalten.",
+            "binding_entity": "Die Entität, auf die der Schalter meldet. Tastergeräte erscheinen meist als Event-Entität, andere als Sensor oder binärer Sensor.",
+            "is_default": "Ein einfaches light.turn_on auf das Raumlicht wird diesem Schalter zugeordnet. Das kann nur ein Schalter pro Raum, da Home Assistant nicht erkennen kann, welcher Schalter es gesendet hat."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Erweitert",
+              "data": {
+                "adaptive_position": "Position von „Adaptiv“ in der Abfolge",
+                "off_at_end": "Abfolge mit Ausschalten beenden",
+                "wrap_around": "Am Ende zum Anfang zurückspringen",
+                "on_foreign_state": "Wenn der Raum in etwas ist, das nicht auf dieser Liste steht",
+                "double_press_action": "Doppeldruck",
+                "long_press_action": "Langer Druck",
+                "press_states": "Werte, die als Druck gelten",
+                "double_press_states": "Werte, die als Doppeldruck gelten",
+                "long_press_states": "Werte, die als langer Druck gelten",
+                "press_attribute": "Attribut, das den Druck enthält",
+                "min_press_interval_ms": "Wiederholungen ignorieren schneller als",
+                "coalesce_window_ms": "Tastendrücke zusammenfassen innerhalb"
+              },
+              "data_description": {
+                "on_foreign_state": "„Neu beginnen“ startet die eigene Liste dieses Schalters von vorn, landet also auf „Adaptiv“ — meist das gewünschte Verhalten.",
+                "press_states": "Die Vorgaben decken die meisten Zigbee- und Z-Wave-Taster ab. Eigene Begriffe ergänzen, falls das Gerät andere verwendet.",
+                "press_attribute": "Event-Entitäten führen den relevanten Wert in einem Attribut statt im Zustand. Auf event_type belassen, sofern das Gerät nichts anderes verwendet.",
+                "coalesce_window_ms": "Drei schnelle Tastendrücke springen drei Schritte auf einmal, statt durch die beiden dazwischen zu blitzen."
+              }
+            }
+          }
+        },
+        "order": {
+          "title": "Abfolge",
+          "description": "Aktuelle Abfolge:\n\n{order}",
+          "menu_options": {
+            "add_step": "Szene hinzufügen",
+            "move_step": "Szene verschieben",
+            "remove_step": "Szene entfernen",
+            "finish": "Fertig"
+          }
+        },
+        "add_step": {
+          "title": "Szene hinzufügen",
+          "description": "Aktuelle Abfolge:\n\n{order}",
+          "data": {
+            "scene": "Szene"
+          }
+        },
+        "remove_step": {
+          "title": "Szene entfernen",
+          "description": "Aktuelle Abfolge:\n\n{order}",
+          "data": {
+            "scene": "Szene"
+          }
+        },
+        "move_step": {
+          "title": "Szene verschieben",
+          "description": "Aktuelle Abfolge:\n\n{order}",
+          "data": {
+            "scene": "Szene",
+            "position": "Neue Position"
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "Dieser Wert ist ungültig.",
+        "binding_entity_required": "Die Entität auswählen, auf die der Schalter meldet."
+      },
+      "abort": {
+        "reconfigure_successful": "Lichtschalter aktualisiert."
+      }
+    },
+    "mode": {
+      "title": "Raumübergreifender Modus",
+      "entry_type": "Modus",
+      "initiate_flow": {
+        "user": "Modus hinzufügen",
+        "reconfigure": "Modus neu konfigurieren"
+      },
+      "step": {
+        "user": {
+          "title": "Raumübergreifender Modus",
+          "description": "Ein Modus umfasst mehrere Räume und hat benannte Zustände, zwischen denen eine Automatisierung wechselt — etwa „playing“, „paused“, „credits“. Der nächste Schritt legt fest, was jeder Raum in welchem Zustand tut.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "states": "Zustände"
+          },
+          "data_description": {
+            "states": "Die Zustände, die die Automatisierung auswählt. „off“ existiert immer und beendet die Sitzung."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Erweitert",
+              "data": {
+                "snapshot_on_enter": "Räume beim Start des Modus merken",
+                "restore_mode": "Wenn der Modus endet",
+                "opted_out_on_exit": "Räume, die zurückgenommen wurden",
+                "deferred_ttl_minutes": "Wartende Anweisung aufgeben nach"
+              },
+              "data_description": {
+                "restore_mode": "Standardmäßig wird nur wieder eingeschaltet, was vorher an war — mit dem Wert, den der Verlauf jetzt vorgibt.",
+                "deferred_ttl_minutes": "Ein Raum, der nie leer wird — etwa wegen eines hängenden Sensors — darf eine Anweisung nicht endlos scharf lassen."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Raumübergreifender Modus",
+          "description": "Ein Modus umfasst mehrere Räume und hat benannte Zustände, zwischen denen eine Automatisierung wechselt — etwa „playing“, „paused“, „credits“. Der nächste Schritt legt fest, was jeder Raum in welchem Zustand tut.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "states": "Zustände"
+          },
+          "data_description": {
+            "states": "Die Zustände, die die Automatisierung auswählt. „off“ existiert immer und beendet die Sitzung."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Erweitert",
+              "data": {
+                "snapshot_on_enter": "Räume beim Start des Modus merken",
+                "restore_mode": "Wenn der Modus endet",
+                "opted_out_on_exit": "Räume, die zurückgenommen wurden",
+                "deferred_ttl_minutes": "Wartende Anweisung aufgeben nach"
+              },
+              "data_description": {
+                "restore_mode": "Standardmäßig wird nur wieder eingeschaltet, was vorher an war — mit dem Wert, den der Verlauf jetzt vorgibt.",
+                "deferred_ttl_minutes": "Ein Raum, der nie leer wird — etwa wegen eines hängenden Sensors — darf eine Anweisung nicht endlos scharf lassen."
+              }
+            }
+          }
+        },
+        "rules": {
+          "title": "Regeln",
+          "description": "Aktuelle Regeln:\n\n{rules}",
+          "menu_options": {
+            "add_rule": "Regel hinzufügen",
+            "remove_rule": "Regel entfernen",
+            "finish": "Fertig"
+          }
+        },
+        "add_rule": {
+          "title": "Regel hinzufügen",
+          "description": "Aktuelle Regeln:\n\n{rules}",
+          "data": {
+            "mode_states": "In diesen Zuständen",
+            "zones": "Diese Räume",
+            "action": "Das tun",
+            "scene_id": "Szene"
+          },
+          "sections": {
+            "advanced": {
+              "name": "Anwesenheit",
+              "data": {
+                "respect_presence": "Belegten Raum nicht verdunkeln",
+                "defer_if_occupied": "Warten, bis der Raum leer ist",
+                "presence_entry_scene": "Wenn jemand hereinkommt",
+                "on_free_action": "Wenn sie wieder gehen"
+              },
+              "data_description": {
+                "defer_if_occupied": "Die Anweisung wartet, statt verworfen zu werden, und wird erneut geprüft, sobald der Raum leer ist."
+              }
+            }
+          }
+        },
+        "remove_rule": {
+          "title": "Regel entfernen",
+          "description": "Aktuelle Regeln:\n\n{rules}",
+          "data": {
+            "rule": "Regel"
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "Dieser Wert ist ungültig.",
+        "no_states": "Ein Modus braucht mindestens einen Zustand.",
+        "scene_required": "Die anzuwendende Szene auswählen."
+      },
+      "abort": {
+        "reconfigure_successful": "Modus aktualisiert."
+      }
+    }
+  },
+  "selector": {
+    "brightness_mode": {
+      "options": {
+        "sun": "Sonne (tagsüber konstant, nachts abfallend)",
+        "tanh": "Weich (blendet um Sonnenauf- und -untergang über)"
+      }
+    },
+    "brightness_strategy": {
+      "options": {
+        "average": "Durchschnitt",
+        "median": "Median",
+        "max": "Hellste Lampe",
+        "min": "Dunkelste Lampe"
+      }
+    },
+    "night_behavior": {
+      "options": {
+        "min_settings": "Dimmen und wärmen (Minimalwerte)",
+        "scene": "Eine Nachtszene anwenden",
+        "off": "Nichts tun"
+      }
+    },
+    "override_mode": {
+      "options": {
+        "both": "Helligkeit und Farbe",
+        "brightness": "Nur Helligkeit (Farbe bleibt adaptiv)",
+        "color": "Nur Farbe (Helligkeit bleibt adaptiv)",
+        "neither": "Weder noch (nur welche Lampen an sind)"
+      }
+    },
+    "color_format": {
+      "options": {
+        "color_temp_kelvin": "Farbtemperatur",
+        "rgb_color": "Farbwähler",
+        "color_name": "Farbname",
+        "none": "Keine Farbe"
+      }
+    },
+    "others": {
+      "options": {
+        "adaptive": "Weiter der Sonne folgen",
+        "off": "Sie ausschalten",
+        "leave": "Sie genau so lassen, wie sie sind"
+      }
+    },
+    "on_unsupported_color": {
+      "options": {
+        "adaptive": "Bei ihrem adaptiven Weiß belassen",
+        "nearest_ct": "Nächstliegendes Weiß verwenden",
+        "skip": "Ihre Farbe nicht ändern"
+      }
+    },
+    "night_scene": {
+      "options": {}
+    },
+    "binding_type": {
+      "options": {
+        "entity_state": "Entität beobachten",
+        "service_only": "Nur der Dienst better_lighting.press",
+        "zone_light": "Einfaches Ein/Aus des Raumlichts"
+      }
+    },
+    "press_action": {
+      "options": {
+        "none": "Nichts",
+        "cycle_next": "Nächstes in der Abfolge",
+        "cycle_previous": "Vorheriges in der Abfolge",
+        "reset_adaptive": "Zurück zu adaptiv",
+        "zone_off": "Den Raum ausschalten",
+        "toggle_night": "Nachtmodus umschalten"
+      }
+    },
+    "adaptive_position": {
+      "options": {
+        "first": "Zuerst",
+        "last": "Zuletzt",
+        "none": "Nicht in der Abfolge"
+      }
+    },
+    "on_foreign_state": {
+      "options": {
+        "restart": "Die Liste dieses Schalters von vorn beginnen",
+        "remember_position": "Dort fortfahren, wo dieser Schalter aufgehört hat"
+      }
+    },
+    "restore_on_power_cycle": {
+      "options": {
+        "adaptive": "Zurück zu adaptiv",
+        "last_scene": "Letzte Szene fortsetzen"
+      }
+    },
+    "zone": {
+      "options": {}
+    },
+    "mode_state": {
+      "options": {}
+    },
+    "zone_action": {
+      "options": {
+        "apply_scene": "Eine Szene anwenden",
+        "turn_off": "Den Raum ausschalten",
+        "keep": "In Ruhe lassen",
+        "adaptive": "Auf adaptiv zurücksetzen"
+      }
+    },
+    "restore_mode": {
+      "options": {
+        "adaptive_on_previously_on": "Adaptiv wieder einschalten, was an war",
+        "exact": "Genau das wiederherstellen, was zu sehen war",
+        "none": "Die Lampen in Ruhe lassen"
+      }
+    },
+    "opted_out_on_exit": {
+      "options": {
+        "keep": "So lassen, wie es hinterlassen wurde",
+        "restore": "Trotzdem wiederherstellen",
+        "adaptive": "Auf adaptiv zurücksetzen"
+      }
+    },
+    "on_free_action": {
+      "options": {
+        "turn_off": "Wieder ausschalten",
+        "keep": "Angeschaltet lassen",
+        "reapply_mode_action": "Die Regel des Modus erneut anwenden"
+      }
+    },
+    "scene": {
+      "options": {}
+    },
+    "cover_condition": {
+      "options": {
+        "all_closed": "Nur wenn jeder Rollladen geschlossen ist",
+        "any_closed": "Wenn irgendein Rollladen geschlossen ist",
+        "ignore": "Rollläden ignorieren"
+      }
+    },
+    "presence_on_action": {
+      "options": {
+        "restore": "Was auch immer das Einschalten des Raums täte",
+        "adaptive": "Adaptives Licht",
+        "scene": "Eine bestimmte Szene",
+        "none": "Nichts"
+      }
+    },
+    "presence_off_action": {
+      "options": {
+        "turn_off": "Den Raum ausschalten",
+        "adaptive": "Auf adaptiv zurücksetzen",
+        "none": "Nichts"
+      }
+    },
+    "scene_light_action": {
+      "options": {
+        "apply": "Einstellungen darauf anwenden",
+        "off": "Sie ausschalten",
+        "leave": "Genau so lassen, wie sie ist"
+      }
+    },
+    "scene_light_color_format": {
+      "options": {
+        "inherit": "Die Farbe der Szene verwenden",
+        "none": "Farbe der Sonne überlassen",
+        "color_temp_kelvin": "Farbtemperatur",
+        "rgb_color": "Farbwähler",
+        "rgb_white": "Farbwähler plus Weißkanäle (RGBWW)"
+      }
+    },
+    "light": {
+      "options": {}
+    }
+  },
+  "entity": {
+    "switch": {
+      "adaptive": {
+        "name": "Adaptiv",
+        "state_attributes": {}
+      },
+      "night": {
+        "name": "Nacht",
+        "state_attributes": {}
+      }
+    },
+    "select": {
+      "zone_mode": {
+        "name": "Modus"
+      },
+      "mode_state": {
+        "name": "Zustand"
+      }
+    },
+    "button": {
+      "cycle_next": {
+        "name": "Durchschalten"
+      },
+      "cycle_previous": {
+        "name": "Zurückschalten"
+      },
+      "reset_adaptive": {
+        "name": "Zurück zu adaptiv"
+      },
+      "clear_manual": {
+        "name": "Manuelle Änderung aufheben"
+      },
+      "mode_clear": {
+        "name": "Beenden"
+      }
+    },
+    "event": {
+      "controller_press": {
+        "name": "Druck"
+      }
+    }
+  },
+  "services": {
+    "press": {
+      "name": "Druck",
+      "description": "So handeln, als wäre ein Lichtschalter in diesem Raum gedrückt worden.",
+      "fields": {
+        "zone": {
+          "name": "Raum",
+          "description": "Raumname oder -ID."
+        },
+        "controller": {
+          "name": "Schalter",
+          "description": "Wessen Reihenfolge verwendet wird. Standard ist die des Raums."
+        },
+        "kind": {
+          "name": "Art",
+          "description": "press, double_press oder long_press."
+        }
+      }
+    },
+    "cycle": {
+      "name": "Durchschalten",
+      "description": "Diesen Raum in seiner Abfolge weiterschalten.",
+      "fields": {
+        "zone": {
+          "name": "Raum",
+          "description": "Raumname oder -ID."
+        },
+        "controller": {
+          "name": "Schalter",
+          "description": "Wessen Reihenfolge gefolgt wird."
+        },
+        "direction": {
+          "name": "Richtung",
+          "description": "next oder previous."
+        }
+      }
+    },
+    "set_adaptive": {
+      "name": "Zurück zu adaptiv",
+      "description": "Einen Raum auf adaptives Licht zurücksetzen und dabei Szene und manuelle Änderungen aufheben.",
+      "fields": {
+        "zone": {
+          "name": "Raum",
+          "description": "Raumname oder -ID."
+        }
+      }
+    },
+    "activate_scene": {
+      "name": "Szene aktivieren",
+      "description": "Eine Szene auf einen Raum anwenden.",
+      "fields": {
+        "zone": {
+          "name": "Raum",
+          "description": "Raumname oder -ID."
+        },
+        "scene": {
+          "name": "Szene",
+          "description": "Szenenname oder -ID."
+        }
+      }
+    },
+    "clear_manual_override": {
+      "name": "Manuelle Änderung aufheben",
+      "description": "Lampen wieder der adaptiven Steuerung überlassen.",
+      "fields": {
+        "zone": {
+          "name": "Raum",
+          "description": "Raumname oder -ID."
+        },
+        "lights": {
+          "name": "Lampen",
+          "description": "Auf diese Lampen beschränken. Standard sind alle im Raum."
+        }
+      }
+    },
+    "set_mode": {
+      "name": "Moduszustand setzen",
+      "description": "Einen raumübergreifenden Modus in einen seiner Zustände versetzen.",
+      "fields": {
+        "mode": {
+          "name": "Modus",
+          "description": "Modusname oder -ID."
+        },
+        "state": {
+          "name": "Zustand",
+          "description": "Einer der Zustände des Modus oder „off“."
+        }
+      }
+    },
+    "end_mode": {
+      "name": "Modus beenden",
+      "description": "Die Sitzung eines Modus beenden und die Räume zurücksetzen.",
+      "fields": {
+        "mode": {
+          "name": "Modus",
+          "description": "Modusname oder -ID."
+        },
+        "restore": {
+          "name": "Wiederherstellen",
+          "description": "Die Räume zurücksetzen."
+        }
+      }
+    },
+    "rejoin_mode": {
+      "name": "Modus wieder beitreten",
+      "description": "Einen zurückgenommenen Raum wieder dem Modus überlassen.",
+      "fields": {
+        "mode": {
+          "name": "Modus",
+          "description": "Modusname oder -ID."
+        },
+        "zone": {
+          "name": "Raum",
+          "description": "Raumname oder -ID."
+        }
+      }
+    }
+  },
+  "issues": {
+    "missing_scene": {
+      "title": "Better Lighting verweist auf eine Szene, die nicht mehr existiert",
+      "description": "{holder} verweist auf {what}, das gelöscht wurde. Home Assistant kann das Löschen einer Szene nicht verhindern, während sie noch verwendet wird, daher wird der Verweis einfach übersprungen — ein Schalter mit einer gelöschten Szene in seiner Liste hat dann stillschweigend eine kürzere Abfolge. Zum Beheben das oben genannte Objekt neu konfigurieren."
+    },
+    "missing_zone": {
+      "title": "Better Lighting verweist auf einen Raum, der nicht mehr existiert",
+      "description": "{holder} verweist auf {what}, das gelöscht wurde, und tut daher nichts mehr. Zum Beheben neu konfigurieren oder entfernen."
+    },
+    "shared_light": {
+      "title": "Eine Lampe gehört zu zwei Better-Lighting-Räumen",
+      "description": "{light} ist sowohl in {first} als auch in {second} aufgeführt. Eine Lampe darf nur zu einem Raum gehören — nur so bleiben manuelle Änderungen, Szenensteuerung und Tastendrücke eindeutig. Aus einem der beiden entfernen."
+    }
+  }
+}

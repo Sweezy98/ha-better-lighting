@@ -362,6 +362,17 @@ Note that `ruff`'s target is Python **3.13**, not 3.14, because Home Assistant 2
 2026.2 run on 3.13. Targeting the development Python once let 3.14-only syntax reach a release
 that could not parse it.
 
+## Translations
+
+English and German ship with the integration. German is generated from the English
+strings by `scripts/make_german.py`, which refuses to write anything unless every string is
+covered — Home Assistant falls back to English per missing key, so a partial translation
+produces a form that is half one language and half the other.
+
+To add a language, copy the mapping in that script and translate the values. A test asserts
+that each translation covers exactly the same keys as English and keeps every `{placeholder}`
+intact.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

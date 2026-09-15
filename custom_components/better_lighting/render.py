@@ -140,6 +140,11 @@ class RenderRequest:
     # When set, only these members may be switched on -- used to restore the
     # set that was lit before a cross-zone mode took over.
     restore_members: frozenset[str] | None = None
+    # Adjust what is already lit and nothing else. Separate from the trigger,
+    # because some activations -- night mode turning on, the adaptive switch
+    # being toggled -- change how a room *would* look without being a reason
+    # to light it in the first place.
+    only_lit: bool = False
 
 
 def render_zone(request: RenderRequest) -> RenderResult:
@@ -162,7 +167,7 @@ def render_zone(request: RenderRequest) -> RenderResult:
     if scene is not None and scene.on_lights_only:
         # Requirement 6: a scene may adjust the room without lighting it up.
         targets &= on_now
-    if request.trigger is Trigger.TICK:
+    if request.trigger is Trigger.TICK or request.only_lit:
         targets &= on_now
 
     if request.mode is ZoneMode.OFF:

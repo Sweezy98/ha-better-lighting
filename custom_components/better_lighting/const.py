@@ -65,6 +65,32 @@ class BrightnessMode(StrEnum):
     TANH = "tanh"
 
 
+class CoverCondition(StrEnum):
+    """When the covers allow presence to light a room."""
+
+    ALL_CLOSED = "all_closed"
+    ANY_CLOSED = "any_closed"
+    IGNORE = "ignore"
+
+
+class PresenceOnAction(StrEnum):
+    """What presence does when somebody walks in."""
+
+    # Honour the room's own power-cycle setting: adaptive, or the last scene.
+    RESTORE = "restore"
+    ADAPTIVE = "adaptive"
+    SCENE = "scene"
+    NONE = "none"
+
+
+class PresenceOffAction(StrEnum):
+    """What presence does once the room has emptied."""
+
+    TURN_OFF = "turn_off"
+    ADAPTIVE = "adaptive"
+    NONE = "none"
+
+
 class BindingType(StrEnum):
     """How a controller hears about a press."""
 
@@ -745,6 +771,51 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
 CONF_PRESENCE_ENTITY = "presence_entity"
 CONF_PRESENCE_CLEAR_DELAY = "presence_clear_delay"
 
+
+CONF_PRESENCE_COVERS = "presence_covers"
+CONF_COVER_CONDITION = "cover_condition"
+CONF_COVER_UNKNOWN_BLOCKS = "cover_unknown_blocks"
+CONF_PRESENCE_ON_ACTION = "presence_on_action"
+CONF_PRESENCE_ON_SCENE = "presence_on_scene_id"
+CONF_PRESENCE_ON_ONLY_WHEN_OFF = "presence_on_only_when_off"
+CONF_PRESENCE_OFF_ACTION = "presence_off_action"
+CONF_PRESENCE_RESPECTS_MANUAL = "presence_respects_manual"
+
+# --------------------------------------------------------------------------
+# Insect mode: a window is open, so stop attracting everything outside.
+# --------------------------------------------------------------------------
+
+CONF_WINDOW_ENTITIES = "window_entities"
+CONF_INSECT_SCENE = "insect_scene_id"
+CONF_INSECT_ONLY_WHEN_ON = "insect_only_when_on"
+CONF_INSECT_OPEN_DELAY = "insect_open_delay"
+CONF_INSECT_CLOSE_DELAY = "insect_close_delay"
+CONF_INSECT_OVERRIDABLE = "insect_overridable_by_press"
+
+ZONE_INSECT_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_WINDOW_ENTITIES,
+        [],
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["binary_sensor", "cover"], multiple=True
+            )
+        ),
+        section=Section.INSECT,
+    ),
+    FieldSpec(
+        CONF_INSECT_SCENE,
+        None,
+        _select([], "scene"),
+        section=Section.INSECT,
+        options_key="scenes",
+    ),
+    FieldSpec(CONF_INSECT_ONLY_WHEN_ON, True, _boolean(), section=Section.INSECT),
+    FieldSpec(CONF_INSECT_OPEN_DELAY, 0, _seconds(0, 600), section=Section.INSECT),
+    FieldSpec(CONF_INSECT_CLOSE_DELAY, 5, _seconds(0, 600), section=Section.INSECT),
+    FieldSpec(CONF_INSECT_OVERRIDABLE, True, _boolean(), section=Section.INSECT),
+)
+
 ZONE_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_PRESENCE_ENTITY,
@@ -762,6 +833,48 @@ ZONE_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
         _seconds(0, 3600),
         section=Section.PRESENCE,
     ),
+    FieldSpec(
+        CONF_PRESENCE_ON_ACTION,
+        PresenceOnAction.RESTORE.value,
+        _select([a.value for a in PresenceOnAction], "presence_on_action"),
+        section=Section.PRESENCE,
+    ),
+    FieldSpec(
+        CONF_PRESENCE_ON_SCENE,
+        None,
+        _select([], "scene"),
+        section=Section.PRESENCE,
+        options_key="scenes",
+    ),
+    FieldSpec(
+        CONF_PRESENCE_OFF_ACTION,
+        PresenceOffAction.TURN_OFF.value,
+        _select([a.value for a in PresenceOffAction], "presence_off_action"),
+        section=Section.PRESENCE,
+    ),
+    # The cover gate of requirement 3: presence only lights the room when the
+    # blinds are down, so a sunlit room is not lit pointlessly.
+    FieldSpec(
+        CONF_PRESENCE_COVERS,
+        [],
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="cover", multiple=True)
+        ),
+        section=Section.PRESENCE,
+    ),
+    FieldSpec(
+        CONF_COVER_CONDITION,
+        CoverCondition.ALL_CLOSED.value,
+        _select([c.value for c in CoverCondition], "cover_condition"),
+        section=Section.PRESENCE,
+    ),
+    FieldSpec(
+        CONF_PRESENCE_ON_ONLY_WHEN_OFF, True, _boolean(), section=Section.PRESENCE
+    ),
+    FieldSpec(
+        CONF_PRESENCE_RESPECTS_MANUAL, True, _boolean(), section=Section.PRESENCE
+    ),
+    FieldSpec(CONF_COVER_UNKNOWN_BLOCKS, True, _boolean(), section=Section.PRESENCE),
 )
 
 
@@ -901,6 +1014,7 @@ ZONE_SPECS = (
     + ZONE_NIGHT_SPECS
     + ZONE_POWER_SPECS
     + ZONE_PRESENCE_SPECS
+    + ZONE_INSECT_SPECS
 )
 
 

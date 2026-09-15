@@ -1,13 +1,18 @@
-"""Is anybody in this room?
+"""Is anybody in this room, and may presence act on it?
 
-Only the *input* here. What presence does on its own -- lighting a room on
-entry, the cover gate, the ignore flags -- is milestone 5. A cross-zone mode
-needs just two facts: whether the room is occupied now, and a notification when
-it has been empty long enough to count.
+Two separate questions, deliberately kept apart. Occupancy is a fact about the
+room, and a cross-zone mode gates on it directly. The **cover gate** is a
+policy about whether presence should be *lighting* the room at all: requirement
+3 only wants the lights coming on when the blinds are down, because a sunlit
+room does not need them.
 
-The clear delay matters more than it looks. Occupancy sensors flicker, and a
-mode that acted on every flicker would switch a room off while somebody was
-still reaching for the biscuit tin.
+The clear delay matters more than it looks. Occupancy sensors flicker, and
+acting on every flicker would switch a room off while somebody was still
+reaching for the biscuit tin.
+
+The gate is watched as well as read. A cover closing while somebody is already
+in the room is exactly as much a reason to light it as somebody walking into an
+already-dark one -- and only tracking the presence sensor would miss it.
 """
 
 from __future__ import annotations
@@ -16,7 +21,13 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from homeassistant.const import STATE_HOME, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import (
+    STATE_CLOSED,
+    STATE_HOME,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import (
     CALLBACK_TYPE,
     Event,
@@ -25,6 +36,8 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+
+from .const import CoverCondition
 
 if TYPE_CHECKING:
     from .models import ZoneConfig
@@ -44,11 +57,13 @@ class ZonePresence:
         *,
         on_occupied: Callable[[], None] | None = None,
         on_cleared: Callable[[], None] | None = None,
+        on_gate_opened: Callable[[], None] | None = None,
     ) -> None:
         self.hass = hass
         self.zone = zone
         self._on_occupied = on_occupied
         self._on_cleared = on_cleared
+        self._on_gate_opened = on_gate_opened
 
         self._occupied: bool | None = None
         self._clear_timer: CALLBACK_TYPE | None = None
@@ -57,6 +72,13 @@ class ZonePresence:
     # -- lifecycle ---------------------------------------------------------
 
     async def async_setup(self) -> None:
+        if covers := self.zone.presence_covers:
+            self._unsubscribers.append(
+                async_track_state_change_event(
+                    self.hass, list(covers), self._handle_cover_change
+                )
+            )
+
         entity_id = self.zone.presence_entity
         if not entity_id:
             return
@@ -92,6 +114,34 @@ class ZonePresence:
         """
         return not self.has_sensor or self._occupied is False
 
+    @property
+    def covers_ok(self) -> bool:
+        """Whether the covers allow presence to light this room.
+
+        An unknown or unavailable cover blocks by default: the point of the
+        gate is "it is dark in here", and a blind we cannot see is not evidence
+        of that. Configurable, because a flaky cover would otherwise disable
+        the feature entirely.
+        """
+        condition = self.zone.cover_condition
+        if condition is CoverCondition.IGNORE or not self.zone.presence_covers:
+            return True
+
+        closed: list[bool] = []
+        for entity_id in self.zone.presence_covers:
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                if self.zone.cover_unknown_blocks:
+                    return False
+                continue
+            closed.append(state.state == STATE_CLOSED)
+
+        if not closed:
+            return not self.zone.cover_unknown_blocks
+        if condition is CoverCondition.ANY_CLOSED:
+            return any(closed)
+        return all(closed)
+
     # -- tracking ----------------------------------------------------------
 
     def _read(self, entity_id: str) -> bool | None:
@@ -121,6 +171,43 @@ class ZonePresence:
             return
 
         self._arm_clear_timer()
+
+    @callback
+    def _handle_cover_change(self, event: Event[EventStateChangedData]) -> None:
+        """A blind moved. That can be the moment presence becomes allowed."""
+        was_ok = self._covers_ok_before(event)
+        now_ok = self.covers_ok
+        if now_ok and not was_ok and self._occupied:
+            # Somebody is already in the room and the blinds have just come
+            # down. Requirement 3's second half.
+            _LOGGER.debug("%s: cover gate opened while occupied", self.zone.name)
+            if self._on_gate_opened is not None:
+                self._on_gate_opened()
+
+    def _covers_ok_before(self, event: Event[EventStateChangedData]) -> bool:
+        """What the gate said immediately before this change."""
+        changed = event.data["entity_id"]
+        old_state = event.data.get("old_state")
+        condition = self.zone.cover_condition
+        if condition is CoverCondition.IGNORE or not self.zone.presence_covers:
+            return True
+
+        closed: list[bool] = []
+        for entity_id in self.zone.presence_covers:
+            state = (
+                old_state if entity_id == changed else self.hass.states.get(entity_id)
+            )
+            if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                if self.zone.cover_unknown_blocks:
+                    return False
+                continue
+            closed.append(state.state == STATE_CLOSED)
+
+        if not closed:
+            return not self.zone.cover_unknown_blocks
+        if condition is CoverCondition.ANY_CLOSED:
+            return any(closed)
+        return all(closed)
 
     @callback
     def _arm_clear_timer(self) -> None:

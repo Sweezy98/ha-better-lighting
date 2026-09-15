@@ -21,10 +21,9 @@ override only brightness *or* only colour while the other keeps tracking the sun
 [relative-light-group]: https://github.com/Cheerpipe/relative-light-group
 [scenery]: https://github.com/j9brown/scenery
 
-> **Status: early development.** Milestones 1 to 4 and 6 of 8 are complete. The wall-switch
-> experience works end to end, and so does the home-cinema case. Still to come: what presence
-> sensors do on their own (M5), window sensors and insect mode (M5), then robustness and
-> packaging (M7, M8).
+> **Status: early development.** Milestones 1 to 6 of 8 are complete — all nine original
+> requirements are implemented. Still to come: robustness (M7 — restart and reload
+> behaviour, repair issues, diagnostics) and packaging (M8).
 
 ## Concepts
 
@@ -79,6 +78,22 @@ normally. That one rule is why there is no "user mode" with a timeout to expire.
 Pressing the same button twice publishes the same value twice, which is not a state
 *change*. Watching only for changes loses every second press, so the integration listens for
 state reports as well.
+
+### Presence and open windows
+
+An optional occupancy sensor lights a room and darkens it again — but only when a configured
+list of covers is closed, so a sunlit room is left alone. Closing a blind while somebody is
+already in the room counts just as much as somebody walking into a dark one, which a
+presence-only listener would miss entirely.
+
+Presence can be silenced three ways, all meaning the same thing: night mode can ignore it
+(the bedroom), an individual scene can ignore it (the living room during a film), and a room
+a cross-zone mode is driving follows that mode's rules instead.
+
+An optional door or window sensor switches the room to a designated **insect scene** —
+usually deep amber, which attracts far fewer insects than white light. It will not light a
+dark room, it debounces a slamming window, and a switch press waves it away until the window
+is closed and opened again.
 
 ### Cross-zone modes
 

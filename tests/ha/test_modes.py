@@ -62,7 +62,9 @@ def _sub(data: ConfigSubentryData) -> ConfigSubentry:
     )
 
 
-async def build(hass: HomeAssistant, *, presence: bool = False, rules_for=None):
+async def build(
+    hass: HomeAssistant, *, presence: bool = False, rules_for=None, kitchen=None
+):
     """A lounge and a kitchen, a Movie scene, and a cinema mode over both."""
     await setup_members(
         hass,
@@ -77,6 +79,7 @@ async def build(hass: HomeAssistant, *, presence: bool = False, rules_for=None):
         if presence
         else {}
     )
+    kitchen_extra |= kitchen or {}
     if presence:
         hass.states.async_set("binary_sensor.kitchen_presence", "off")
 
@@ -282,7 +285,10 @@ class TestPresenceGating:
     async def test_the_deferred_action_dies_with_the_session(
         self, hass: HomeAssistant
     ) -> None:
-        await build(hass, presence=True)
+        # The room's own presence rules are silenced here, so the only thing
+        # that could darken it is the deferred action -- which is what this
+        # test is actually about.
+        await build(hass, presence=True, kitchen={"presence_off_action": "none"})
         hass.states.async_set("binary_sensor.kitchen_presence", "on")
         await hass.async_block_till_done()
         await set_state(hass, "playing")

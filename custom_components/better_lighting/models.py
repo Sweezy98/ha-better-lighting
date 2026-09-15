@@ -45,6 +45,8 @@ from .const import (
     CONF_COLOR_NAME,
     CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
+    CONF_COVER_CONDITION,
+    CONF_COVER_UNKNOWN_BLOCKS,
     CONF_DEFERRED_TTL_MIN,
     CONF_DOUBLE_PRESS_ACTION,
     CONF_DOUBLE_PRESS_STATES,
@@ -54,6 +56,11 @@ from .const import (
     CONF_ICON,
     CONF_IGNORE_PRESENCE,
     CONF_INITIAL_TRANSITION,
+    CONF_INSECT_CLOSE_DELAY,
+    CONF_INSECT_ONLY_WHEN_ON,
+    CONF_INSECT_OPEN_DELAY,
+    CONF_INSECT_OVERRIDABLE,
+    CONF_INSECT_SCENE,
     CONF_INTERCEPT_MEMBER_CALLS,
     CONF_INTERVAL,
     CONF_IS_DEFAULT,
@@ -83,7 +90,13 @@ from .const import (
     CONF_OVERRIDE_MODE,
     CONF_PREFER_RGB_COLOR,
     CONF_PRESENCE_CLEAR_DELAY,
+    CONF_PRESENCE_COVERS,
     CONF_PRESENCE_ENTITY,
+    CONF_PRESENCE_OFF_ACTION,
+    CONF_PRESENCE_ON_ACTION,
+    CONF_PRESENCE_ON_ONLY_WHEN_OFF,
+    CONF_PRESENCE_ON_SCENE,
+    CONF_PRESENCE_RESPECTS_MANUAL,
     CONF_PRESS_ATTRIBUTE,
     CONF_PRESS_STATES,
     CONF_REMEMBER_ON_STATE,
@@ -112,6 +125,7 @@ from .const import (
     CONF_TIME_DARK,
     CONF_TIME_LIGHT,
     CONF_TRANSITION,
+    CONF_WINDOW_ENTITIES,
     CONF_WRAP_AROUND,
     CONF_ZONE_ID,
     CONTROLLER_SPECS,
@@ -122,8 +136,11 @@ from .const import (
     ZONE_SPECS,
     BindingType,
     BrightnessMode,
+    CoverCondition,
     NightBehavior,
     OptedOutOnExit,
+    PresenceOffAction,
+    PresenceOnAction,
     PressAction,
     RestoreMode,
     RestoreOnPowerCycle,
@@ -250,6 +267,22 @@ class ZoneConfig:
     # Only the occupancy input here; what presence *does* is milestone 5.
     presence_entity: str | None
     presence_clear_delay: int
+    presence_covers: tuple[str, ...]
+    cover_condition: CoverCondition
+    cover_unknown_blocks: bool
+    presence_on_action: PresenceOnAction
+    presence_on_scene_id: str | None
+    presence_on_only_when_off: bool
+    presence_off_action: PresenceOffAction
+    presence_respects_manual: bool
+
+    # Requirement 4: a window is open, so stop attracting everything outside.
+    window_entities: tuple[str, ...]
+    insect_scene_id: str | None
+    insect_only_when_on: bool
+    insect_open_delay: int
+    insect_close_delay: int
+    insect_overridable_by_press: bool
 
     @property
     def slug(self) -> str:
@@ -292,6 +325,20 @@ class ZoneConfig:
             resume_max_age_minutes=int(raw[CONF_RESUME_MAX_AGE_MIN]),
             presence_entity=raw.get(CONF_PRESENCE_ENTITY) or None,
             presence_clear_delay=int(raw[CONF_PRESENCE_CLEAR_DELAY]),
+            presence_covers=tuple(raw.get(CONF_PRESENCE_COVERS) or ()),
+            cover_condition=CoverCondition(raw[CONF_COVER_CONDITION]),
+            cover_unknown_blocks=bool(raw[CONF_COVER_UNKNOWN_BLOCKS]),
+            presence_on_action=PresenceOnAction(raw[CONF_PRESENCE_ON_ACTION]),
+            presence_on_scene_id=raw.get(CONF_PRESENCE_ON_SCENE) or None,
+            presence_on_only_when_off=bool(raw[CONF_PRESENCE_ON_ONLY_WHEN_OFF]),
+            presence_off_action=PresenceOffAction(raw[CONF_PRESENCE_OFF_ACTION]),
+            presence_respects_manual=bool(raw[CONF_PRESENCE_RESPECTS_MANUAL]),
+            window_entities=tuple(raw.get(CONF_WINDOW_ENTITIES) or ()),
+            insect_scene_id=raw.get(CONF_INSECT_SCENE) or None,
+            insect_only_when_on=bool(raw[CONF_INSECT_ONLY_WHEN_ON]),
+            insect_open_delay=int(raw[CONF_INSECT_OPEN_DELAY]),
+            insect_close_delay=int(raw[CONF_INSECT_CLOSE_DELAY]),
+            insect_overridable_by_press=bool(raw[CONF_INSECT_OVERRIDABLE]),
         )
 
     # -- layer resolution --------------------------------------------------

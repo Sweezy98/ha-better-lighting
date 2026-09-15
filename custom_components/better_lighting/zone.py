@@ -54,7 +54,13 @@ from homeassistant.helpers.sun import get_astral_location
 from homeassistant.util import dt as dt_util
 
 from .adaptive import AdaptiveConfig, SunEventOrderError, compute_for_transition
-from .const import NightBehavior, PressAction, RestoreOnPowerCycle
+from .const import (
+    NightBehavior,
+    PresenceOffAction,
+    PresenceOnAction,
+    PressAction,
+    RestoreOnPowerCycle,
+)
 from .context import ContextRegistry
 from .cycle import (
     ADAPTIVE,
@@ -72,6 +78,7 @@ from .cycle import (
 from .cycle import (
     press_previous as cycle_press_previous,
 )
+from .openings import WindowWatcher
 from .presence import ZonePresence
 from .profiles import Axis, LightCapabilities, LightProfile, Saturation
 from .render import (
@@ -151,6 +158,13 @@ class ZoneController:
         self._opt_out_callback: Callable[[str], None] | None = None
         # Presence, for modes that gate on whether a room is occupied.
         self.presence: ZonePresence | None = None
+        self.windows: WindowWatcher | None = None
+        # A window is open in this room.
+        self.insect_active = False
+        # A press has waved insect mode away until the window closes and is
+        # opened again. Scoped like every other dismissal, so it needs no timer.
+        self.insect_dismissed = False
+        self._pre_insect: CycleStep | None = None
 
         # The zone's own light entity, attached once its platform is up. It
         # owns the on-state memory, so turning the room off or back on has to
@@ -276,7 +290,7 @@ class ZoneController:
         self.night_active = active
         _LOGGER.debug("%s night mode -> %s", self.zone.name, active)
         self.async_notify()
-        self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
+        self.hass.async_create_task(self.async_render(Trigger.ACTIVATE, only_lit=True))
 
     @callback
     def _handle_tick(self, _now: datetime.datetime) -> None:
@@ -289,7 +303,7 @@ class ZoneController:
         self.adaptive_enabled = enabled
         self.async_notify()
         if enabled:
-            await self.async_render(Trigger.ACTIVATE)
+            await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
     async def async_set_night(self, active: bool) -> None:
         """Set night mode directly, for zones with no source entity."""
@@ -297,7 +311,7 @@ class ZoneController:
             return
         self.night_active = active
         self.async_notify()
-        await self.async_render(Trigger.ACTIVATE)
+        await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
     async def async_set_mode(self, mode: ZoneMode, scene_id: str | None = None) -> None:
         """Change what this zone is doing, and re-render once."""
@@ -412,7 +426,9 @@ class ZoneController:
             if callback_fn is not None:
                 callback_fn(mode_id)
             dismissed = True
-        if self.mode in (ZoneMode.INSECT, ZoneMode.EXTERNAL):
+        if self.insect_showing and self.zone.insect_overridable_by_press:
+            # Waved away until the window is closed and opened again.
+            self.insect_dismissed = True
             dismissed = True
         return dismissed
 
@@ -502,6 +518,96 @@ class ZoneController:
                 await self.async_set_mode(ZoneMode.SCENE, step.scene_id)
             case _:
                 await self.async_set_mode(ZoneMode.ADAPTIVE)
+
+    # -- presence and windows ---------------------------------------------
+
+    def _presence_allowed(self) -> bool:
+        """Whether presence has any say in this room right now.
+
+        Three separate ways to silence it, all meaning the same thing, so the
+        check is an OR rather than a precedence chain: a bedroom at night, a
+        scene that says so, and a room a cross-zone mode is driving.
+        """
+        if self.session_owner is not None:
+            # A mode is driving this room; its own presence rules apply there.
+            return False
+        if self.is_night and self.zone.night_ignore_presence:
+            return False
+        scene = self.active_scene()
+        return not (scene is not None and scene.ignore_presence)
+
+    def _presence_target(self) -> CycleStep:
+        """Where presence should put the room when somebody walks in."""
+        match self.zone.presence_on_action:
+            case PresenceOnAction.SCENE if self.zone.presence_on_scene_id:
+                return scene_step(self.zone.presence_on_scene_id)
+            case PresenceOnAction.RESTORE:
+                # Honour the room's own power-cycle setting, so presence and
+                # the light switch agree about what "on" means here.
+                return self._resume_step() or ADAPTIVE
+            case _:
+                return ADAPTIVE
+
+    async def async_presence_detected(self) -> None:
+        """Somebody has walked in."""
+        if self.zone.presence_on_action is PresenceOnAction.NONE:
+            return
+        if not self._presence_allowed():
+            return
+        if self.presence is not None and not self.presence.covers_ok:
+            # Requirement 3: only when the blinds are down.
+            _LOGGER.debug("%s: presence blocked by the cover gate", self.zone.name)
+            return
+        if self.zone.presence_on_only_when_off and self._any_member_on():
+            return
+        await self.async_apply_step(self._presence_target())
+
+    async def async_presence_cleared(self) -> None:
+        """The room has emptied."""
+        if self.zone.presence_off_action is PresenceOffAction.NONE:
+            return
+        if not self._presence_allowed():
+            return
+        if self.zone.presence_respects_manual and self.manual:
+            # Somebody set this room by hand. Switching it off behind them
+            # would be the rudest possible reading of an empty room.
+            return
+        if self.zone.presence_off_action is PresenceOffAction.ADAPTIVE:
+            await self.async_set_adaptive()
+            return
+        await self.async_set_mode(ZoneMode.OFF)
+
+    async def async_cover_gate_opened(self) -> None:
+        """The blinds came down while somebody was already in the room."""
+        await self.async_presence_detected()
+
+    async def async_window_opened(self) -> None:
+        """Requirement 4: a window is open, so switch to the insect scene."""
+        if not self.zone.insect_scene_id:
+            return
+        if self.zone.insect_only_when_on and not self._any_member_on():
+            # An open window is no reason to light a dark room.
+            return
+        self.insect_active = True
+        self.insect_dismissed = False
+        self._pre_insect = self._current_step()
+        self.async_notify()
+        await self.async_render(Trigger.ACTIVATE, only_lit=True)
+
+    async def async_window_closed(self) -> None:
+        """Put the room back to whatever it was doing before."""
+        was_showing = self.insect_showing
+        self.insect_active = False
+        self.insect_dismissed = False
+        previous, self._pre_insect = self._pre_insect, None
+        self.async_notify()
+        if not was_showing:
+            # A press had already waved it away, so the user's choice stands.
+            return
+        if previous is not None:
+            await self.async_apply_step(previous)
+            return
+        await self.async_render(Trigger.ACTIVATE)
 
     # -- manual override ---------------------------------------------------
 
@@ -624,13 +730,29 @@ class ZoneController:
         """
         if self.mode is ZoneMode.OFF:
             return ZoneMode.OFF
+        if self.insect_showing:
+            # An open window is a physical fact about *this* room, while a
+            # cross-zone mode is a house-wide preference, so the window wins.
+            return ZoneMode.INSECT
         if self.is_night and self.mode is ZoneMode.ADAPTIVE:
             return ZoneMode.NIGHT
         return self.mode
 
+    @property
+    def insect_showing(self) -> bool:
+        """Whether insect mode is currently what this room should look like."""
+        return (
+            self.insect_active
+            and not self.insect_dismissed
+            and bool(self.zone.insect_scene_id)
+            and self.zone.insect_scene_id in self.scenes
+        )
+
     def active_scene(self) -> Scene | None:
         """The scene the current mode resolves to, if any."""
         mode = self.effective_mode
+        if mode is ZoneMode.INSECT:
+            return self.scenes.get(self.zone.insect_scene_id or "")
         if mode is ZoneMode.SCENE:
             return self.scenes.get(self.active_scene_id or "")
         if mode is ZoneMode.NIGHT:
@@ -678,7 +800,11 @@ class ZoneController:
     # -- rendering ---------------------------------------------------------
 
     def commands_for(
-        self, trigger: Trigger, entity_ids: list[str] | None = None
+        self,
+        trigger: Trigger,
+        entity_ids: list[str] | None = None,
+        *,
+        only_lit: bool = False,
     ) -> list[LightCommand]:
         """Decide what this zone's lights should do, without sending anything."""
         if not self.adaptive_enabled and self.effective_mode is not ZoneMode.SCENE:
@@ -720,18 +846,23 @@ class ZoneController:
                 manual=self.manual,
                 bias_pct=self.bias_pct,
                 transition=self._transition_for(trigger),
+                only_lit=only_lit,
             )
         )
         self._saturation = result.saturation
         return result.commands
 
     async def async_render(
-        self, trigger: Trigger = Trigger.TICK, *, entity_ids: list[str] | None = None
+        self,
+        trigger: Trigger = Trigger.TICK,
+        *,
+        entity_ids: list[str] | None = None,
+        only_lit: bool = False,
     ) -> bool:
         """Decide and send. Returns whether anything was actually issued."""
         commands = [
             command
-            for command in self.commands_for(trigger, entity_ids)
+            for command in self.commands_for(trigger, entity_ids, only_lit=only_lit)
             if not self._is_redundant(command)
         ]
         if not commands:

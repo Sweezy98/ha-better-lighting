@@ -85,7 +85,7 @@ def _reset_adaptive(controller: ZoneController) -> Callable[[], Awaitable[None]]
 def _clear_manual(controller: ZoneController) -> Callable[[], Awaitable[None]]:
     async def _run() -> None:
         controller.clear_manual()
-        await controller.async_render()
+        await controller.async_render(only_lit=True)
 
     return _run
 

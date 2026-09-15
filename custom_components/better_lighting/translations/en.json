@@ -180,10 +180,38 @@
               "name": "Presence",
               "data": {
                 "presence_entity": "Occupancy sensor",
-                "presence_clear_delay": "Consider the room empty after"
+                "presence_clear_delay": "Consider the room empty after",
+                "presence_on_action": "When somebody walks in",
+                "presence_on_scene_id": "Scene to apply",
+                "presence_off_action": "When the room empties",
+                "presence_covers": "Only when these covers are closed",
+                "cover_condition": "Cover condition",
+                "presence_on_only_when_off": "Only act on a room that is off",
+                "presence_respects_manual": "Leave a hand-set room alone",
+                "cover_unknown_blocks": "An unreadable cover blocks"
               },
               "data_description": {
-                "presence_clear_delay": "Occupancy sensors flicker. Waiting avoids switching a room off while somebody is still in it."
+                "presence_clear_delay": "Occupancy sensors flicker. Waiting avoids switching a room off while somebody is still in it.",
+                "presence_covers": "So the lights only come on when the blinds are down and the room is actually dark. Closing a cover while somebody is already in the room counts too.",
+                "presence_on_only_when_off": "Walking into a room you already lit by hand should not restyle it.",
+                "presence_respects_manual": "Switching off behind somebody who set the room by hand is the rudest possible reading of an empty room.",
+                "cover_unknown_blocks": "The point of the gate is 'it is dark in here', and a cover we cannot read is not evidence of that."
+              }
+            },
+            "insect": {
+              "name": "Open windows",
+              "data": {
+                "window_entities": "Door and window sensors",
+                "insect_scene_id": "Scene to apply",
+                "insect_only_when_on": "Only if the room is already lit",
+                "insect_open_delay": "Wait before reacting to an open window",
+                "insect_close_delay": "Wait before reacting to a closed window",
+                "insect_overridable_by_press": "A switch press overrides it"
+              },
+              "data_description": {
+                "insect_scene_id": "Usually something deep amber, which attracts far fewer insects than white light.",
+                "insect_only_when_on": "An open window is no reason to light a dark room.",
+                "insect_close_delay": "Stops a slamming window flickering the room."
               }
             }
           }
@@ -255,10 +283,38 @@
               "name": "Presence",
               "data": {
                 "presence_entity": "Occupancy sensor",
-                "presence_clear_delay": "Consider the room empty after"
+                "presence_clear_delay": "Consider the room empty after",
+                "presence_on_action": "When somebody walks in",
+                "presence_on_scene_id": "Scene to apply",
+                "presence_off_action": "When the room empties",
+                "presence_covers": "Only when these covers are closed",
+                "cover_condition": "Cover condition",
+                "presence_on_only_when_off": "Only act on a room that is off",
+                "presence_respects_manual": "Leave a hand-set room alone",
+                "cover_unknown_blocks": "An unreadable cover blocks"
               },
               "data_description": {
-                "presence_clear_delay": "Occupancy sensors flicker. Waiting avoids switching a room off while somebody is still in it."
+                "presence_clear_delay": "Occupancy sensors flicker. Waiting avoids switching a room off while somebody is still in it.",
+                "presence_covers": "So the lights only come on when the blinds are down and the room is actually dark. Closing a cover while somebody is already in the room counts too.",
+                "presence_on_only_when_off": "Walking into a room you already lit by hand should not restyle it.",
+                "presence_respects_manual": "Switching off behind somebody who set the room by hand is the rudest possible reading of an empty room.",
+                "cover_unknown_blocks": "The point of the gate is 'it is dark in here', and a cover we cannot read is not evidence of that."
+              }
+            },
+            "insect": {
+              "name": "Open windows",
+              "data": {
+                "window_entities": "Door and window sensors",
+                "insect_scene_id": "Scene to apply",
+                "insect_only_when_on": "Only if the room is already lit",
+                "insect_open_delay": "Wait before reacting to an open window",
+                "insect_close_delay": "Wait before reacting to a closed window",
+                "insect_overridable_by_press": "A switch press overrides it"
+              },
+              "data_description": {
+                "insect_scene_id": "Usually something deep amber, which attracts far fewer insects than white light.",
+                "insect_only_when_on": "An open window is no reason to light a dark room.",
+                "insect_close_delay": "Stops a slamming window flickering the room."
               }
             }
           }
@@ -816,6 +872,28 @@
     },
     "scene": {
       "options": {}
+    },
+    "cover_condition": {
+      "options": {
+        "all_closed": "Only when every cover is closed",
+        "any_closed": "When any cover is closed",
+        "ignore": "Ignore the covers"
+      }
+    },
+    "presence_on_action": {
+      "options": {
+        "restore": "Whatever switching the room on would do",
+        "adaptive": "Adaptive lighting",
+        "scene": "A specific scene",
+        "none": "Nothing"
+      }
+    },
+    "presence_off_action": {
+      "options": {
+        "turn_off": "Switch the room off",
+        "adaptive": "Return it to adaptive",
+        "none": "Nothing"
+      }
     }
   },
   "entity": {

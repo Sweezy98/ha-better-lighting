@@ -30,6 +30,7 @@ from .models import (
     synthetic_controller,
 )
 from .modes import ModeGroupRuntime
+from .openings import WindowWatcher
 from .presence import ZonePresence
 from .profiles import LightProfile
 from .scenes import Scene
@@ -195,10 +196,21 @@ async def async_setup_entry(
             zone,
             on_occupied=_zone_occupied(hass, runtime, subentry_id),
             on_cleared=_zone_cleared(hass, runtime, subentry_id),
+            on_gate_opened=_gate_opened(hass, controller),
         )
         controller.presence = presence
         await presence.async_setup()
         entry.async_on_unload(presence.async_shutdown)
+
+        windows = WindowWatcher(
+            hass,
+            zone,
+            on_open=_window_opened(hass, controller),
+            on_closed=_window_closed(hass, controller),
+        )
+        controller.windows = windows
+        await windows.async_setup()
+        entry.async_on_unload(windows.async_shutdown)
 
     for controller in runtime.switches.values():
         zone_controller = runtime.controllers.get(controller.zone_id)
@@ -255,20 +267,60 @@ async def async_unload_entry(
 
 
 def _zone_occupied(hass: HomeAssistant, runtime: BetterLightingRuntime, zone_id: str):
-    """Tell every running mode that somebody has walked into this room."""
+    """Somebody has walked into this room.
+
+    Modes are told first and the room's own presence rules second, because a
+    mode driving the room owns its presence behaviour for the session -- the
+    zone checks for that and stands down.
+    """
 
     def _notify() -> None:
-        for mode_runtime in runtime.mode_runtimes.values():
-            hass.async_create_task(mode_runtime.async_zone_occupied(zone_id))
+        hass.async_create_task(_async_occupied(runtime, zone_id))
 
     return _notify
 
 
+async def _async_occupied(runtime: BetterLightingRuntime, zone_id: str) -> None:
+    for mode_runtime in runtime.mode_runtimes.values():
+        await mode_runtime.async_zone_occupied(zone_id)
+    if (controller := runtime.controllers.get(zone_id)) is not None:
+        await controller.async_presence_detected()
+
+
 def _zone_cleared(hass: HomeAssistant, runtime: BetterLightingRuntime, zone_id: str):
-    """Tell every running mode that this room has emptied."""
+    """This room has emptied."""
 
     def _notify() -> None:
-        for mode_runtime in runtime.mode_runtimes.values():
-            hass.async_create_task(mode_runtime.async_zone_cleared(zone_id))
+        hass.async_create_task(_async_cleared(runtime, zone_id))
+
+    return _notify
+
+
+async def _async_cleared(runtime: BetterLightingRuntime, zone_id: str) -> None:
+    for mode_runtime in runtime.mode_runtimes.values():
+        await mode_runtime.async_zone_cleared(zone_id)
+    if (controller := runtime.controllers.get(zone_id)) is not None:
+        await controller.async_presence_cleared()
+
+
+def _gate_opened(hass: HomeAssistant, controller: ZoneController):
+    """The blinds came down while somebody was already in the room."""
+
+    def _notify() -> None:
+        hass.async_create_task(controller.async_cover_gate_opened())
+
+    return _notify
+
+
+def _window_opened(hass: HomeAssistant, controller: ZoneController):
+    def _notify() -> None:
+        hass.async_create_task(controller.async_window_opened())
+
+    return _notify
+
+
+def _window_closed(hass: HomeAssistant, controller: ZoneController):
+    def _notify() -> None:
+        hass.async_create_task(controller.async_window_closed())
 
     return _notify

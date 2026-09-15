@@ -982,7 +982,7 @@
         "state_attributes": {}
       },
       "adaptive_color": {
-        "name": "Adaptive Farbe",
+        "name": "Adaptive Farbtemperatur",
         "state_attributes": {}
       },
       "night": {
@@ -1004,10 +1004,10 @@
     },
     "button": {
       "cycle_next": {
-        "name": "Durchschalten"
+        "name": "nächster Modus"
       },
       "cycle_previous": {
-        "name": "Zurückschalten"
+        "name": "vorheriger Modus"
       },
       "reset_adaptive": {
         "name": "Zurück zu adaptiv"
@@ -1045,7 +1045,7 @@
       }
     },
     "cycle": {
-      "name": "Durchschalten",
+      "name": "nächster Modus",
       "description": "Diesen Raum in seiner Abfolge weiterschalten.",
       "fields": {
         "zone": {

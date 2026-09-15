@@ -224,23 +224,32 @@ def chromatic_payload(
     return None
 
 
-def resolve_brightness(
-    settings: AdaptiveSettings,
+def brightness_from_pct(
+    pct: float,
     profile: LightProfile,
     caps: LightCapabilities,
     *,
     bias_pct: float = 0.0,
+    respect_adapt_flag: bool = True,
 ) -> tuple[int | None, Saturation]:
-    """Steps 1-5 for the brightness axis. Returns 0-255, or None if unsupported."""
-    if not caps.supports_brightness or not profile.adapt_brightness:
+    """Steps 2-5 for an explicit brightness percentage.
+
+    Shared by the adaptive curve and by a scene's own brightness, so a light's
+    calibration and limits apply to both. A fixture that reads dim reads dim
+    whoever asked, and a maximum the user set to protect their eyes must hold
+    for a scene just as firmly as for the curve.
+
+    ``respect_adapt_flag`` is False for a scene: switching off "adapt
+    brightness" for a light means "do not track the sun", not "ignore any
+    brightness I ever ask for".
+    """
+    if not caps.supports_brightness:
+        return None, Saturation.NONE
+    if respect_adapt_flag and not profile.adapt_brightness:
         return None, Saturation.NONE
 
     # 2. calibration: scale, then offset, then the zone-wide relative dim.
-    pct = (
-        settings.brightness_pct * profile.brightness_multiplier
-        + profile.brightness_offset_pct
-        + bias_pct
-    )
+    pct = pct * profile.brightness_multiplier + profile.brightness_offset_pct + bias_pct
 
     # 3. the fixture's configured operating limits.
     low = profile.min_brightness_pct if profile.min_brightness_pct is not None else 0.0
@@ -260,6 +269,19 @@ def resolve_brightness(
         clamp(round(BRIGHTNESS_MAX * pct / 100.0), BRIGHTNESS_MIN, BRIGHTNESS_MAX)
     )
     return brightness, saturation
+
+
+def resolve_brightness(
+    settings: AdaptiveSettings,
+    profile: LightProfile,
+    caps: LightCapabilities,
+    *,
+    bias_pct: float = 0.0,
+) -> tuple[int | None, Saturation]:
+    """The brightness axis of the adaptive curve, for one light."""
+    return brightness_from_pct(
+        settings.brightness_pct, profile, caps, bias_pct=bias_pct
+    )
 
 
 def resolve_color(
@@ -384,6 +406,7 @@ __all__ = [
     "LightProfile",
     "LightTarget",
     "Saturation",
+    "brightness_from_pct",
     "describe_saturation",
     "from_mired",
     "resolve_target",

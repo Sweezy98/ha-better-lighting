@@ -21,10 +21,11 @@ override only brightness *or* only colour while the other keeps tracking the sun
 [relative-light-group]: https://github.com/Cheerpipe/relative-light-group
 [scenery]: https://github.com/j9brown/scenery
 
-> **Status: early development.** Milestones 1 and 2 of 8 are complete. Zones exist as light
+> **Status: early development.** Milestones 1 to 3 of 8 are complete. Zones exist as light
 > groups with relative dimming and on-state memory, they follow the sun, night mode tracks a
-> helper entity, and individual lights can be calibrated with offsets and limits. Scenes,
-> switch cycling, presence and the cross-zone cinema modes are not implemented yet.
+> helper entity, individual lights can be calibrated with offsets and limits, and scenes can
+> be defined and applied through a per-zone mode select. Switch cycling, presence and the
+> cross-zone cinema modes are not implemented yet.
 
 ## Concepts
 
@@ -57,6 +58,26 @@ minimum and maximum. An offset says "this fixture reads dim"; a limit says "neve
 it flickers". A calibration must never be able to breach a limit you set, so the limit wins.
 A corollary worth knowing: per-light limits are absolute targets, not shifts of the zone's
 range.
+
+### A scene is a recipe, not a room
+
+A scene says what a room should look like — a brightness, one colour, and which of those two
+it takes over — with no reference to any particular light. That is what makes *Cooking* or
+*Movie night* reusable everywhere rather than redefined per room.
+
+Each scene chooses what it overrides, and **whatever it leaves alone keeps tracking the sun**:
+
+| This scene sets | Brightness | Colour |
+|---|---|---|
+| Both | scene | scene |
+| Brightness only | scene | **keeps adapting** |
+| Colour only | **keeps adapting** | scene |
+| Neither | keeps adapting | keeps adapting |
+
+The two partial modes are the interesting ones. A *Cooking* scene can pin the brightness at
+100% while the colour still warms through the evening. This works because the periodic
+refresh only ever sends the axes the scene did not claim — so it never fights the scene, and
+never stomps a relative dim layered on top of it.
 
 ### The zone entity is the input, not just the output
 

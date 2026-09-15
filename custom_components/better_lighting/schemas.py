@@ -14,6 +14,8 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.data_entry_flow import SectionConfig, section
+from homeassistant.helpers import selector
+from homeassistant.helpers.selector import SelectOptionDict
 
 from .const import FieldSpec, Section
 
@@ -25,11 +27,14 @@ def build_schema(
     values: Mapping[str, Any] | None = None,
     *,
     include: tuple[Section, ...] | None = None,
+    options: Mapping[str, list[SelectOptionDict]] | None = None,
 ) -> vol.Schema:
     """Render ``specs`` as a voluptuous schema, pre-filled from ``values``.
 
     ``include`` restricts which sections are offered, so a milestone can ship a
-    subset of a table without touching it.
+    subset of a table without touching it. ``options`` supplies the choices for
+    fields whose possible values only exist at runtime -- which scenes have been
+    defined, for instance.
     """
     current = dict(values or {})
     basic: dict[Any, Any] = {}
@@ -40,6 +45,21 @@ def build_schema(
             continue
 
         default = spec.as_default(current)
+        widget = spec.selector
+        if spec.options_key is not None:
+            choices = (options or {}).get(spec.options_key) or []
+            if not choices:
+                # Nothing to choose from yet. Offering an empty dropdown just
+                # produces a dead control, so the field is left out and the
+                # form explains why instead.
+                continue
+            widget = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=choices,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    sort=False,
+                )
+            )
         marker = vol.Required if spec.required else vol.Optional
         # A field with no default must not carry `default=None`: voluptuous
         # would happily validate None against the selector and fail.
@@ -50,7 +70,7 @@ def build_schema(
             if spec.section is Section.BASIC
             else grouped.setdefault(spec.section, {})
         )
-        target[key] = spec.selector
+        target[key] = widget
 
     schema: dict[Any, Any] = dict(basic)
     for sec, fields in grouped.items():

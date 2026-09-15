@@ -23,6 +23,7 @@ from homeassistant.util import slugify
 from .adaptive import AdaptiveConfig
 from .brightness import BrightnessStrategy
 from .const import (
+    COLOR_FORMAT_NONE,
     CONF_ADAPT_BRIGHTNESS,
     CONF_ADAPT_COLOR,
     CONF_ADAPTIVE_DEFAULT_ON,
@@ -33,13 +34,18 @@ from .const import (
     CONF_BRIGHTNESS_MODE,
     CONF_BRIGHTNESS_MULTIPLIER,
     CONF_BRIGHTNESS_OFFSET_PCT,
+    CONF_BRIGHTNESS_PCT,
     CONF_BRIGHTNESS_STRATEGY,
     CONF_CLAMP_TO_DEVICE,
+    CONF_COLOR_FORMAT,
+    CONF_COLOR_NAME,
+    CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
     CONF_ENABLED,
     CONF_EXPAND_LIGHT_GROUPS,
     CONF_HIDE_MEMBERS,
     CONF_ICON,
+    CONF_IGNORE_PRESENCE,
     CONF_INITIAL_TRANSITION,
     CONF_INTERCEPT_MEMBER_CALLS,
     CONF_INTERVAL,
@@ -54,10 +60,16 @@ from .const import (
     CONF_NIGHT_BRIGHTNESS_PCT,
     CONF_NIGHT_COLOR_TEMP_K,
     CONF_NIGHT_IGNORE_PRESENCE,
+    CONF_NIGHT_SCENE,
     CONF_NIGHT_SOURCE,
     CONF_NIGHT_TRANSITION,
+    CONF_ON_LIGHTS_ONLY,
+    CONF_ON_UNSUPPORTED_COLOR,
+    CONF_OTHERS,
+    CONF_OVERRIDE_MODE,
     CONF_PREFER_RGB_COLOR,
     CONF_REMEMBER_ON_STATE,
+    CONF_RGB_COLOR,
     CONF_SCENE_TRANSITION,
     CONF_SEND_SPLIT_DELAY_MS,
     CONF_SEPARATE_TURN_ON,
@@ -69,12 +81,19 @@ from .const import (
     CONF_TRANSITION,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
+    SCENE_SPECS,
     ZONE_SPECS,
     BrightnessMode,
     NightBehavior,
     defaults_for,
 )
 from .profiles import LightProfile
+from .scenes import (
+    OthersPolicy,
+    Scene,
+    SceneOverride,
+    UnsupportedColorPolicy,
+)
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigSubentry
@@ -82,6 +101,7 @@ if TYPE_CHECKING:
 _HUB_DEFAULTS = defaults_for(HUB_SPECS)
 _ZONE_DEFAULTS = defaults_for(ZONE_SPECS)
 _PROFILE_DEFAULTS = defaults_for(LIGHT_PROFILE_SPECS)
+_SCENE_DEFAULTS = defaults_for(SCENE_SPECS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +191,7 @@ class ZoneConfig:
     # Night mode, driven by an external entity rather than a schedule.
     night_source_entity: str | None
     night_behavior: NightBehavior
+    night_scene_id: str | None
     night_brightness_pct: float
     night_color_temp_k: int
     night_transition: float
@@ -206,6 +227,7 @@ class ZoneConfig:
             interval=int(raw[CONF_INTERVAL]),
             night_source_entity=raw.get(CONF_NIGHT_SOURCE) or None,
             night_behavior=NightBehavior(raw[CONF_NIGHT_BEHAVIOR]),
+            night_scene_id=raw.get(CONF_NIGHT_SCENE) or None,
             night_brightness_pct=float(raw[CONF_NIGHT_BRIGHTNESS_PCT]),
             night_color_temp_k=int(raw[CONF_NIGHT_COLOR_TEMP_K]),
             night_transition=float(raw[CONF_NIGHT_TRANSITION]),
@@ -287,5 +309,66 @@ class LightProfileConfig:
                 adapt_color=bool(raw[CONF_ADAPT_COLOR]),
                 prefer_rgb=bool(raw[CONF_PREFER_RGB_COLOR]),
                 clamp_to_device_limits=bool(raw[CONF_CLAMP_TO_DEVICE]),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SceneConfig:
+    """A scene subentry, and the runtime :class:`Scene` it describes."""
+
+    subentry_id: str
+    name: str
+    scene: Scene
+
+    @property
+    def slug(self) -> str:
+        return slugify(self.name)
+
+    @classmethod
+    def from_subentry(cls, subentry: ConfigSubentry) -> Self:
+        raw = {**_SCENE_DEFAULTS, **dict(subentry.data)}
+        name = raw.get(CONF_NAME) or subentry.title
+        override = SceneOverride(raw[CONF_OVERRIDE_MODE])
+
+        # Exactly one colour format is stored, chosen in step two of the flow.
+        color: dict[str, Any] | None = None
+        match raw.get(CONF_COLOR_FORMAT):
+            case fmt if fmt in (None, COLOR_FORMAT_NONE):
+                color = None
+            case _ if (value := raw.get(CONF_COLOR_TEMP_KELVIN)) is not None:
+                color = {CONF_COLOR_TEMP_KELVIN: int(value)}
+            case _ if (value := raw.get(CONF_RGB_COLOR)) is not None:
+                color = {CONF_RGB_COLOR: tuple(value)}
+            case _ if (value := raw.get(CONF_COLOR_NAME)) is not None:
+                color = {CONF_COLOR_NAME: str(value)}
+
+        # A scene that overrides only brightness carries no colour at all, so a
+        # stale value left behind by an edit cannot leak back into the render.
+        if override in (SceneOverride.BRIGHTNESS, SceneOverride.NEITHER):
+            color = None
+        brightness = (
+            float(raw[CONF_BRIGHTNESS_PCT])
+            if override in (SceneOverride.BRIGHTNESS, SceneOverride.BOTH)
+            else None
+        )
+
+        return cls(
+            subentry_id=subentry.subentry_id,
+            name=name,
+            scene=Scene(
+                scene_id=subentry.subentry_id,
+                name=name,
+                icon=raw[CONF_ICON],
+                override=override,
+                brightness_pct=brightness,
+                color=color,
+                on_lights_only=bool(raw[CONF_ON_LIGHTS_ONLY]),
+                ignore_presence=bool(raw[CONF_IGNORE_PRESENCE]),
+                others=OthersPolicy(raw[CONF_OTHERS]),
+                transition=float(raw[CONF_TRANSITION]),
+                on_unsupported_color=UnsupportedColorPolicy(
+                    raw[CONF_ON_UNSUPPORTED_COLOR]
+                ),
             ),
         )

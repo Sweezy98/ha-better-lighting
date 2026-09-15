@@ -476,28 +476,12 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         )
 
     async def _async_turn_on_adaptive(self, targets: list[str]) -> bool:
-        """Light ``targets`` at their adaptive values. False if nothing to send."""
-        resolved = self.controller.targets_for(targets, trigger=Trigger.TURN_ON)
-        if not resolved:
-            return False
+        """Light ``targets`` at their adaptive values, in a single command each.
 
-        transition = self.hub.initial_transition
-        batched: dict[tuple, list[str]] = {}
-        for target in resolved:
-            data = target.as_service_data()
-            if transition:
-                data[ATTR_TRANSITION] = transition
-            key = tuple(sorted((k, _hashable(v)) for k, v in data.items()))
-            batched.setdefault(key, []).append(target.entity_id)
-
-        # Any member without a resolvable target still needs switching on.
-        covered = {target.entity_id for target in resolved}
-        if remainder := [eid for eid in targets if eid not in covered]:
-            await self._async_call_members(SERVICE_TURN_ON, {}, remainder)
-
-        for key, entity_ids in batched.items():
-            await self._async_call_members(SERVICE_TURN_ON, dict(key), entity_ids)
-        return True
+        Returns False when the engine has nothing to say, so the caller can
+        fall back to a plain turn-on rather than leaving the room dark.
+        """
+        return await self.controller.async_render(Trigger.TURN_ON, entity_ids=targets)
 
     async def _async_relative_dim(
         self, target_brightness: int, extra: dict[str, Any]
@@ -542,8 +526,3 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         if (transition := kwargs.get(ATTR_TRANSITION)) is not None:
             data[ATTR_TRANSITION] = transition
         await self._async_call_members(SERVICE_TURN_OFF, data, list(self._entity_ids))
-
-
-def _hashable(value: Any) -> Any:
-    """Make a service-data value usable as part of a dict key."""
-    return tuple(value) if isinstance(value, list | tuple) else value

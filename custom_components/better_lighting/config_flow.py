@@ -20,12 +20,17 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 
 from .const import (
+    COLOR_FORMAT_NONE,
+    CONF_COLOR_FORMAT,
     CONF_LIGHT_ENTITY,
     CONF_LIGHTS,
     CONF_NAME,
+    CONF_OVERRIDE_MODE,
     DOMAIN,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
+    SCENE_COLOR_SPECS,
+    SCENE_SPECS,
     ZONE_SPECS,
     SubentryType,
 )
@@ -34,6 +39,15 @@ from .schemas import build_schema, flatten_sections, post_validate
 _LOGGER = logging.getLogger(__name__)
 
 HUB_TITLE = "Better Lighting"
+
+
+def scene_options(entry: ConfigEntry) -> list[dict[str, str]]:
+    """The scenes defined so far, for any form that needs to pick one."""
+    return [
+        {"value": sub.subentry_id, "label": sub.title}
+        for sub in entry.subentries.values()
+        if sub.subentry_type == SubentryType.SCENE.value
+    ]
 
 
 def _zone_subentries(entry: ConfigEntry) -> dict[str, Any]:
@@ -119,6 +133,7 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
         return {
             SubentryType.ZONE.value: ZoneSubentryFlow,
             SubentryType.LIGHT_PROFILE.value: LightProfileSubentryFlow,
+            SubentryType.SCENE.value: SceneSubentryFlow,
         }
 
 
@@ -182,10 +197,21 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
                 )
 
         existing = dict(subentry.data) if subentry else None
+        scenes = scene_options(entry)
         return self.async_show_form(
             step_id="reconfigure" if subentry else "user",
-            data_schema=build_schema(ZONE_SPECS, user_input or existing),
+            data_schema=build_schema(
+                ZONE_SPECS, user_input or existing, options={"scenes": scenes}
+            ),
             errors=errors,
+            description_placeholders={
+                "scene_hint": (
+                    ""
+                    if scenes
+                    else "No scenes defined yet, so the night scene cannot be "
+                    "chosen. Add one, then reconfigure this zone."
+                )
+            },
         )
 
 
@@ -267,3 +293,93 @@ def _profile_title(hass, light_entity: str | None) -> str:
     if state is not None and (name := state.attributes.get("friendly_name")):
         return str(name)
     return light_entity.removeprefix("light.").replace("_", " ").title()
+
+
+class SceneSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure a scene.
+
+    Two steps on purpose. A colour must carry exactly one format, and the only
+    reliable way to guarantee that through a form is to ask which format first
+    and then show that one field -- rather than offer eight and hope the user
+    fills in a single one.
+    """
+
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+        self._subentry: Any = None
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_basics(user_input, subentry=None)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_basics(
+            user_input, subentry=self._get_reconfigure_subentry()
+        )
+
+    async def _async_basics(
+        self, user_input: dict[str, Any] | None, *, subentry: Any
+    ) -> SubentryFlowResult:
+        self._subentry = subentry
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            flat = flatten_sections(SCENE_SPECS, user_input)
+            cleaned, errors = post_validate(SCENE_SPECS, flat)
+            if not errors:
+                self._data = cleaned
+                if self._needs_color(cleaned):
+                    return await self.async_step_color()
+                return self._finish()
+
+        existing = dict(subentry.data) if subentry else None
+        return self.async_show_form(
+            step_id="reconfigure" if subentry else "user",
+            data_schema=build_schema(SCENE_SPECS, user_input or existing),
+            errors=errors,
+        )
+
+    async def async_step_color(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Collect the one colour field the chosen format needs."""
+        fmt = self._data.get(CONF_COLOR_FORMAT)
+        spec = SCENE_COLOR_SPECS.get(fmt)
+        if spec is None:
+            return self._finish()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors = post_validate((spec,), user_input)
+            if not errors:
+                # Only the chosen format survives, so a format switched during
+                # a reconfigure cannot leave a second colour behind.
+                for other in SCENE_COLOR_SPECS:
+                    self._data.pop(other, None)
+                self._data |= cleaned
+                return self._finish()
+
+        existing = dict(self._subentry.data) if self._subentry else None
+        return self.async_show_form(
+            step_id="color",
+            data_schema=build_schema((spec,), user_input or existing),
+            errors=errors,
+            description_placeholders={"format": str(fmt)},
+        )
+
+    @staticmethod
+    def _needs_color(data: dict[str, Any]) -> bool:
+        if data.get(CONF_OVERRIDE_MODE) in ("brightness", "neither"):
+            return False
+        return data.get(CONF_COLOR_FORMAT) not in (None, COLOR_FORMAT_NONE)
+
+    def _finish(self) -> SubentryFlowResult:
+        title = self._data[CONF_NAME]
+        if self._subentry is None:
+            return self.async_create_entry(title=title, data=self._data)
+        return self.async_update_and_abort(
+            self._get_entry(), self._subentry, data=self._data, title=title
+        )

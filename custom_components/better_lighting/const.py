@@ -27,7 +27,7 @@ NONE_STR = "None"
 # Sentinel for a zone-level value that should fall back to the hub default.
 INHERIT = "__inherit__"
 
-PLATFORMS: list[str] = ["light", "switch"]
+PLATFORMS: list[str] = ["light", "select", "switch"]
 
 
 class SubentryType(StrEnum):
@@ -93,6 +93,9 @@ class FieldSpec:
     required: bool = False
     # Only offered when another field holds one of these values.
     depends_on: tuple[str, tuple[Any, ...]] | None = None
+    # Names a set of choices that only exist at runtime -- the scenes defined
+    # so far, say. The flow supplies them when it builds the form.
+    options_key: str | None = None
 
     def as_default(self, values: dict[str, Any]) -> Any:
         """The value to pre-fill the form with."""
@@ -288,6 +291,7 @@ CONF_ADAPTIVE_DEFAULT_ON = "adaptive_default_on"
 
 CONF_NIGHT_SOURCE = "night_source_entity"
 CONF_NIGHT_BEHAVIOR = "night_behavior"
+CONF_NIGHT_SCENE = "night_scene_id"
 CONF_NIGHT_IGNORE_PRESENCE = "night_ignore_presence"
 CONF_NIGHT_TRANSITION = "night_transition"
 
@@ -334,6 +338,13 @@ ZONE_NIGHT_SPECS: tuple[FieldSpec, ...] = (
         NightBehavior.MIN_SETTINGS.value,
         _select([b.value for b in NightBehavior], "night_behavior"),
         section=Section.NIGHT,
+    ),
+    FieldSpec(
+        CONF_NIGHT_SCENE,
+        None,
+        _select([], "night_scene"),
+        section=Section.NIGHT,
+        options_key="scenes",
     ),
     FieldSpec(CONF_NIGHT_BRIGHTNESS_PCT, 1, _pct(), section=Section.NIGHT),
     FieldSpec(CONF_NIGHT_COLOR_TEMP_K, 1800, _kelvin(), section=Section.NIGHT),
@@ -420,12 +431,105 @@ LIGHT_PROFILE_SPECS: tuple[FieldSpec, ...] = (
 )
 
 
+# --------------------------------------------------------------------------
+# Scene subentry: a reusable recipe, not a per-room set of states.
+# --------------------------------------------------------------------------
+
+CONF_OVERRIDE_MODE = "override_mode"
+CONF_BRIGHTNESS_PCT = "brightness_pct"
+CONF_COLOR_FORMAT = "color_format"
+CONF_COLOR_TEMP_KELVIN = "color_temp_kelvin"
+CONF_RGB_COLOR = "rgb_color"
+CONF_COLOR_NAME = "color_name"
+CONF_ON_LIGHTS_ONLY = "on_lights_only"
+CONF_IGNORE_PRESENCE = "ignore_presence"
+CONF_OTHERS = "others"
+CONF_ON_UNSUPPORTED_COLOR = "on_unsupported_color"
+CONF_SCENE_ID = "scene_id"
+
+# The data model supports all eight Home Assistant colour formats; the UI
+# offers the three with a real picker. The rest stay reachable through
+# services and imported configuration.
+COLOR_FORMAT_NONE = "none"
+COLOR_FORMATS = [
+    CONF_COLOR_TEMP_KELVIN,
+    CONF_RGB_COLOR,
+    CONF_COLOR_NAME,
+    COLOR_FORMAT_NONE,
+]
+
+OVERRIDE_MODES = ["both", "brightness", "color", "neither"]
+OTHERS_POLICIES = ["adaptive", "off", "leave"]
+UNSUPPORTED_COLOR_POLICIES = ["adaptive", "nearest_ct", "skip"]
+
+SCENE_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(CONF_ICON, "mdi:palette", selector.IconSelector()),
+    FieldSpec(
+        CONF_OVERRIDE_MODE,
+        "both",
+        _select(OVERRIDE_MODES, "override_mode"),
+    ),
+    FieldSpec(CONF_BRIGHTNESS_PCT, 80, _pct()),
+    FieldSpec(
+        CONF_COLOR_FORMAT,
+        CONF_COLOR_TEMP_KELVIN,
+        _select(COLOR_FORMATS, "color_format"),
+    ),
+    FieldSpec(
+        CONF_TRANSITION,
+        1.5,
+        _seconds(0, 300, 0.5),
+        validator=VALID_TRANSITION,
+    ),
+    # --- behaviour ---
+    FieldSpec(CONF_ON_LIGHTS_ONLY, False, _boolean(), section=Section.ADVANCED),
+    FieldSpec(CONF_IGNORE_PRESENCE, False, _boolean(), section=Section.ADVANCED),
+    FieldSpec(
+        CONF_OTHERS,
+        "adaptive",
+        _select(OTHERS_POLICIES, "others"),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_ON_UNSUPPORTED_COLOR,
+        "adaptive",
+        _select(UNSUPPORTED_COLOR_POLICIES, "on_unsupported_color"),
+        section=Section.ADVANCED,
+    ),
+)
+
+# Step two of the scene flow: only the field for the chosen format is shown,
+# because a colour carrying two formats is a contradiction we would rather not
+# be able to express in the first place.
+SCENE_COLOR_SPECS: dict[str, FieldSpec] = {
+    CONF_COLOR_TEMP_KELVIN: FieldSpec(
+        CONF_COLOR_TEMP_KELVIN, 3000, _kelvin(), required=True
+    ),
+    CONF_RGB_COLOR: FieldSpec(
+        CONF_RGB_COLOR, [255, 180, 100], selector.ColorRGBSelector(), required=True
+    ),
+    CONF_COLOR_NAME: FieldSpec(
+        CONF_COLOR_NAME,
+        "warmwhite",
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+}
+
+
 ZONE_SPECS = ZONE_SPECS + ZONE_ADAPTIVE_SPECS + ZONE_NIGHT_SPECS
 
 
 SPECS_BY_SUBENTRY: dict[str, tuple[FieldSpec, ...]] = {
     SubentryType.ZONE.value: ZONE_SPECS,
     SubentryType.LIGHT_PROFILE.value: LIGHT_PROFILE_SPECS,
+    SubentryType.SCENE.value: SCENE_SPECS,
 }
 
 

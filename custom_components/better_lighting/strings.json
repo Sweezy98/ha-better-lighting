@@ -157,11 +157,13 @@
                 "night_brightness_pct": "Night brightness",
                 "night_color_temp_k": "Night colour temperature",
                 "night_transition": "Night transition",
-                "night_ignore_presence": "Ignore presence while in night mode"
+                "night_ignore_presence": "Ignore presence while in night mode",
+                "night_scene_id": "Night scene"
               },
               "data_description": {
                 "night_source_entity": "An existing helper or sensor that is on when the house is asleep. This zone's night switch mirrors it.",
-                "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night."
+                "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
+                "night_scene_id": "Used when 'What night mode does' is set to apply a scene."
               }
             }
           }
@@ -210,11 +212,13 @@
                 "night_brightness_pct": "Night brightness",
                 "night_color_temp_k": "Night colour temperature",
                 "night_transition": "Night transition",
-                "night_ignore_presence": "Ignore presence while in night mode"
+                "night_ignore_presence": "Ignore presence while in night mode",
+                "night_scene_id": "Night scene"
               },
               "data_description": {
                 "night_source_entity": "An existing helper or sensor that is on when the house is asleep. This zone's night switch mirrors it.",
-                "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night."
+                "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
+                "night_scene_id": "Used when 'What night mode does' is set to apply a scene."
               }
             }
           }
@@ -307,6 +311,98 @@
       "abort": {
         "reconfigure_successful": "Calibration updated."
       }
+    },
+    "scene": {
+      "title": "Scene",
+      "entry_type": "Scene",
+      "initiate_flow": {
+        "user": "Add scene",
+        "reconfigure": "Reconfigure scene"
+      },
+      "step": {
+        "user": {
+          "title": "Scene",
+          "description": "A scene is a recipe, not a room. Define it once and apply it anywhere. Choose carefully what it takes over: whatever it leaves alone keeps following the sun.",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "override_mode": "This scene sets",
+            "brightness_pct": "Brightness",
+            "color_format": "Colour given as",
+            "transition": "Transition"
+          },
+          "data_description": {
+            "override_mode": "'Brightness' pins the brightness and lets the colour keep tracking the sun. 'Colour' does the opposite. 'Both' fixes the look entirely. 'Neither' only chooses which lights are on.",
+            "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Behaviour",
+              "data": {
+                "on_lights_only": "Only affect lights that are already on",
+                "ignore_presence": "Ignore presence sensors while active",
+                "others": "Lights this scene does not mention",
+                "on_unsupported_color": "If a light cannot show this colour"
+              },
+              "data_description": {
+                "on_lights_only": "Adjust the room without lighting it up. Lights that are off stay off.",
+                "others": "'Adaptive' keeps them following the sun, which is usually what you want.",
+                "on_unsupported_color": "'Adaptive' leaves it on its normal white, which reads honestly as 'that bulb cannot do colour'."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Scene",
+          "description": "A scene is a recipe, not a room. Define it once and apply it anywhere. Choose carefully what it takes over: whatever it leaves alone keeps following the sun.",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "override_mode": "This scene sets",
+            "brightness_pct": "Brightness",
+            "color_format": "Colour given as",
+            "transition": "Transition"
+          },
+          "data_description": {
+            "override_mode": "'Brightness' pins the brightness and lets the colour keep tracking the sun. 'Colour' does the opposite. 'Both' fixes the look entirely. 'Neither' only chooses which lights are on.",
+            "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Behaviour",
+              "data": {
+                "on_lights_only": "Only affect lights that are already on",
+                "ignore_presence": "Ignore presence sensors while active",
+                "others": "Lights this scene does not mention",
+                "on_unsupported_color": "If a light cannot show this colour"
+              },
+              "data_description": {
+                "on_lights_only": "Adjust the room without lighting it up. Lights that are off stay off.",
+                "others": "'Adaptive' keeps them following the sun, which is usually what you want.",
+                "on_unsupported_color": "'Adaptive' leaves it on its normal white, which reads honestly as 'that bulb cannot do colour'."
+              }
+            }
+          }
+        },
+        "color": {
+          "title": "Scene colour",
+          "description": "Pick the colour for this scene.",
+          "data": {
+            "color_temp_kelvin": "Colour temperature",
+            "rgb_color": "Colour",
+            "color_name": "Colour name"
+          },
+          "data_description": {
+            "color_name": "A CSS colour name, such as 'coral' or 'warmwhite'."
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "This value is not valid."
+      },
+      "abort": {
+        "reconfigure_successful": "Scene updated."
+      }
     }
   },
   "selector": {
@@ -330,6 +426,39 @@
         "scene": "Apply a night scene",
         "off": "Do nothing"
       }
+    },
+    "override_mode": {
+      "options": {
+        "both": "Brightness and colour",
+        "brightness": "Brightness only (colour keeps adapting)",
+        "color": "Colour only (brightness keeps adapting)",
+        "neither": "Neither (only which lights are on)"
+      }
+    },
+    "color_format": {
+      "options": {
+        "color_temp_kelvin": "Colour temperature",
+        "rgb_color": "Colour picker",
+        "color_name": "Colour name",
+        "none": "No colour"
+      }
+    },
+    "others": {
+      "options": {
+        "adaptive": "Keep following the sun",
+        "off": "Switch them off",
+        "leave": "Leave them exactly as they are"
+      }
+    },
+    "on_unsupported_color": {
+      "options": {
+        "adaptive": "Leave it on its adaptive white",
+        "nearest_ct": "Use the closest white",
+        "skip": "Do not change its colour"
+      }
+    },
+    "night_scene": {
+      "options": {}
     }
   },
   "entity": {
@@ -341,6 +470,11 @@
       "night": {
         "name": "Night",
         "state_attributes": {}
+      }
+    },
+    "select": {
+      "zone_mode": {
+        "name": "Mode"
       }
     }
   }

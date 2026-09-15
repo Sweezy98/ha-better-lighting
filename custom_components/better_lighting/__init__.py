@@ -19,8 +19,9 @@ from homeassistant.core import HomeAssistant
 
 from .const import PLATFORMS, SubentryType
 from .context import ContextRegistry
-from .models import HubConfig, LightProfileConfig, ZoneConfig
+from .models import HubConfig, LightProfileConfig, SceneConfig, ZoneConfig
 from .profiles import LightProfile
+from .scenes import Scene
 from .zone import ZoneController
 
 if TYPE_CHECKING:
@@ -40,6 +41,9 @@ class BetterLightingRuntime:
     # Per-light calibration, keyed by light entity_id. A light belongs to one
     # zone, so one profile per light is unambiguous.
     profiles: dict[str, LightProfile] = field(default_factory=dict)
+    # Scenes are zone-agnostic recipes, keyed by subentry_id so a rename
+    # cannot break a reference.
+    scenes: dict[str, Scene] = field(default_factory=dict)
     # One controller per zone; the only thing that commands member lights.
     controllers: dict[str, ZoneController] = field(default_factory=dict)
     # Live entity objects, registered as their platforms come up. Keyed by
@@ -88,10 +92,17 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
         if subentry.subentry_type == SubentryType.LIGHT_PROFILE.value
         and (profile := LightProfileConfig.from_subentry(subentry)).light_entity
     }
+    scenes = {
+        scene.subentry_id: scene.scene
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == SubentryType.SCENE.value
+        and (scene := SceneConfig.from_subentry(subentry))
+    }
     return BetterLightingRuntime(
         hub=HubConfig.from_options(dict(entry.options)),
         zones=zones,
         profiles=profiles,
+        scenes=scenes,
         config_fingerprint=_fingerprint(entry),
     )
 
@@ -103,14 +114,20 @@ async def async_setup_entry(
     runtime = build_runtime(entry)
     entry.runtime_data = runtime
     _LOGGER.debug(
-        "Setting up with %d zone(s) and %d light profile(s)",
+        "Setting up with %d zone(s), %d scene(s), %d light profile(s)",
         len(runtime.zones),
+        len(runtime.scenes),
         len(runtime.profiles),
     )
 
     for subentry_id, zone in runtime.zones.items():
         controller = ZoneController(
-            hass, zone, runtime.hub, runtime.contexts, runtime.profiles
+            hass,
+            zone,
+            runtime.hub,
+            runtime.contexts,
+            runtime.profiles,
+            runtime.scenes,
         )
         runtime.controllers[subentry_id] = controller
         await controller.async_setup()

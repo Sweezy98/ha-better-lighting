@@ -33,9 +33,11 @@ from .modes import ModeGroupRuntime
 from .openings import WindowWatcher
 from .presence import ZonePresence
 from .profiles import LightProfile
+from .repairs import async_check_references
 from .scenes import Scene
 from .services import async_register_services
 from .session import DeferredRegistry
+from .store import SessionStore
 from .zone import ZoneController
 
 if TYPE_CHECKING:
@@ -70,6 +72,7 @@ class BetterLightingRuntime:
     modes: dict[str, ModeConfig] = field(default_factory=dict)
     mode_runtimes: dict[str, ModeGroupRuntime] = field(default_factory=dict)
     deferred: DeferredRegistry = field(default_factory=DeferredRegistry)
+    sessions: SessionStore | None = None
     # Live entity objects, registered as their platforms come up. Keyed by
     # zone subentry_id so any subsystem can reach a zone without a global.
     zone_lights: dict[str, ZoneLight] = field(default_factory=dict)
@@ -227,13 +230,18 @@ async def async_setup_entry(
         await switch_runtime.async_setup()
         entry.async_on_unload(switch_runtime.async_shutdown)
 
+    runtime.sessions = SessionStore(hass)
+    await runtime.sessions.async_load()
+
     for subentry_id, mode in runtime.modes.items():
         mode_runtime = ModeGroupRuntime(
-            hass, mode, runtime.controllers, runtime.deferred
+            hass, mode, runtime.controllers, runtime.deferred, runtime.sessions
         )
         runtime.mode_runtimes[subentry_id] = mode_runtime
         await mode_runtime.async_setup()
         entry.async_on_unload(mode_runtime.async_shutdown)
+
+    async_check_references(hass, entry.entry_id, runtime)
 
     async_register_services(hass)
 
@@ -263,6 +271,11 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: BetterLightingConfigEntry
 ) -> bool:
     """Tear down the hub entry."""
+    runtime = entry.runtime_data
+    if runtime is not None and runtime.sessions is not None:
+        # A reload is a restart in miniature. Flushing past the debounce here
+        # is what stops an edit mid-film losing the session.
+        await runtime.sessions.async_flush()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

@@ -21,9 +21,10 @@ override only brightness *or* only colour while the other keeps tracking the sun
 [relative-light-group]: https://github.com/Cheerpipe/relative-light-group
 [scenery]: https://github.com/j9brown/scenery
 
-> **Status: early development.** Milestones 1 to 6 of 8 are complete — all nine original
-> requirements are implemented. Still to come: robustness (M7 — restart and reload
-> behaviour, repair issues, diagnostics) and packaging (M8).
+> **Status: beta.** Milestones 1 to 7 of 8 are complete — all nine original requirements are
+> implemented, and the integration survives restarts and reloads. Packaging (M8) remains.
+> Nothing has yet been exercised against a live Home Assistant instance; the test suite uses
+> real light entities and the real service path, but a dry run is the sensible next step.
 
 ## Concepts
 
@@ -143,6 +144,20 @@ every call arriving at the zone light is external by construction: a wall switch
 dashboard, a voice assistant. That is what lets the integration tell a switch press from its
 own output structurally rather than by guessing, and it means zero-flash turn-on needs no
 patching of Home Assistant internals.
+
+## When things go wrong
+
+- **Diagnostics** (Settings → Devices & Services → Better Lighting → Download diagnostics)
+  dump the configuration *and* the derived state: which axes each room thinks a human has
+  taken over, which per-light calibrations are being clipped, what each mode session is
+  waiting on. Those are what surprising behaviour usually turns on.
+- **Repair issues** appear when configuration comes apart — a scene deleted while a switch
+  still cycles through it, a room deleted from under a mode rule, a light claimed by two
+  rooms. Home Assistant cannot refuse the deletion, so the runtime skips the broken reference
+  rather than crashing, and says so instead of silently shortening your cycle.
+- **Bus events** trace every decision: `better_lighting_press`,
+  `better_lighting_zone_mode_changed`, `better_lighting_mode_changed`,
+  `better_lighting_zone_opted_out`, `better_lighting_deferred_action`.
 
 ## Requirements
 

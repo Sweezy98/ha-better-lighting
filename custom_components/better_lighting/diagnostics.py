@@ -1,0 +1,167 @@
+"""What the integration currently believes, for a bug report.
+
+Deliberately includes the *derived* state as well as the configuration --
+which axes each room thinks a human has taken over, which calibrations are
+being clipped, what each mode session is waiting on -- because those are what
+questions about surprising behaviour actually turn on.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from homeassistant.core import HomeAssistant
+
+from . import BetterLightingConfigEntry
+from .profiles import describe_saturation
+
+
+async def async_get_config_entry_diagnostics(
+    hass: HomeAssistant, entry: BetterLightingConfigEntry
+) -> dict[str, Any]:
+    """Dump the hub's configuration and live state."""
+    runtime = entry.runtime_data
+
+    return {
+        "hub": _as_dict(runtime.hub),
+        "zones": {
+            zone_id: _zone_diagnostics(runtime, zone_id) for zone_id in runtime.zones
+        },
+        "scenes": {
+            scene_id: {
+                "name": scene.name,
+                "override": scene.override.value,
+                "brightness_pct": scene.brightness_pct,
+                "color": dict(scene.color) if scene.color else None,
+                "on_lights_only": scene.on_lights_only,
+                "ignore_presence": scene.ignore_presence,
+                "others": scene.others.value,
+            }
+            for scene_id, scene in runtime.scenes.items()
+        },
+        "controllers": {
+            controller_id: {
+                "name": controller.name,
+                "zone_id": controller.zone_id,
+                "binding": controller.binding_type.value,
+                "binding_entity": controller.binding_entity,
+                "is_default": controller.is_default,
+                "cycle": [str(step) for step in controller.cycle().steps],
+            }
+            for controller_id, controller in runtime.switches.items()
+        },
+        "light_profiles": {
+            entity_id: _as_dict(profile)
+            for entity_id, profile in runtime.profiles.items()
+        },
+        "modes": {
+            mode_id: _mode_diagnostics(runtime, mode_id) for mode_id in runtime.modes
+        },
+        "deferred": [
+            {
+                "zone_id": action.zone_id,
+                "session_id": action.session_id,
+                "mode_state": action.mode_state,
+                "action": action.action.value,
+            }
+            for action in runtime.deferred
+        ],
+        "contexts_tracked": len(runtime.contexts),
+    }
+
+
+def _zone_diagnostics(runtime: Any, zone_id: str) -> dict[str, Any]:
+    zone = runtime.zones[zone_id]
+    controller = runtime.controllers.get(zone_id)
+    data: dict[str, Any] = {
+        "name": zone.name,
+        "lights": list(zone.lights),
+        "adaptive_override": zone.adaptive_override,
+        "night_source": zone.night_source_entity,
+        "night_behavior": zone.night_behavior.value,
+        "presence_entity": zone.presence_entity,
+        "presence_covers": list(zone.presence_covers),
+        "window_entities": list(zone.window_entities),
+        "restore_on_power_cycle": zone.restore_on_power_cycle.value,
+    }
+    if controller is None:
+        return data
+
+    data |= {
+        "mode": controller.mode.value,
+        "effective_mode": controller.effective_mode.value,
+        "active_scene_id": controller.active_scene_id,
+        "adaptive_enabled": controller.adaptive_enabled,
+        "night_active": controller.night_active,
+        "insect_active": controller.insect_active,
+        "insect_dismissed": controller.insect_dismissed,
+        "bias_pct": controller.bias_pct,
+        "session_owner": controller.session_owner,
+        # The two most common sources of "why is this light not adapting?".
+        "manual": {
+            entity_id: str(axes) for entity_id, axes in controller.manual.items()
+        },
+        "saturated": {
+            entity_id: describe_saturation(flags)
+            for entity_id, flags in controller.saturated_lights.items()
+        },
+    }
+    if controller.presence is not None:
+        data["presence"] = {
+            "occupied": controller.presence.occupied,
+            "covers_ok": controller.presence.covers_ok,
+        }
+    if controller.windows is not None:
+        data["window_open"] = controller.windows.is_open
+    return data
+
+
+def _mode_diagnostics(runtime: Any, mode_id: str) -> dict[str, Any]:
+    mode = runtime.modes[mode_id]
+    mode_runtime = runtime.mode_runtimes.get(mode_id)
+    data: dict[str, Any] = {
+        "name": mode.name,
+        "states": list(mode.states),
+        "zones": sorted(mode.zone_ids),
+        "rules": [
+            {
+                "states": sorted(rule.states),
+                "zones": sorted(rule.zones),
+                "action": rule.action.value,
+                "scene_id": rule.scene_id,
+                "respect_presence": rule.respect_presence,
+                "defer_if_occupied": rule.defer_if_occupied,
+            }
+            for rule in mode.rules
+        ],
+    }
+    if mode_runtime is not None:
+        data |= {
+            "state": mode_runtime.state,
+            "session_id": mode_runtime.session_id,
+            "opted_out": sorted(mode_runtime.opted_out),
+            "snapshot_taken_at": (
+                mode_runtime.snapshot.taken_at if mode_runtime.snapshot else None
+            ),
+            "snapshot_previously_on": (
+                {
+                    zone_id: sorted(zone_snapshot.previously_on)
+                    for zone_id, zone_snapshot in mode_runtime.snapshot.zones.items()
+                }
+                if mode_runtime.snapshot
+                else None
+            ),
+        }
+    return data
+
+
+def _as_dict(obj: Any) -> dict[str, Any]:
+    """A dataclass as plain JSON-safe values."""
+    from dataclasses import asdict, is_dataclass
+
+    if not is_dataclass(obj):
+        return {}
+    return {
+        key: (value.value if hasattr(value, "value") else value)
+        for key, value in asdict(obj).items()
+    }

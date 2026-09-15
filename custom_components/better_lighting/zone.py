@@ -14,6 +14,8 @@ an event loop.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import datetime
 import hashlib
 import logging
@@ -55,6 +57,7 @@ from homeassistant.util import dt as dt_util
 
 from .adaptive import AdaptiveConfig, SunEventOrderError, compute_for_transition
 from .const import (
+    DOMAIN,
     NightBehavior,
     PresenceOffAction,
     PresenceOnAction,
@@ -98,7 +101,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-__all__ = ["Trigger", "ZoneController", "ZoneMode"]
+EVENT_ZONE_MODE_CHANGED = f"{DOMAIN}_zone_mode_changed"
+
+__all__ = ["EVENT_ZONE_MODE_CHANGED", "Trigger", "ZoneController", "ZoneMode"]
 
 # Tolerances for "the light is already where we want it". Below these a command
 # would be pure event-bus noise: many devices quantise brightness differently
@@ -182,6 +187,11 @@ class ZoneController:
         # against our intent rather than against its own previous state.
         self._last_commanded: dict[str, dict[str, Any]] = {}
         self._manual_timers: dict[str, CALLBACK_TYPE] = {}
+        # Serialises everything that mutates this room. Presses, presence, a
+        # cinema mode and the interval tick all arrive independently, and two
+        # of them interleaving would publish a state nobody asked for.
+        self._lock = asyncio.Lock()
+        self._lock_owner: asyncio.Task | None = None
         self._saturation: dict[str, Saturation] = {}
         self._sun_error_logged = False
 
@@ -273,6 +283,25 @@ class ZoneController:
         for listener in list(self._listeners):
             listener()
 
+    @contextlib.asynccontextmanager
+    async def _serialised(self):
+        """Hold this zone's lock, re-entrantly.
+
+        Re-entrant because the public entry points call each other -- a press
+        resolves to a mode change which renders -- and a plain lock would
+        deadlock on the second hop.
+        """
+        task = asyncio.current_task()
+        if self._lock_owner is task:
+            yield
+            return
+        async with self._lock:
+            self._lock_owner = task
+            try:
+                yield
+            finally:
+                self._lock_owner = None
+
     # -- inputs ------------------------------------------------------------
 
     def _read_night_source(self, entity_id: str) -> bool:
@@ -315,6 +344,12 @@ class ZoneController:
 
     async def async_set_mode(self, mode: ZoneMode, scene_id: str | None = None) -> None:
         """Change what this zone is doing, and re-render once."""
+        async with self._serialised():
+            await self._async_set_mode(mode, scene_id)
+
+    async def _async_set_mode(
+        self, mode: ZoneMode, scene_id: str | None = None
+    ) -> None:
         if mode is ZoneMode.SCENE and scene_id not in self.scenes:
             _LOGGER.warning(
                 "%s: scene %r is not defined; staying in %s",
@@ -323,6 +358,7 @@ class ZoneController:
                 self.mode,
             )
             return
+        previous_mode = self.mode
         self.mode = mode
         self.active_scene_id = scene_id if mode is ZoneMode.SCENE else None
         if mode is ZoneMode.SCENE and scene_id:
@@ -332,6 +368,17 @@ class ZoneController:
         # had layered on the previous look no longer applies.
         self.bias_pct = 0.0
         self.async_notify()
+        self.hass.bus.async_fire(
+            EVENT_ZONE_MODE_CHANGED,
+            {
+                "zone_id": self.zone.subentry_id,
+                "zone": self.zone.name,
+                "from_mode": previous_mode.value,
+                "to_mode": mode.value,
+                "effective_mode": self.effective_mode.value,
+                "scene_id": self.active_scene_id,
+            },
+        )
 
         if mode is ZoneMode.OFF:
             # Through the light entity, so it captures which members were on
@@ -436,6 +483,12 @@ class ZoneController:
         self, controller: ControllerConfig, kind: str = "press", *, steps: int = 1
     ) -> None:
         """Handle a press from ``controller``. ``steps`` counts a coalesced burst."""
+        async with self._serialised():
+            await self._async_press(controller, kind, steps=steps)
+
+    async def _async_press(
+        self, controller: ControllerConfig, kind: str = "press", *, steps: int = 1
+    ) -> None:
         action = {
             "press": PressAction.CYCLE_NEXT,
             "double_press": controller.double_press_action,
@@ -860,17 +913,18 @@ class ZoneController:
         only_lit: bool = False,
     ) -> bool:
         """Decide and send. Returns whether anything was actually issued."""
-        commands = [
-            command
-            for command in self.commands_for(trigger, entity_ids, only_lit=only_lit)
-            if not self._is_redundant(command)
-        ]
-        if not commands:
-            return False
+        async with self._serialised():
+            commands = [
+                command
+                for command in self.commands_for(trigger, entity_ids, only_lit=only_lit)
+                if not self._is_redundant(command)
+            ]
+            if not commands:
+                return False
 
-        for action, data in batch(commands):
-            await self._async_call(action, data, trigger)
-        return True
+            for action, data in batch(commands):
+                await self._async_call(action, data, trigger)
+            return True
 
     def _is_redundant(self, command: LightCommand) -> bool:
         """True when the light is already doing this, within tolerance.

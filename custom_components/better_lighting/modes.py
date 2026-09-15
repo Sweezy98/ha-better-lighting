@@ -40,6 +40,7 @@ from .session import (
     ZoneSnapshot,
     is_still_wanted,
 )
+from .store import PersistedSession, SessionStore
 
 if TYPE_CHECKING:
     from .models import ModeConfig, ModeRule
@@ -66,11 +67,13 @@ class ModeGroupRuntime:
         config: ModeConfig,
         controllers: dict[str, ZoneController],
         deferred: DeferredRegistry,
+        store: SessionStore | None = None,
     ) -> None:
         self.hass = hass
         self.config = config
         self.controllers = controllers
         self.deferred = deferred
+        self.store = store
 
         self.state: str = IDLE_STATE
         self.session_id: str | None = None
@@ -83,11 +86,61 @@ class ModeGroupRuntime:
     # -- lifecycle ---------------------------------------------------------
 
     async def async_setup(self) -> None:
+        await self._async_restore()
         self._unsubscribers.append(
             async_track_time_interval(
                 self.hass,
                 self._handle_sweep,
                 datetime.timedelta(seconds=SWEEP_INTERVAL),
+            )
+        )
+
+    async def _async_restore(self) -> None:
+        """Pick a session back up after a restart or a reload.
+
+        The rules are re-applied rather than replayed: every command goes
+        through the same redundancy filter as any other render, so a room that
+        is already dark receives nothing. What the re-application actually
+        achieves is re-claiming ownership of each room and re-queueing a
+        deferred turn-off for any room that is still occupied.
+        """
+        if self.store is None:
+            return
+        stored = self.store.get(self.config.subentry_id)
+        if stored is None:
+            return
+        if stored.state not in self.config.states:
+            # The mode has been reconfigured since. Better to drop the session
+            # than to resume one whose states no longer exist.
+            self.store.drop(self.config.subentry_id)
+            return
+
+        self.session_id = stored.session_id
+        self.state = stored.state
+        self.opted_out = set(stored.opted_out)
+        self.snapshot = stored.snapshot
+        _LOGGER.debug(
+            "%s: resumed session %s in %s",
+            self.config.name,
+            self.session_id,
+            self.state,
+        )
+        await self._async_apply_state()
+        self.async_notify()
+
+    def _persist(self) -> None:
+        if self.store is None:
+            return
+        if not self.active:
+            self.store.drop(self.config.subentry_id)
+            return
+        self.store.put(
+            PersistedSession(
+                mode_id=self.config.subentry_id,
+                session_id=self.session_id or "",
+                state=self.state,
+                opted_out=sorted(self.opted_out),
+                snapshot=self.snapshot,
             )
         )
 
@@ -146,6 +199,7 @@ class ModeGroupRuntime:
 
         previous, self.state = self.state, state
         await self._async_apply_state()
+        self._persist()
         self.async_notify()
         self.hass.bus.async_fire(
             EVENT_MODE_CHANGED,
@@ -182,6 +236,7 @@ class ModeGroupRuntime:
                 await self._async_restore_zone(zone_id, controller, snapshot)
 
         self.opted_out = set()
+        self._persist()
         self.async_notify()
         self.hass.bus.async_fire(
             EVENT_MODE_CHANGED,
@@ -329,6 +384,7 @@ class ModeGroupRuntime:
             # The user has already chosen what this room should look like;
             # putting it back at the end would undo that choice.
             self.snapshot.zones[zone_id].restore_on_exit = False
+        self._persist()
         self.async_notify()
         self.hass.bus.async_fire(
             EVENT_ZONE_OPTED_OUT,

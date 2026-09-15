@@ -208,11 +208,9 @@ class ModeStateSelect(SelectEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self.async_on_remove(self.runtime.async_add_listener(self._handle_update))
-        # A restart mid-film should not silently end the session.
-        if (last := await self.async_get_last_state()) is not None and (
-            last.state in self.options and last.state != IDLE_STATE
-        ):
-            await self.runtime.async_set_state(last.state)
+        # No restore from the entity's own state here: the session file is
+        # authoritative and has already been read, and re-applying from the
+        # entity would replay the mode rather than reconcile with it.
 
     @callback
     def _handle_update(self) -> None:

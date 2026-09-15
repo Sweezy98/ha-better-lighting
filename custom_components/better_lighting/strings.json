@@ -1055,5 +1055,19 @@
         }
       }
     }
+  },
+  "issues": {
+    "missing_scene": {
+      "title": "Better Lighting refers to a scene that no longer exists",
+      "description": "{holder} refers to {what} that has been deleted. Home Assistant cannot prevent a scene being removed while something still uses it, so the reference is simply skipped -- a switch with a deleted scene in its list quietly has a shorter cycle. Reconfigure the object above to clear this."
+    },
+    "missing_zone": {
+      "title": "Better Lighting refers to a room that no longer exists",
+      "description": "{holder} refers to {what} that has been deleted, so it no longer does anything. Reconfigure or remove it to clear this."
+    },
+    "shared_light": {
+      "title": "A light belongs to two Better Lighting rooms",
+      "description": "{light} is listed in both {first} and {second}. A light may belong to only one room -- that is what keeps manual changes, scene control and switch presses unambiguous. Remove it from one of them."
+    }
   }
 }

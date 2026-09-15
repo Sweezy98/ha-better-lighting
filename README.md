@@ -54,8 +54,29 @@ patching of Home Assistant internals.
 
 ## Requirements
 
-Home Assistant **2026.1+** (developed and tested against 2026.9.2; lower versions are
-untested). Python 3.14, as required by HA 2026.x.
+Home Assistant **2026.1 or newer**. This floor is verified, not assumed: the full test
+suite is run against each release below.
+
+| Home Assistant | Result |
+|---|---|
+| 2026.9.2 | pass |
+| 2026.6.4 | pass |
+| 2026.3.4 | pass |
+| 2026.2.3 | pass |
+| 2026.1.3 | pass |
+| 2025.12.5 and earlier | not supported — see below |
+
+Below 2026.1 the integration cannot currently be verified, for reasons that are *not* about
+this code: 2025.12 and earlier ship a pytest whose assertion rewriting crashes on current
+Python 3.13 patch releases, and 2025.3 pins a yanked `aiohttp` so it will not install at
+all. Rather than claim compatibility that has not been demonstrated, the floor is set where
+the evidence ends. `scripts/probe_ha_floor.sh` re-runs the matrix:
+
+```bash
+scripts/probe_ha_floor.sh 2026.1.3 2026.5.4 2026.9.2
+```
+
+Python 3.14 is required by HA 2026.3+; 2026.1 and 2026.2 still run on 3.13.
 
 ## Development
 

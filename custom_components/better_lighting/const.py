@@ -63,6 +63,17 @@ class BrightnessMode(StrEnum):
     TANH = "tanh"
 
 
+class NightBehavior(StrEnum):
+    """What night mode does to a zone once its source entity turns on."""
+
+    # Clamp to the configured night brightness and a warm colour temperature.
+    MIN_SETTINGS = "min_settings"
+    # Apply a designated night scene instead. Wired up in milestone 3.
+    SCENE = "scene"
+    # Night mode is configured but does nothing to this zone.
+    OFF = "off"
+
+
 @dataclass(frozen=True, slots=True)
 class FieldSpec:
     """One configurable field: its default, its widget, and its validation.
@@ -268,8 +279,148 @@ ZONE_SPECS: tuple[FieldSpec, ...] = (
 )
 
 
+
+# --- zone adaptive overrides -------------------------------------------------
+
+CONF_ADAPTIVE_OVERRIDE = "adaptive_override_enabled"
+CONF_ADAPTIVE_DEFAULT_ON = "adaptive_default_on"
+
+# --- zone night mode ---------------------------------------------------------
+
+CONF_NIGHT_SOURCE = "night_source_entity"
+CONF_NIGHT_BEHAVIOR = "night_behavior"
+CONF_NIGHT_IGNORE_PRESENCE = "night_ignore_presence"
+CONF_NIGHT_TRANSITION = "night_transition"
+
+ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
+    # When False every value below is ignored and the hub defaults apply, so a
+    # zone only carries its own curve when the user deliberately asked for one.
+    FieldSpec(CONF_ADAPTIVE_OVERRIDE, False, _boolean(), section=Section.ADAPTIVE),
+    FieldSpec(CONF_MIN_BRIGHTNESS_PCT, 1, _pct(), section=Section.ADAPTIVE),
+    FieldSpec(CONF_MAX_BRIGHTNESS_PCT, 100, _pct(), section=Section.ADAPTIVE),
+    FieldSpec(CONF_MIN_COLOR_TEMP_K, 2000, _kelvin(), section=Section.ADAPTIVE),
+    FieldSpec(CONF_MAX_COLOR_TEMP_K, 5500, _kelvin(), section=Section.ADAPTIVE),
+    FieldSpec(
+        CONF_BRIGHTNESS_MODE,
+        BrightnessMode.TANH.value,
+        _select([m.value for m in BrightnessMode], "brightness_mode"),
+        section=Section.ADAPTIVE,
+    ),
+    FieldSpec(
+        CONF_TRANSITION,
+        45,
+        _seconds(0, 300, 0.5),
+        validator=VALID_TRANSITION,
+        section=Section.ADAPTIVE,
+    ),
+    FieldSpec(CONF_INTERVAL, 90, _seconds(10, 3600), section=Section.ADAPTIVE),
+    FieldSpec(CONF_ADAPTIVE_DEFAULT_ON, True, _boolean(), section=Section.ADAPTIVE),
+)
+
+ZONE_NIGHT_SPECS: tuple[FieldSpec, ...] = (
+    # Night mode follows an existing helper rather than a schedule of its own,
+    # so the user keeps one source of truth for "the house is asleep".
+    FieldSpec(
+        CONF_NIGHT_SOURCE,
+        None,
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["binary_sensor", "input_boolean", "schedule", "switch"]
+            )
+        ),
+        section=Section.NIGHT,
+    ),
+    FieldSpec(
+        CONF_NIGHT_BEHAVIOR,
+        NightBehavior.MIN_SETTINGS.value,
+        _select([b.value for b in NightBehavior], "night_behavior"),
+        section=Section.NIGHT,
+    ),
+    FieldSpec(CONF_NIGHT_BRIGHTNESS_PCT, 1, _pct(), section=Section.NIGHT),
+    FieldSpec(CONF_NIGHT_COLOR_TEMP_K, 1800, _kelvin(), section=Section.NIGHT),
+    FieldSpec(
+        CONF_NIGHT_TRANSITION,
+        2,
+        _seconds(0, 300, 0.5),
+        validator=VALID_TRANSITION,
+        section=Section.NIGHT,
+    ),
+    FieldSpec(CONF_NIGHT_IGNORE_PRESENCE, False, _boolean(), section=Section.NIGHT),
+)
+
+
+# --------------------------------------------------------------------------
+# Light profile subentry: per-light calibration (requirement 9).
+# --------------------------------------------------------------------------
+
+CONF_LIGHT_ENTITY = "light_entity"
+CONF_ENABLED = "enabled"
+CONF_BRIGHTNESS_OFFSET_PCT = "brightness_offset_pct"
+CONF_BRIGHTNESS_MULTIPLIER = "brightness_multiplier"
+CONF_COLOR_TEMP_OFFSET_K = "color_temp_offset_k"
+CONF_CLAMP_TO_DEVICE = "clamp_to_device_limits"
+CONF_ADAPT_BRIGHTNESS = "adapt_brightness"
+CONF_ADAPT_COLOR = "adapt_color"
+
+LIGHT_PROFILE_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_LIGHT_ENTITY,
+        None,
+        selector.EntitySelector(selector.EntitySelectorConfig(domain="light")),
+        required=True,
+    ),
+    FieldSpec(CONF_ENABLED, True, _boolean()),
+    # Offsets are the calibration: "this fixture reads dim". Percentage points
+    # and Kelvin, because that is how the rest of the UI asks for them.
+    FieldSpec(
+        CONF_BRIGHTNESS_OFFSET_PCT,
+        0,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-100, max=100, step=1, unit_of_measurement="%",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+    ),
+    FieldSpec(
+        CONF_COLOR_TEMP_OFFSET_K,
+        0,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-3000, max=3000, step=25, unit_of_measurement="K",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+    ),
+    # Limits are the operating range: "never below this, it flickers". Applied
+    # after the offset, so a calibration can never breach them.
+    FieldSpec(CONF_MIN_BRIGHTNESS_PCT, 1, _pct()),
+    FieldSpec(CONF_MAX_BRIGHTNESS_PCT, 100, _pct()),
+    FieldSpec(CONF_MIN_COLOR_TEMP_K, 1000, _kelvin(), section=Section.ADVANCED),
+    FieldSpec(CONF_MAX_COLOR_TEMP_K, 10000, _kelvin(), section=Section.ADVANCED),
+    FieldSpec(
+        CONF_BRIGHTNESS_MULTIPLIER,
+        1.0,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.1, max=3.0, step=0.05, mode=selector.NumberSelectorMode.BOX
+            )
+        ),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(CONF_CLAMP_TO_DEVICE, True, _boolean(), section=Section.ADVANCED),
+    FieldSpec(CONF_ADAPT_BRIGHTNESS, True, _boolean(), section=Section.ADVANCED),
+    FieldSpec(CONF_ADAPT_COLOR, True, _boolean(), section=Section.ADVANCED),
+    FieldSpec(CONF_PREFER_RGB_COLOR, False, _boolean(), section=Section.ADVANCED),
+)
+
+
+ZONE_SPECS = ZONE_SPECS + ZONE_ADAPTIVE_SPECS + ZONE_NIGHT_SPECS
+
+
 SPECS_BY_SUBENTRY: dict[str, tuple[FieldSpec, ...]] = {
     SubentryType.ZONE.value: ZONE_SPECS,
+    SubentryType.LIGHT_PROFILE.value: LIGHT_PROFILE_SPECS,
 }
 
 

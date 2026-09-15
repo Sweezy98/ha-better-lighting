@@ -50,16 +50,19 @@ async def test_each_zone_gets_its_own_device(hass: HomeAssistant) -> None:
     entry = await setup_hub(hass, hub_entry())
 
     subentry_id = next(iter(entry.runtime_data.zones))
-    device = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, subentry_id), entry.entry_id
-    )
-    assert device is not None
-    assert device.name == "Kitchen"
-
     entity = er.async_get(hass).async_get("light.kitchen")
     assert entity is not None
     # Binding to the subentry is what lets HA clean up on deletion.
     assert entity.config_subentry_id == subentry_id
+
+    # Resolve the device through the entity rather than by identifier: the
+    # identifier lookup helpers have changed shape across HA releases, and
+    # this route works on every version the integration supports.
+    assert entity.device_id is not None
+    device = dr.async_get(hass).async_get(entity.device_id)
+    assert device is not None
+    assert device.name == "Kitchen"
+    assert (DOMAIN, subentry_id) in device.identifiers
 
 
 async def test_editing_a_subentry_reloads(hass: HomeAssistant) -> None:

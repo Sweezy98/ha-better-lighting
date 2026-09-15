@@ -70,10 +70,17 @@ async def _setup(hass: HomeAssistant, *scenes) -> None:
 
 
 class TestModeSelect:
-    async def test_lists_off_adaptive_and_every_scene(self, hass: HomeAssistant):
+    async def test_lists_adaptive_and_every_scene(self, hass: HomeAssistant):
+        """No "off": switching a room off is the light entity's job."""
         await _setup(hass, scene_subentry("Cosy"), scene_subentry("Bright"))
         options = hass.states.get(SELECT).attributes["options"]
-        assert options == ["Off", "Adaptive", "Cosy", "Bright"]
+        assert options == ["Adaptive", "Cosy", "Bright"]
+
+    async def test_adaptive_is_the_only_option_without_scenes(
+        self, hass: HomeAssistant
+    ):
+        await _setup(hass)
+        assert hass.states.get(SELECT).attributes["options"] == ["Adaptive"]
 
     async def test_starts_in_adaptive(self, hass: HomeAssistant):
         await _setup(hass, scene_subentry())
@@ -98,24 +105,35 @@ class TestModeSelect:
         assert hass.states.get(SELECT).state == "Adaptive"
         assert hass.states.get("light.one").attributes["color_temp_kelvin"] != 2200
 
-    async def test_off_switches_the_room_off(self, hass: HomeAssistant):
+    async def test_a_dark_room_still_reports_a_readable_option(
+        self, hass: HomeAssistant
+    ):
+        """The select answers "what should this look like", not "is it on"."""
         await _setup(hass, scene_subentry())
-        await _select(hass, "Off")
-        assert hass.states.get("light.one").state == "off"
-        assert hass.states.get("light.two").state == "off"
+        await hass.services.async_call(
+            "light", "turn_off", {"entity_id": ZONE}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        state = hass.states.get(SELECT)
+        assert state.state in state.attributes["options"]
+        assert state.state == "Adaptive"
 
     async def test_reports_the_active_scene_id(self, hass: HomeAssistant):
         await _setup(hass, scene_subentry("Cosy"))
         await _select(hass, "Cosy")
         assert hass.states.get(SELECT).attributes["bl_scene_id"] is not None
 
-    async def test_a_scene_named_off_does_not_shadow_the_real_option(
-        self, hass: HomeAssistant
-    ):
+    async def test_a_scene_named_off_is_now_just_a_scene(self, hass: HomeAssistant):
+        """Nothing to shadow any more, so the name is left alone."""
         await _setup(hass, scene_subentry("Off"))
+        assert hass.states.get(SELECT).attributes["options"] == ["Adaptive", "Off"]
+
+    async def test_a_scene_named_adaptive_is_disambiguated(self, hass: HomeAssistant):
+        await _setup(hass, scene_subentry("Adaptive"))
         options = hass.states.get(SELECT).attributes["options"]
-        assert options[0] == "Off"
-        assert len([o for o in options if o.startswith("Off")]) == 2
+        assert options[0] == "Adaptive"
+        assert options[1].startswith("Adaptive (")
 
 
 class TestOverrideModes:

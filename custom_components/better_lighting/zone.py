@@ -508,6 +508,14 @@ class ZoneController:
                 return None
         return scene_step(self._last_scene_id)
 
+    @property
+    def pending_scene_id(self) -> str | None:
+        """The scene the next press would resume, if this room is off."""
+        step = self._resume_step()
+        if step is not None and step.kind is StepKind.SCENE:
+            return step.scene_id
+        return None
+
     def _any_member_on(self) -> bool:
         return any(
             (state := self.hass.states.get(entity_id)) is not None

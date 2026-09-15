@@ -139,13 +139,38 @@ async def test_relative_dim_preserves_ordering(hass: HomeAssistant) -> None:
     assert dim < bright, "the dimmer light must stay the dimmer light"
 
 
-async def test_colour_change_does_not_light_dark_members(hass: HomeAssistant) -> None:
+async def test_a_colour_reaches_every_member(hass: HomeAssistant) -> None:
+    """Including ones that happen to be off.
+
+    Home Assistant's own light group forwards an explicit turn_on to all its
+    members, and a lamp silently ignoring the colour wheel because it was off
+    is not what anybody means by setting a room's colour.
+    """
     one = MemberLight("One", is_on=True, brightness=100)
     two = MemberLight("Two", is_on=False)
     await _setup(hass, one, two)
 
     await _call(hass, "turn_on", color_temp_kelvin=4200)
 
-    assert hass.states.get("light.one").attributes["color_temp_kelvin"] == 4200
-    # Recolouring a room must not switch on the lights that were off.
+    for entity_id in ("light.one", "light.two"):
+        state = hass.states.get(entity_id)
+        assert state.state == "on"
+        assert state.attributes["color_temp_kelvin"] == 4200
+
+
+async def test_dimming_still_does_not_light_dark_members(
+    hass: HomeAssistant,
+) -> None:
+    """The one case that is genuinely different.
+
+    Dimming is a relative adjustment of what is lit; applying it to a dark
+    lamp would mean switching it on in order to make it dimmer.
+    """
+    one = MemberLight("One", is_on=True, brightness=200)
+    two = MemberLight("Two", is_on=False)
+    await _setup(hass, one, two)
+
+    await _call(hass, "turn_on", brightness=80)
+
+    assert hass.states.get("light.one").attributes["brightness"] < 200
     assert hass.states.get("light.two").state == "off"

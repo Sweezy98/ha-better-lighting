@@ -88,21 +88,35 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
             ):
                 continue
             name = scene.name or scene_id
-            if name in (OPTION_OFF, OPTION_ADAPTIVE) or name in names:
-                # A scene called "Off" would otherwise shadow the real option.
+            if name == OPTION_ADAPTIVE or name in names:
+                # A scene called "Adaptive" would otherwise shadow the real
+                # option, and two scenes offered here cannot share a label.
                 name = f"{name} ({scene_id[:6]})"
             names[name] = scene_id
         return names
 
     @property
     def options(self) -> list[str]:
-        return [OPTION_OFF, OPTION_ADAPTIVE, *self._scene_names]
+        """What this room can be set to look like.
+
+        Deliberately no "off": switching a room off is the light entity's job,
+        and offering it here as well makes two controls for one thing. This
+        select answers "what should the room look like", which stays a
+        meaningful question while the room is dark.
+        """
+        return [OPTION_ADAPTIVE, *self._scene_names]
 
     @property
     def current_option(self) -> str | None:
         mode = self.controller.mode
         if mode is ZoneMode.OFF:
-            return OPTION_OFF
+            # Report what the room would come back as, so the select stays
+            # readable while it is dark rather than reading as unknown.
+            pending = self.controller.pending_scene_id
+            for name, scene_id in self._scene_names.items():
+                if scene_id == pending:
+                    return name
+            return OPTION_ADAPTIVE
         if mode is ZoneMode.SCENE:
             for name, scene_id in self._scene_names.items():
                 if scene_id == self.controller.active_scene_id:
@@ -149,6 +163,8 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
 
     async def _async_apply(self, option: str, *, render: bool) -> None:
         if option == OPTION_OFF:
+            # No longer offered, but a state restored from an older version
+            # can still name it.
             target, scene_id = ZoneMode.OFF, None
         elif option == OPTION_ADAPTIVE:
             target, scene_id = ZoneMode.ADAPTIVE, None

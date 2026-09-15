@@ -28,19 +28,25 @@ from .const import (
     CONF_ADAPT_COLOR,
     CONF_ADAPTIVE_DEFAULT_ON,
     CONF_ADAPTIVE_OVERRIDE,
+    CONF_ADAPTIVE_POSITION,
     CONF_ALL,
     CONF_AREA_ID,
     CONF_AUTORESET_MANUAL_S,
+    CONF_BINDING_ENTITY,
+    CONF_BINDING_TYPE,
     CONF_BRIGHTNESS_MODE,
     CONF_BRIGHTNESS_MULTIPLIER,
     CONF_BRIGHTNESS_OFFSET_PCT,
     CONF_BRIGHTNESS_PCT,
     CONF_BRIGHTNESS_STRATEGY,
     CONF_CLAMP_TO_DEVICE,
+    CONF_COALESCE_WINDOW_MS,
     CONF_COLOR_FORMAT,
     CONF_COLOR_NAME,
     CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
+    CONF_DOUBLE_PRESS_ACTION,
+    CONF_DOUBLE_PRESS_STATES,
     CONF_ENABLED,
     CONF_EXPAND_LIGHT_GROUPS,
     CONF_HIDE_MEMBERS,
@@ -49,12 +55,16 @@ from .const import (
     CONF_INITIAL_TRANSITION,
     CONF_INTERCEPT_MEMBER_CALLS,
     CONF_INTERVAL,
+    CONF_IS_DEFAULT,
     CONF_LIGHT_ENTITY,
     CONF_LIGHTS,
+    CONF_LONG_PRESS_ACTION,
+    CONF_LONG_PRESS_STATES,
     CONF_MAX_BRIGHTNESS_PCT,
     CONF_MAX_COLOR_TEMP_K,
     CONF_MIN_BRIGHTNESS_PCT,
     CONF_MIN_COLOR_TEMP_K,
+    CONF_MIN_PRESS_INTERVAL_MS,
     CONF_NAME,
     CONF_NIGHT_BEHAVIOR,
     CONF_NIGHT_BRIGHTNESS_PCT,
@@ -63,13 +73,20 @@ from .const import (
     CONF_NIGHT_SCENE,
     CONF_NIGHT_SOURCE,
     CONF_NIGHT_TRANSITION,
+    CONF_OFF_AT_END,
+    CONF_ON_FOREIGN,
     CONF_ON_LIGHTS_ONLY,
     CONF_ON_UNSUPPORTED_COLOR,
     CONF_OTHERS,
     CONF_OVERRIDE_MODE,
     CONF_PREFER_RGB_COLOR,
+    CONF_PRESS_ATTRIBUTE,
+    CONF_PRESS_STATES,
     CONF_REMEMBER_ON_STATE,
+    CONF_RESTORE_ON_POWER_CYCLE,
+    CONF_RESUME_MAX_AGE_MIN,
     CONF_RGB_COLOR,
+    CONF_SCENE_ORDER,
     CONF_SCENE_TRANSITION,
     CONF_SEND_SPLIT_DELAY_MS,
     CONF_SEPARATE_TURN_ON,
@@ -79,14 +96,21 @@ from .const import (
     CONF_TIME_DARK,
     CONF_TIME_LIGHT,
     CONF_TRANSITION,
+    CONF_WRAP_AROUND,
+    CONF_ZONE_ID,
+    CONTROLLER_SPECS,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
     SCENE_SPECS,
     ZONE_SPECS,
+    BindingType,
     BrightnessMode,
     NightBehavior,
+    PressAction,
+    RestoreOnPowerCycle,
     defaults_for,
 )
+from .cycle import AdaptivePosition, CycleConfig, ForeignPolicy, build_cycle
 from .profiles import LightProfile
 from .scenes import (
     OthersPolicy,
@@ -102,6 +126,7 @@ _HUB_DEFAULTS = defaults_for(HUB_SPECS)
 _ZONE_DEFAULTS = defaults_for(ZONE_SPECS)
 _PROFILE_DEFAULTS = defaults_for(LIGHT_PROFILE_SPECS)
 _SCENE_DEFAULTS = defaults_for(SCENE_SPECS)
+_CONTROLLER_DEFAULTS = defaults_for(CONTROLLER_SPECS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +222,10 @@ class ZoneConfig:
     night_transition: float
     night_ignore_presence: bool
 
+    # What the first press after the room was switched off should do.
+    restore_on_power_cycle: RestoreOnPowerCycle
+    resume_max_age_minutes: int
+
     @property
     def slug(self) -> str:
         """Human-facing id for service calls and logs. Never a stored reference."""
@@ -232,6 +261,10 @@ class ZoneConfig:
             night_color_temp_k=int(raw[CONF_NIGHT_COLOR_TEMP_K]),
             night_transition=float(raw[CONF_NIGHT_TRANSITION]),
             night_ignore_presence=bool(raw[CONF_NIGHT_IGNORE_PRESENCE]),
+            restore_on_power_cycle=RestoreOnPowerCycle(
+                raw[CONF_RESTORE_ON_POWER_CYCLE]
+            ),
+            resume_max_age_minutes=int(raw[CONF_RESUME_MAX_AGE_MIN]),
         )
 
     # -- layer resolution --------------------------------------------------
@@ -372,3 +405,109 @@ class SceneConfig:
                 ),
             ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ControllerConfig:
+    """One light switch, with its own ordered list of scenes."""
+
+    subentry_id: str
+    name: str
+    zone_id: str
+    binding_type: BindingType
+    binding_entity: str | None
+    is_default: bool
+    scene_order: tuple[str, ...]
+    adaptive_position: AdaptivePosition
+    off_at_end: bool
+    wrap_around: bool
+    on_foreign: ForeignPolicy
+    press_states: frozenset[str]
+    double_press_states: frozenset[str]
+    long_press_states: frozenset[str]
+    press_attribute: str
+    double_press_action: PressAction
+    long_press_action: PressAction
+    min_press_interval_ms: int
+    coalesce_window_ms: int
+
+    @property
+    def slug(self) -> str:
+        return slugify(self.name)
+
+    def cycle(self, known_scene_ids: frozenset[str] | None = None) -> CycleConfig:
+        """This controller's expanded cycle.
+
+        Scenes that have since been deleted are dropped rather than left as
+        dead positions, so a controller whose scene was removed simply has a
+        shorter cycle instead of a press that does nothing.
+        """
+        scene_ids = tuple(
+            scene_id
+            for scene_id in self.scene_order
+            if known_scene_ids is None or scene_id in known_scene_ids
+        )
+        return build_cycle(
+            scene_ids,
+            adaptive_position=self.adaptive_position,
+            off_at_end=self.off_at_end,
+            on_foreign=self.on_foreign,
+            wrap=self.wrap_around,
+        )
+
+    @classmethod
+    def from_subentry(cls, subentry: ConfigSubentry) -> Self:
+        raw = {**_CONTROLLER_DEFAULTS, **dict(subentry.data)}
+        return cls(
+            subentry_id=subentry.subentry_id,
+            name=raw.get(CONF_NAME) or subentry.title,
+            zone_id=raw.get(CONF_ZONE_ID) or "",
+            binding_type=BindingType(raw[CONF_BINDING_TYPE]),
+            binding_entity=raw.get(CONF_BINDING_ENTITY) or None,
+            is_default=bool(raw[CONF_IS_DEFAULT]),
+            scene_order=tuple(raw.get(CONF_SCENE_ORDER) or ()),
+            adaptive_position=AdaptivePosition(raw[CONF_ADAPTIVE_POSITION]),
+            off_at_end=bool(raw[CONF_OFF_AT_END]),
+            wrap_around=bool(raw[CONF_WRAP_AROUND]),
+            on_foreign=ForeignPolicy(raw[CONF_ON_FOREIGN]),
+            press_states=frozenset(raw[CONF_PRESS_STATES]),
+            double_press_states=frozenset(raw[CONF_DOUBLE_PRESS_STATES]),
+            long_press_states=frozenset(raw[CONF_LONG_PRESS_STATES]),
+            press_attribute=raw[CONF_PRESS_ATTRIBUTE],
+            double_press_action=PressAction(raw[CONF_DOUBLE_PRESS_ACTION]),
+            long_press_action=PressAction(raw[CONF_LONG_PRESS_ACTION]),
+            min_press_interval_ms=int(raw[CONF_MIN_PRESS_INTERVAL_MS]),
+            coalesce_window_ms=int(raw[CONF_COALESCE_WINDOW_MS]),
+        )
+
+
+def synthetic_controller(
+    zone: ZoneConfig, scene_ids: tuple[str, ...]
+) -> ControllerConfig:
+    """The controller a zone gets when the user has not configured one.
+
+    Its list is adaptive followed by every scene, so a plain wall switch wired
+    straight to the zone's light entity cycles the room with no configuration
+    at all. Adding a real controller replaces it and takes over the ordering.
+    """
+    return ControllerConfig(
+        subentry_id=f"{zone.subentry_id}:default",
+        name=f"{zone.name} (default)",
+        zone_id=zone.subentry_id,
+        binding_type=BindingType.ZONE_LIGHT,
+        binding_entity=None,
+        is_default=True,
+        scene_order=scene_ids,
+        adaptive_position=AdaptivePosition.FIRST,
+        off_at_end=False,
+        wrap_around=True,
+        on_foreign=ForeignPolicy.RESTART,
+        press_states=frozenset(),
+        double_press_states=frozenset(),
+        long_press_states=frozenset(),
+        press_attribute="",
+        double_press_action=PressAction.CYCLE_PREVIOUS,
+        long_press_action=PressAction.RESET_ADAPTIVE,
+        min_press_interval_ms=0,
+        coalesce_window_ms=350,
+    )

@@ -165,6 +165,16 @@
                 "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
                 "night_scene_id": "Used when 'What night mode does' is set to apply a scene."
               }
+            },
+            "power": {
+              "name": "Switching back on",
+              "data": {
+                "restore_on_power_cycle": "After the room is switched off",
+                "resume_max_age_minutes": "Forget the last scene after"
+              },
+              "data_description": {
+                "resume_max_age_minutes": "So a room left off overnight starts the next morning in adaptive rather than in last night's dinner scene."
+              }
             }
           }
         },
@@ -219,6 +229,16 @@
                 "night_source_entity": "An existing helper or sensor that is on when the house is asleep. This zone's night switch mirrors it.",
                 "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
                 "night_scene_id": "Used when 'What night mode does' is set to apply a scene."
+              }
+            },
+            "power": {
+              "name": "Switching back on",
+              "data": {
+                "restore_on_power_cycle": "After the room is switched off",
+                "resume_max_age_minutes": "Forget the last scene after"
+              },
+              "data_description": {
+                "resume_max_age_minutes": "So a room left off overnight starts the next morning in adaptive rather than in last night's dinner scene."
               }
             }
           }
@@ -403,6 +423,137 @@
       "abort": {
         "reconfigure_successful": "Scene updated."
       }
+    },
+    "controller": {
+      "title": "Light switch",
+      "entry_type": "Light switch",
+      "initiate_flow": {
+        "user": "Add light switch",
+        "reconfigure": "Reconfigure light switch"
+      },
+      "step": {
+        "user": {
+          "title": "Light switch",
+          "description": "A switch, and the order it cycles through. Two switches in one room can carry different orders, so the one by the oven can reach Cooking first while the one by the door does something else.",
+          "data": {
+            "name": "Name",
+            "zone_id": "Room",
+            "binding_type": "How this switch is heard",
+            "binding_entity": "Switch entity",
+            "is_default": "Handle plain on/off of this room's light"
+          },
+          "data_description": {
+            "binding_type": "'Watch an entity' is the only option that can tell which switch was pressed, which is what lets two switches in one room cycle differently.",
+            "binding_entity": "The entity your switch publishes to. Button devices usually appear as an event entity; others use a sensor or binary sensor.",
+            "is_default": "Plain light.turn_on on the room's light is attributed to this switch. Only one switch per room can do this, because Home Assistant cannot say which switch sent it."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "data": {
+                "adaptive_position": "Where adaptive sits in the cycle",
+                "off_at_end": "End the cycle by switching off",
+                "wrap_around": "Wrap back to the start",
+                "on_foreign_state": "If the room is in something not on this list",
+                "double_press_action": "Double press",
+                "long_press_action": "Long press",
+                "press_states": "Values that count as a press",
+                "double_press_states": "Values that count as a double press",
+                "long_press_states": "Values that count as a long press",
+                "press_attribute": "Attribute carrying the press",
+                "min_press_interval_ms": "Ignore repeats faster than",
+                "coalesce_window_ms": "Collapse taps within"
+              },
+              "data_description": {
+                "on_foreign_state": "'Restart' begins this switch's own list from the top, which lands on adaptive and is usually what you want.",
+                "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
+                "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
+                "coalesce_window_ms": "Three quick taps move three places in one go, rather than flashing through the two in between."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Light switch",
+          "description": "A switch, and the order it cycles through. Two switches in one room can carry different orders, so the one by the oven can reach Cooking first while the one by the door does something else.",
+          "data": {
+            "name": "Name",
+            "zone_id": "Room",
+            "binding_type": "How this switch is heard",
+            "binding_entity": "Switch entity",
+            "is_default": "Handle plain on/off of this room's light"
+          },
+          "data_description": {
+            "binding_type": "'Watch an entity' is the only option that can tell which switch was pressed, which is what lets two switches in one room cycle differently.",
+            "binding_entity": "The entity your switch publishes to. Button devices usually appear as an event entity; others use a sensor or binary sensor.",
+            "is_default": "Plain light.turn_on on the room's light is attributed to this switch. Only one switch per room can do this, because Home Assistant cannot say which switch sent it."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "data": {
+                "adaptive_position": "Where adaptive sits in the cycle",
+                "off_at_end": "End the cycle by switching off",
+                "wrap_around": "Wrap back to the start",
+                "on_foreign_state": "If the room is in something not on this list",
+                "double_press_action": "Double press",
+                "long_press_action": "Long press",
+                "press_states": "Values that count as a press",
+                "double_press_states": "Values that count as a double press",
+                "long_press_states": "Values that count as a long press",
+                "press_attribute": "Attribute carrying the press",
+                "min_press_interval_ms": "Ignore repeats faster than",
+                "coalesce_window_ms": "Collapse taps within"
+              },
+              "data_description": {
+                "on_foreign_state": "'Restart' begins this switch's own list from the top, which lands on adaptive and is usually what you want.",
+                "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
+                "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
+                "coalesce_window_ms": "Three quick taps move three places in one go, rather than flashing through the two in between."
+              }
+            }
+          }
+        },
+        "order": {
+          "title": "Cycle order",
+          "description": "Current order:\n\n{order}",
+          "menu_options": {
+            "add_step": "Add a scene",
+            "move_step": "Move a scene",
+            "remove_step": "Remove a scene",
+            "finish": "Done"
+          }
+        },
+        "add_step": {
+          "title": "Add a scene",
+          "description": "Current order:\n\n{order}",
+          "data": {
+            "scene": "Scene"
+          }
+        },
+        "remove_step": {
+          "title": "Remove a scene",
+          "description": "Current order:\n\n{order}",
+          "data": {
+            "scene": "Scene"
+          }
+        },
+        "move_step": {
+          "title": "Move a scene",
+          "description": "Current order:\n\n{order}",
+          "data": {
+            "scene": "Scene",
+            "position": "New position"
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "This value is not valid.",
+        "binding_entity_required": "Pick the entity your switch publishes to."
+      },
+      "abort": {
+        "reconfigure_successful": "Light switch updated."
+      }
     }
   },
   "selector": {
@@ -459,6 +610,45 @@
     },
     "night_scene": {
       "options": {}
+    },
+    "binding_type": {
+      "options": {
+        "entity_state": "Watch an entity",
+        "service_only": "Only the better_lighting.press service",
+        "zone_light": "Plain on/off of the room's light"
+      }
+    },
+    "press_action": {
+      "options": {
+        "none": "Nothing",
+        "cycle_next": "Next in the cycle",
+        "cycle_previous": "Previous in the cycle",
+        "reset_adaptive": "Back to adaptive",
+        "zone_off": "Switch the room off",
+        "toggle_night": "Toggle night mode"
+      }
+    },
+    "adaptive_position": {
+      "options": {
+        "first": "First",
+        "last": "Last",
+        "none": "Not in the cycle"
+      }
+    },
+    "on_foreign_state": {
+      "options": {
+        "restart": "Start this switch's list from the top",
+        "remember_position": "Continue where this switch left off"
+      }
+    },
+    "restore_on_power_cycle": {
+      "options": {
+        "adaptive": "Return to adaptive",
+        "last_scene": "Resume the last scene"
+      }
+    },
+    "zone": {
+      "options": {}
     }
   },
   "entity": {
@@ -475,6 +665,101 @@
     "select": {
       "zone_mode": {
         "name": "Mode"
+      }
+    },
+    "button": {
+      "cycle_next": {
+        "name": "Cycle"
+      },
+      "cycle_previous": {
+        "name": "Cycle back"
+      },
+      "reset_adaptive": {
+        "name": "Back to adaptive"
+      },
+      "clear_manual": {
+        "name": "Clear manual override"
+      }
+    },
+    "event": {
+      "controller_press": {
+        "name": "Press"
+      }
+    }
+  },
+  "services": {
+    "press": {
+      "name": "Press",
+      "description": "Act as though a light switch in this room was pressed.",
+      "fields": {
+        "zone": {
+          "name": "Room",
+          "description": "Room name or id."
+        },
+        "controller": {
+          "name": "Switch",
+          "description": "Which switch's order to use. Defaults to the room's."
+        },
+        "kind": {
+          "name": "Kind",
+          "description": "press, double_press or long_press."
+        }
+      }
+    },
+    "cycle": {
+      "name": "Cycle",
+      "description": "Move this room along its cycle.",
+      "fields": {
+        "zone": {
+          "name": "Room",
+          "description": "Room name or id."
+        },
+        "controller": {
+          "name": "Switch",
+          "description": "Whose order to follow."
+        },
+        "direction": {
+          "name": "Direction",
+          "description": "next or previous."
+        }
+      }
+    },
+    "set_adaptive": {
+      "name": "Back to adaptive",
+      "description": "Return a room to adaptive lighting, clearing any scene or manual override.",
+      "fields": {
+        "zone": {
+          "name": "Room",
+          "description": "Room name or id."
+        }
+      }
+    },
+    "activate_scene": {
+      "name": "Activate scene",
+      "description": "Apply a scene to a room.",
+      "fields": {
+        "zone": {
+          "name": "Room",
+          "description": "Room name or id."
+        },
+        "scene": {
+          "name": "Scene",
+          "description": "Scene name or id."
+        }
+      }
+    },
+    "clear_manual_override": {
+      "name": "Clear manual override",
+      "description": "Hand lights back to the adaptive engine.",
+      "fields": {
+        "zone": {
+          "name": "Room",
+          "description": "Room name or id."
+        },
+        "lights": {
+          "name": "Lights",
+          "description": "Limit to these lights. Defaults to all in the room."
+        }
       }
     }
   }

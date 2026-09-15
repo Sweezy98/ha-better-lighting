@@ -60,7 +60,8 @@ from .brightness import (
 from .const import DOMAIN
 from .context import ContextRegistry
 from .group_entity import GroupEntity
-from .models import HubConfig, ZoneConfig
+from .models import ControllerConfig, HubConfig, ZoneConfig
+from .profiles import Axis
 from .zone import Trigger, ZoneController
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,12 +96,15 @@ async def async_setup_entry(
     """Create one light entity per zone subentry."""
     runtime = entry.runtime_data
     for subentry_id, zone in runtime.zones.items():
+        controller = runtime.controllers[subentry_id]
         entity = ZoneLight(
             zone,
             runtime.hub,
-            runtime.controllers[subentry_id],
+            controller,
             runtime.contexts,
+            runtime.default_switch.get(subentry_id),
         )
+        controller.attach_light(entity)
         runtime.zone_lights[subentry_id] = entity
         # Binding to the subentry gives the zone its own device, and lets HA
         # clean both up automatically when the subentry is deleted.
@@ -186,11 +190,16 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         hub: HubConfig,
         controller: ZoneController,
         contexts: ContextRegistry,
+        default_switch: ControllerConfig | None = None,
     ) -> None:
         self.zone = zone
         self.hub = hub
         self.controller = controller
         self.contexts = contexts
+        # Which switch a bare turn-on is attributed to. Home Assistant only
+        # sees a service call here, so it cannot say which physical switch was
+        # pressed -- that is what a bound controller is for.
+        self.default_switch = default_switch
         self._entity_ids = list(zone.lights)
 
         self._attr_unique_id = f"{zone.subentry_id}_light"
@@ -409,7 +418,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
             context=context,
         )
 
-    def _restore_targets(self) -> list[str]:
+    def restore_targets(self) -> list[str]:
         """Which members a bare turn-on should light."""
         if not self.zone.remember_on_state or self._remembered is None:
             return list(self._entity_ids)
@@ -422,8 +431,18 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Handle an external turn-on.
 
-        M1 handles the three shapes directly. M4 routes the bare case through
-        the zone state machine so it becomes a controller press.
+        By the integration's central invariant the render engine never calls
+        this entity -- it commands members directly -- so anything arriving
+        here came from outside: a wall switch, a dashboard, a voice assistant,
+        an automation. That is what lets a press be recognised structurally
+        rather than guessed at.
+
+        Three shapes, three meanings:
+
+        * bare -- a press. Cycle this zone.
+        * brightness on an already-lit zone -- a relative dim.
+        * a colour or an effect -- the caller has said exactly what they want,
+          so that is a manual override of those axes.
         """
         if self.is_our_context(self._context):
             _LOGGER.warning(
@@ -443,37 +462,46 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         effect = {ATTR_EFFECT: kwargs[ATTR_EFFECT]} if ATTR_EFFECT in kwargs else {}
         visual = {**colour, **effect}
 
-        if ATTR_BRIGHTNESS in kwargs and self.is_on:
-            await self._async_relative_dim(kwargs[ATTR_BRIGHTNESS], base | visual)
+        if ATTR_BRIGHTNESS in kwargs and self.is_on and not visual:
+            await self._async_relative_dim(kwargs[ATTR_BRIGHTNESS], base)
             return
 
-        if not self.is_on:
-            # A bare turn-on restores the remembered members; an explicit
-            # brightness or colour applies to all of them.
-            targets = self._restore_targets()
-            data = base | visual
-            if ATTR_BRIGHTNESS in kwargs:
-                data[ATTR_BRIGHTNESS] = kwargs[ATTR_BRIGHTNESS]
-            # Nothing was asked for, so light them at the value the curve says
-            # they should already be. Doing this in one command is what avoids
-            # the flash-then-correct of a two-step turn-on -- and it needs no
-            # patching of Home Assistant internals, because this method runs
-            # before any member is touched.
-            if (
-                not data
-                and self.controller.adaptive_enabled
-                and await self._async_turn_on_adaptive(targets)
-            ):
-                return
-            await self._async_call_members(SERVICE_TURN_ON, data, targets)
+        if not visual and ATTR_BRIGHTNESS not in kwargs:
+            await self._async_handle_press()
             return
 
-        # Already on: a visual change applies only to the members that are lit,
-        # so a colour tweak does not switch the rest of the room on.
-        on_ids = [s.entity_id for s in self._on(self._valid(self._member_states()))]
-        await self._async_call_members(
-            SERVICE_TURN_ON, base | visual, on_ids or list(self._entity_ids)
+        # An explicit look. Apply it, and note that these axes now belong to
+        # whoever asked, so the next tick does not quietly undo them.
+        data = base | visual
+        if ATTR_BRIGHTNESS in kwargs:
+            data[ATTR_BRIGHTNESS] = kwargs[ATTR_BRIGHTNESS]
+
+        targets = (
+            [s.entity_id for s in self._on(self._valid(self._member_states()))]
+            if self.is_on
+            else self.restore_targets()
         )
+        targets = targets or list(self._entity_ids)
+
+        axes = Axis.NONE
+        if ATTR_BRIGHTNESS in kwargs:
+            axes |= Axis.BRIGHTNESS
+        if colour or effect:
+            axes |= Axis.COLOR
+        for entity_id in targets:
+            self.controller.note_manual(entity_id, axes)
+
+        await self._async_call_members(SERVICE_TURN_ON, data, targets)
+
+    async def _async_handle_press(self) -> None:
+        """A bare turn-on is a press on this zone's default controller."""
+        if self.default_switch is None:
+            # No controller at all: fall back to simply lighting the room.
+            targets = self.restore_targets()
+            if not await self._async_turn_on_adaptive(targets):
+                await self._async_call_members(SERVICE_TURN_ON, {}, targets)
+            return
+        await self.controller.async_press(self.default_switch)
 
     async def _async_turn_on_adaptive(self, targets: list[str]) -> bool:
         """Light ``targets`` at their adaptive values, in a single command each.

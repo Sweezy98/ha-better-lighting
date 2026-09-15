@@ -6,29 +6,22 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.better_lighting.const import DOMAIN, SubentryType
-from tests.conftest import MemberLight, hub_entry, setup_hub, setup_members
+from custom_components.better_lighting.const import (
+    DOMAIN,
+    HUB_SPECS,
+    ZONE_SPECS,
+    SubentryType,
+)
+from tests.conftest import (
+    MemberLight,
+    form_input,
+    hub_entry,
+    setup_hub,
+    setup_members,
+)
 
-HUB_INPUT = {
-    "interval": 90,
-    "transition": 45,
-    "min_brightness_pct": 1,
-    "max_brightness_pct": 100,
-    "min_color_temp_k": 2000,
-    "max_color_temp_k": 5500,
-    "brightness_mode": "tanh",
-    "advanced": {},
-}
-
-# The frontend always submits every section, so the tests do too.
-ZONE_INPUT = {
-    "name": "Living Room",
-    "lights": ["light.three"],
-    "icon": "mdi:lightbulb-group",
-    "group": {},
-    "adaptive": {},
-    "night": {},
-}
+HUB_INPUT = form_input(HUB_SPECS)
+ZONE_INPUT = form_input(ZONE_SPECS, name="Living Room", lights=["light.three"])
 
 
 async def test_creates_the_hub(hass: HomeAssistant) -> None:

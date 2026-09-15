@@ -27,7 +27,7 @@ NONE_STR = "None"
 # Sentinel for a zone-level value that should fall back to the hub default.
 INHERIT = "__inherit__"
 
-PLATFORMS: list[str] = ["light", "select", "switch"]
+PLATFORMS: list[str] = ["button", "event", "light", "select", "switch"]
 
 
 class SubentryType(StrEnum):
@@ -61,6 +61,38 @@ class BrightnessMode(StrEnum):
     # Smooth S-curve anchored on the nearest sunrise/sunset. Starts fading
     # before sunset, which is what most people actually want, so it is default.
     TANH = "tanh"
+
+
+class BindingType(StrEnum):
+    """How a controller hears about a press."""
+
+    # We watch a real entity's state ourselves: an event entity from a Zigbee
+    # button, a binary_sensor, a text sensor, a switch, an input_button.
+    ENTITY_STATE = "entity_state"
+    # Only the better_lighting.press service drives it.
+    SERVICE_ONLY = "service_only"
+    # A bare light.turn_on on the zone's own light entity. This is the one that
+    # works with a plain wall switch and no configuration, but it cannot tell
+    # *which* switch pressed it -- so only one controller per zone may use it.
+    ZONE_LIGHT = "zone_light"
+
+
+class PressAction(StrEnum):
+    """What a press of a given kind does."""
+
+    NONE = "none"
+    CYCLE_NEXT = "cycle_next"
+    CYCLE_PREVIOUS = "cycle_previous"
+    RESET_ADAPTIVE = "reset_adaptive"
+    ZONE_OFF = "zone_off"
+    TOGGLE_NIGHT = "toggle_night"
+
+
+class RestoreOnPowerCycle(StrEnum):
+    """What the first press after the room was switched off should do."""
+
+    ADAPTIVE = "adaptive"
+    LAST_SCENE = "last_scene"
 
 
 class NightBehavior(StrEnum):
@@ -138,16 +170,25 @@ def _boolean() -> Any:
     return selector.BooleanSelector()
 
 
-def _select(options: list[str], key: str, *, multiple: bool = False) -> Any:
-    return selector.SelectSelector(
-        selector.SelectSelectorConfig(
-            options=options,
-            translation_key=key,
-            mode=selector.SelectSelectorMode.DROPDOWN,
-            multiple=multiple,
-            sort=False,
-        )
-    )
+def _select(
+    options: list[str], key: str, *, multiple: bool = False, custom: bool = False
+) -> Any:
+    config: dict[str, Any] = {
+        "options": options,
+        "multiple": multiple,
+        "sort": False,
+    }
+    if custom:
+        # Button devices publish their own vocabularies; the defaults cover the
+        # common ones but the user must be able to add theirs. A free-text
+        # select carries no translation key, because its values are the
+        # device's words rather than ours.
+        config["custom_value"] = True
+        config["mode"] = selector.SelectSelectorMode.LIST
+    else:
+        config["translation_key"] = key
+        config["mode"] = selector.SelectSelectorMode.DROPDOWN
+    return selector.SelectSelector(selector.SelectSelectorConfig(**config))
 
 
 # --------------------------------------------------------------------------
@@ -294,6 +335,32 @@ CONF_NIGHT_BEHAVIOR = "night_behavior"
 CONF_NIGHT_SCENE = "night_scene_id"
 CONF_NIGHT_IGNORE_PRESENCE = "night_ignore_presence"
 CONF_NIGHT_TRANSITION = "night_transition"
+
+CONF_RESTORE_ON_POWER_CYCLE = "restore_on_power_cycle"
+CONF_RESUME_MAX_AGE_MIN = "resume_max_age_minutes"
+
+ZONE_POWER_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_RESTORE_ON_POWER_CYCLE,
+        RestoreOnPowerCycle.ADAPTIVE.value,
+        _select([r.value for r in RestoreOnPowerCycle], "restore_on_power_cycle"),
+        section=Section.POWER,
+    ),
+    FieldSpec(
+        CONF_RESUME_MAX_AGE_MIN,
+        480,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=10080,
+                step=10,
+                unit_of_measurement="min",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.POWER,
+    ),
+)
 
 ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
     # When False every value below is ignored and the hub defaults apply, so a
@@ -523,13 +590,159 @@ SCENE_COLOR_SPECS: dict[str, FieldSpec] = {
 }
 
 
-ZONE_SPECS = ZONE_SPECS + ZONE_ADAPTIVE_SPECS + ZONE_NIGHT_SPECS
+# --------------------------------------------------------------------------
+# Controller subentry: one light switch, with its own ordered list.
+# --------------------------------------------------------------------------
+
+CONF_ZONE_ID = "zone_id"
+CONF_BINDING_TYPE = "binding_type"
+CONF_BINDING_ENTITY = "binding_entity"
+CONF_PRESS_STATES = "press_states"
+CONF_DOUBLE_PRESS_STATES = "double_press_states"
+CONF_LONG_PRESS_STATES = "long_press_states"
+CONF_PRESS_ATTRIBUTE = "press_attribute"
+CONF_IS_DEFAULT = "is_default"
+CONF_ADAPTIVE_POSITION = "adaptive_position"
+CONF_OFF_AT_END = "off_at_end"
+CONF_WRAP_AROUND = "wrap_around"
+CONF_ON_FOREIGN = "on_foreign_state"
+CONF_DOUBLE_PRESS_ACTION = "double_press_action"
+CONF_LONG_PRESS_ACTION = "long_press_action"
+CONF_MIN_PRESS_INTERVAL_MS = "min_press_interval_ms"
+CONF_COALESCE_WINDOW_MS = "coalesce_window_ms"
+CONF_SCENE_ORDER = "scene_order"
+
+ADAPTIVE_POSITIONS = ["first", "last", "none"]
+FOREIGN_POLICIES = ["restart", "remember_position"]
+PRESS_ACTIONS = [a.value for a in PressAction]
+
+# Defaults cover the vocabularies Zigbee and Z-Wave buttons actually publish,
+# so most devices work without touching these.
+DEFAULT_PRESS_STATES = ["on", "single", "press", "short_release", "initial_press"]
+DEFAULT_DOUBLE_PRESS_STATES = ["double", "double_press"]
+DEFAULT_LONG_PRESS_STATES = ["hold", "long_press"]
+
+CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(
+        CONF_ZONE_ID,
+        None,
+        _select([], "zone"),
+        required=True,
+        options_key="zones",
+    ),
+    FieldSpec(
+        CONF_BINDING_TYPE,
+        BindingType.ENTITY_STATE.value,
+        _select([b.value for b in BindingType], "binding_type"),
+    ),
+    FieldSpec(
+        CONF_BINDING_ENTITY,
+        None,
+        # Deliberately unfiltered: button devices surface as event, sensor,
+        # binary_sensor or input_button depending on the integration.
+        selector.EntitySelector(selector.EntitySelectorConfig()),
+    ),
+    FieldSpec(CONF_IS_DEFAULT, False, _boolean()),
+    # --- cycle shape ---
+    FieldSpec(
+        CONF_ADAPTIVE_POSITION,
+        "first",
+        _select(ADAPTIVE_POSITIONS, "adaptive_position"),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(CONF_OFF_AT_END, False, _boolean(), section=Section.ADVANCED),
+    FieldSpec(CONF_WRAP_AROUND, True, _boolean(), section=Section.ADVANCED),
+    FieldSpec(
+        CONF_ON_FOREIGN,
+        "restart",
+        _select(FOREIGN_POLICIES, "on_foreign_state"),
+        section=Section.ADVANCED,
+    ),
+    # --- multi-press ---
+    FieldSpec(
+        CONF_DOUBLE_PRESS_ACTION,
+        PressAction.CYCLE_PREVIOUS.value,
+        _select(PRESS_ACTIONS, "press_action"),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_LONG_PRESS_ACTION,
+        PressAction.RESET_ADAPTIVE.value,
+        _select(PRESS_ACTIONS, "press_action"),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_PRESS_STATES,
+        DEFAULT_PRESS_STATES,
+        _select(DEFAULT_PRESS_STATES, "press_states", multiple=True, custom=True),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_DOUBLE_PRESS_STATES,
+        DEFAULT_DOUBLE_PRESS_STATES,
+        _select(
+            DEFAULT_DOUBLE_PRESS_STATES, "press_states", multiple=True, custom=True
+        ),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_LONG_PRESS_STATES,
+        DEFAULT_LONG_PRESS_STATES,
+        _select(DEFAULT_LONG_PRESS_STATES, "press_states", multiple=True, custom=True),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_PRESS_ATTRIBUTE,
+        "event_type",
+        selector.TextSelector(selector.TextSelectorConfig()),
+        section=Section.ADVANCED,
+    ),
+    # --- debounce ---
+    FieldSpec(
+        CONF_MIN_PRESS_INTERVAL_MS,
+        150,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=2000,
+                step=10,
+                unit_of_measurement="ms",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_COALESCE_WINDOW_MS,
+        350,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=2000,
+                step=10,
+                unit_of_measurement="ms",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.ADVANCED,
+    ),
+)
+
+
+ZONE_SPECS = ZONE_SPECS + ZONE_ADAPTIVE_SPECS + ZONE_NIGHT_SPECS + ZONE_POWER_SPECS
 
 
 SPECS_BY_SUBENTRY: dict[str, tuple[FieldSpec, ...]] = {
     SubentryType.ZONE.value: ZONE_SPECS,
     SubentryType.LIGHT_PROFILE.value: LIGHT_PROFILE_SPECS,
     SubentryType.SCENE.value: SCENE_SPECS,
+    SubentryType.CONTROLLER.value: CONTROLLER_SPECS,
 }
 
 

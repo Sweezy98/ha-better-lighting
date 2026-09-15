@@ -21,11 +21,10 @@ override only brightness *or* only colour while the other keeps tracking the sun
 [relative-light-group]: https://github.com/Cheerpipe/relative-light-group
 [scenery]: https://github.com/j9brown/scenery
 
-> **Status: early development.** Milestones 1 to 3 of 8 are complete. Zones exist as light
-> groups with relative dimming and on-state memory, they follow the sun, night mode tracks a
-> helper entity, individual lights can be calibrated with offsets and limits, and scenes can
-> be defined and applied through a per-zone mode select. Switch cycling, presence and the
-> cross-zone cinema modes are not implemented yet.
+> **Status: early development.** Milestones 1 to 4 of 8 are complete. The wall-switch
+> experience works end to end: a press lights the room in adaptive mode and each further
+> press cycles that switch's own list of scenes. Presence, window sensors and the cross-zone
+> cinema modes are not implemented yet.
 
 ## Concepts
 
@@ -58,6 +57,28 @@ minimum and maximum. An offset says "this fixture reads dim"; a limit says "neve
 it flickers". A calibration must never be able to breach a limit you set, so the limit wins.
 A corollary worth knowing: per-light limits are absolute targets, not shifts of the zone's
 range.
+
+### Switches
+
+A press turns the room on in adaptive mode; each further press moves along that switch's
+list, wrapping back to adaptive. Two switches in one room can carry different lists, so the
+one by the oven reaches *Cooking* first while the one by the door does something else.
+
+Three ways a press can reach the integration, all of which work together:
+
+| Binding | Use it for | Identifies the switch? |
+|---|---|---|
+| Watch an entity | Zigbee/Z-Wave buttons (`event`, `sensor`, `binary_sensor`) | **Yes** — this is what makes per-switch orders possible |
+| `better_lighting.press` service | Automations, Node-RED, device triggers | Yes, by name |
+| Plain `light.turn_on` on the room's light | A dumb wall switch, no configuration at all | No — Home Assistant only sees a service call |
+
+A press that interrupts something automatic — a manual override, and later an insect scene
+or a cinema mode — lands on adaptive *without* advancing; the next press then cycles
+normally. That one rule is why there is no "user mode" with a timeout to expire.
+
+Pressing the same button twice publishes the same value twice, which is not a state
+*change*. Watching only for changes loses every second press, so the integration listens for
+state reports as well.
 
 ### A scene is a recipe, not a room
 

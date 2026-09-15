@@ -1,0 +1,89 @@
+press:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    zone:
+      selector:
+        text:
+    controller:
+      selector:
+        text:
+    kind:
+      default: press
+      selector:
+        select:
+          options:
+            - press
+            - double_press
+            - long_press
+
+cycle:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    zone:
+      selector:
+        text:
+    controller:
+      selector:
+        text:
+    direction:
+      default: next
+      selector:
+        select:
+          options:
+            - next
+            - previous
+
+set_adaptive:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    zone:
+      selector:
+        text:
+
+activate_scene:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    zone:
+      selector:
+        text:
+    scene:
+      required: true
+      selector:
+        text:
+
+clear_manual_override:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    zone:
+      selector:
+        text:
+    lights:
+      selector:
+        entity:
+          domain: light
+          multiple: true

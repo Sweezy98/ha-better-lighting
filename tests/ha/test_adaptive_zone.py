@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 from homeassistant.config_entries import ConfigSubentryData
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.better_lighting.const import SubentryType
@@ -182,16 +182,21 @@ class TestNightMode:
 
 
 class TestTick:
-    async def test_tick_updates_lit_lights(self, hass: HomeAssistant, freezer) -> None:
+    async def test_tick_corrects_a_light_that_has_drifted(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(hass, hub_entry())
         await _turn_on_zone(hass)
 
-        # Drift the members away from the curve, then let the interval run.
+        # A small drift, of the kind a device's own rounding produces. Small
+        # enough not to read as a person at the dimmer, large enough that the
+        # engine will not dismiss it as already-correct.
+        drifted = hass.states.get("light.one").attributes["brightness"] - 10
         hass.states.async_set(
             "light.one",
             "on",
-            {**hass.states.get("light.one").attributes, "brightness": 3},
+            {**hass.states.get("light.one").attributes, "brightness": drifted},
         )
         await hass.async_block_till_done()
 
@@ -201,7 +206,31 @@ class TestTick:
         await _advance(hass, freezer)
         await _advance(hass, freezer)
 
-        assert hass.states.get("light.one").attributes["brightness"] != 3
+        assert hass.states.get("light.one").attributes["brightness"] != drifted
+
+    async def test_tick_leaves_a_manually_changed_light_alone(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """Take-over control: a person at the dimmer outranks the interval."""
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(hass, hub_entry())
+        await _turn_on_zone(hass)
+
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"entity_id": "light.one", "brightness": 3},
+            blocking=True,
+            context=Context(),
+        )
+        await hass.async_block_till_done()
+
+        await _advance(hass, freezer)
+        await _advance(hass, freezer)
+
+        assert hass.states.get("light.one").attributes["brightness"] == 3
+        # The rest of the room carries on adapting as usual.
+        assert hass.states.get("light.two").attributes["brightness"] != 3
 
     async def test_tick_never_switches_a_dark_light_on(
         self, hass: HomeAssistant, freezer

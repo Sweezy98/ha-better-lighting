@@ -50,10 +50,27 @@ from homeassistant.helpers.event import (
     async_track_time_interval,
 )
 from homeassistant.helpers.sun import get_astral_location
+from homeassistant.util import dt as dt_util
 
 from .adaptive import AdaptiveConfig, SunEventOrderError, compute_for_transition
-from .const import NightBehavior
+from .const import NightBehavior, PressAction, RestoreOnPowerCycle
 from .context import ContextRegistry
+from .cycle import (
+    ADAPTIVE,
+    OFF,
+    StepKind,
+    ZoneCycleState,
+    scene_step,
+)
+from .cycle import (
+    Step as CycleStep,
+)
+from .cycle import (
+    press as cycle_press,
+)
+from .cycle import (
+    press_previous as cycle_press_previous,
+)
 from .profiles import Axis, LightCapabilities, LightProfile, Saturation
 from .render import (
     LightCommand,
@@ -67,7 +84,8 @@ from .render import (
 from .scenes import Scene
 
 if TYPE_CHECKING:
-    from .models import HubConfig, ZoneConfig
+    from .light import ZoneLight
+    from .models import ControllerConfig, HubConfig, ZoneConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,6 +100,13 @@ MIRED_TOLERANCE = 3
 # Give the tick a little room beyond the interval so a slow render cannot
 # overlap the next one.
 _TICK_PADDING = datetime.timedelta(seconds=0.5)
+
+# How far a light must move, under someone else's hand, before we conclude a
+# human meant it. Deliberately far looser than the "is this already right?"
+# tolerances: a device rounding its own brightness must not read as a person
+# reaching for the dimmer.
+MANUAL_BRIGHTNESS_DELTA = 25
+MANUAL_MIRED_DELTA = 20
 
 _VALID_MEMBER_STATES = (STATE_ON, "off")
 
@@ -116,8 +141,22 @@ class ZoneController:
         # construction, because this dict belongs to one zone.
         self.manual: dict[str, Axis] = {}
 
+        # The zone's own light entity, attached once its platform is up. It
+        # owns the on-state memory, so turning the room off or back on has to
+        # go through it rather than commanding members directly.
+        self.light: ZoneLight | None = None
+
         self._unsubscribers: list[CALLBACK_TYPE] = []
         self._listeners: list[CALLBACK_TYPE] = []
+        # Where each controller last left off, for the remember-position policy.
+        self._last_index: dict[str, int | None] = {}
+        # The scene to resume after a power cycle, and when it was set.
+        self._last_scene_id: str | None = None
+        self._last_scene_at: datetime.datetime | None = None
+        # What we last told each light, so a later change can be compared
+        # against our intent rather than against its own previous state.
+        self._last_commanded: dict[str, dict[str, Any]] = {}
+        self._manual_timers: dict[str, CALLBACK_TYPE] = {}
         self._saturation: dict[str, Saturation] = {}
         self._sun_error_logged = False
 
@@ -130,6 +169,13 @@ class ZoneController:
             self._unsubscribers.append(
                 async_track_state_change_event(
                     self.hass, [source], self._handle_night_source
+                )
+            )
+
+        if self.hub.take_over_control and self.zone.lights:
+            self._unsubscribers.append(
+                async_track_state_change_event(
+                    self.hass, list(self.zone.lights), self._handle_member_change
                 )
             )
 
@@ -157,8 +203,16 @@ class ZoneController:
     def async_shutdown(self) -> None:
         for unsubscribe in self._unsubscribers:
             unsubscribe()
+        for cancel in self._manual_timers.values():
+            cancel()
+        self._manual_timers.clear()
         self._unsubscribers.clear()
         self._listeners.clear()
+
+    @callback
+    def attach_light(self, light: ZoneLight) -> None:
+        """Register the zone's light entity once its platform has come up."""
+        self.light = light
 
     @callback
     def async_add_listener(self, listener: CALLBACK_TYPE) -> CALLBACK_TYPE:
@@ -230,10 +284,41 @@ class ZoneController:
             return
         self.mode = mode
         self.active_scene_id = scene_id if mode is ZoneMode.SCENE else None
+        if mode is ZoneMode.SCENE and scene_id:
+            self._last_scene_id = scene_id
+            self._last_scene_at = dt_util.utcnow()
         # A deliberate mode change is a fresh start: any relative dim the user
         # had layered on the previous look no longer applies.
         self.bias_pct = 0.0
         self.async_notify()
+
+        if mode is ZoneMode.OFF:
+            # Through the light entity, so it captures which members were on
+            # before the room went dark.
+            if self.light is not None:
+                await self.light.async_turn_off()
+                return
+            await self.async_render(Trigger.ACTIVATE)
+            return
+
+        if not self._any_member_on():
+            # Coming back from dark: light only the members that were on last
+            # time, at the value the new mode implies, in one command.
+            targets = (
+                self.light.restore_targets()
+                if self.light is not None
+                else list(self.zone.lights)
+            )
+            if not await self.async_render(Trigger.TURN_ON, entity_ids=targets):
+                # The engine had nothing to say -- adaptive is switched off, or
+                # every light is already where it should be. Switching the
+                # adaptive engine off means "stop managing my colour", not
+                # "stop the light switch working", so the room still lights.
+                await self._async_call(
+                    "turn_on", {ATTR_ENTITY_ID: sorted(targets)}, Trigger.TURN_ON
+                )
+            return
+
         await self.async_render(Trigger.ACTIVATE)
 
     async def async_activate_scene(self, scene_id: str) -> None:
@@ -242,6 +327,247 @@ class ZoneController:
     async def async_set_adaptive(self) -> None:
         """Return to plain adaptive lighting."""
         await self.async_set_mode(ZoneMode.ADAPTIVE)
+
+    # -- presses -----------------------------------------------------------
+
+    def _current_step(self) -> CycleStep | None:
+        """The zone's current mode expressed as a cycle position."""
+        mode = self.mode
+        if mode is ZoneMode.OFF:
+            return OFF
+        if mode is ZoneMode.ADAPTIVE:
+            return ADAPTIVE
+        if mode is ZoneMode.SCENE and self.active_scene_id:
+            return scene_step(self.active_scene_id)
+        # Insect, cinema and anything else are not cycle positions. Returning
+        # None makes them "foreign", which is exactly right: the next press
+        # restarts the pressed controller's own list.
+        return None
+
+    def _resume_step(self) -> CycleStep | None:
+        """What the first press after a power cycle should resume, if anything."""
+        if self.zone.restore_on_power_cycle is not RestoreOnPowerCycle.LAST_SCENE:
+            return None
+        if not self._last_scene_id or self._last_scene_id not in self.scenes:
+            return None
+        max_age = self.zone.resume_max_age_minutes
+        if max_age and self._last_scene_at is not None:
+            age = dt_util.utcnow() - self._last_scene_at
+            if age > datetime.timedelta(minutes=max_age):
+                # Off overnight should start the next morning in adaptive,
+                # not in last night's dinner scene.
+                return None
+        return scene_step(self._last_scene_id)
+
+    def _any_member_on(self) -> bool:
+        return any(
+            (state := self.hass.states.get(entity_id)) is not None
+            and state.state == STATE_ON
+            for entity_id in self.zone.lights
+        )
+
+    def _dismiss(self) -> bool:
+        """Clear whatever automatic layer is above the base intent.
+
+        Returns whether anything was actually cleared, which is what makes the
+        press land on adaptive without advancing.
+        """
+        dismissed = False
+        if self.manual:
+            self.clear_manual()
+            dismissed = True
+        if self.mode in (ZoneMode.INSECT, ZoneMode.EXTERNAL):
+            dismissed = True
+        return dismissed
+
+    async def async_press(
+        self, controller: ControllerConfig, kind: str = "press", *, steps: int = 1
+    ) -> None:
+        """Handle a press from ``controller``. ``steps`` counts a coalesced burst."""
+        action = {
+            "press": PressAction.CYCLE_NEXT,
+            "double_press": controller.double_press_action,
+            "long_press": controller.long_press_action,
+        }.get(kind, PressAction.CYCLE_NEXT)
+
+        _LOGGER.debug(
+            "%s: %s from %s -> %s", self.zone.name, kind, controller.name, action
+        )
+
+        match action:
+            case PressAction.NONE:
+                return
+            case PressAction.CYCLE_NEXT:
+                await self.async_cycle(controller, direction=1, steps=steps)
+            case PressAction.CYCLE_PREVIOUS:
+                await self.async_cycle(controller, direction=-1, steps=steps)
+            case PressAction.RESET_ADAPTIVE:
+                self._dismiss()
+                await self.async_set_mode(ZoneMode.ADAPTIVE)
+            case PressAction.ZONE_OFF:
+                await self.async_set_mode(ZoneMode.OFF)
+            case PressAction.TOGGLE_NIGHT:
+                await self.async_set_night(not self.night_active)
+
+    async def async_cycle(
+        self, controller: ControllerConfig, *, direction: int = 1, steps: int = 1
+    ) -> None:
+        """Advance (or retreat) this zone along ``controller``'s list.
+
+        ``steps`` greater than one comes from a burst of quick taps. They are
+        resolved entirely in the pure layer and rendered **once**, so tapping
+        three times moves three places without strobing the room through the
+        two in between.
+        """
+        cycle = controller.cycle(frozenset(self.scenes))
+        state = ZoneCycleState(
+            current=self._current_step(),
+            is_off=not self._any_member_on(),
+            last_index=self._last_index.get(controller.subentry_id),
+            resume=self._resume_step(),
+        )
+        # Only the first press of a burst can dismiss; the rest are ordinary
+        # advances from wherever that landed.
+        dismissed = self._dismiss() if direction > 0 else False
+
+        result = None
+        for step_number in range(max(steps, 1)):
+            if direction < 0:
+                result = cycle_press_previous(cycle, state)
+            else:
+                result = cycle_press(
+                    cycle, state, dismissed=dismissed and step_number == 0
+                )
+            state = ZoneCycleState(
+                current=result.step,
+                is_off=result.step.kind is StepKind.OFF,
+                last_index=result.index,
+                resume=state.resume,
+            )
+
+        assert result is not None
+        self._last_index[controller.subentry_id] = result.index
+        _LOGGER.debug(
+            "%s: %s x%d -> %s (%s)",
+            self.zone.name,
+            controller.name,
+            steps,
+            result.step,
+            result.reason,
+        )
+        await self.async_apply_step(result.step)
+
+    async def async_apply_step(self, step: CycleStep) -> None:
+        """Put the zone into the state a cycle position describes."""
+        match step.kind:
+            case StepKind.OFF:
+                await self.async_set_mode(ZoneMode.OFF)
+            case StepKind.SCENE if step.scene_id:
+                await self.async_set_mode(ZoneMode.SCENE, step.scene_id)
+            case _:
+                await self.async_set_mode(ZoneMode.ADAPTIVE)
+
+    # -- manual override ---------------------------------------------------
+
+    @callback
+    def _handle_member_change(self, event: Event[EventStateChangedData]) -> None:
+        """Notice a human moving one of our lights.
+
+        Compared against what *we* last commanded rather than against the
+        light's own previous state. Adaptive Lighting compares old to new,
+        which misses three slow dimmer taps that never individually cross the
+        threshold, and misfires on lights that report their own settling.
+        """
+        entity_id = event.data["entity_id"]
+        new_state = event.data["new_state"]
+        if new_state is None or new_state.state != STATE_ON:
+            if new_state is not None and new_state.state == "off":
+                # Switching a light off is the universal reset.
+                self.clear_manual(entity_id)
+            return
+        if self.contexts.is_ours(event.context):
+            return
+
+        commanded = self._last_commanded.get(entity_id)
+        if not commanded:
+            return
+        # No separate echo window is needed here: every delta below is measured
+        # against what we actually commanded, so a light merely reporting back
+        # what we asked for scores zero and is not mistaken for a person. The
+        # window still guards the paths that have no commanded value to
+        # compare against.
+
+        axes = Axis.NONE
+        brightness = new_state.attributes.get("brightness")
+        wanted_brightness = commanded.get("brightness")
+        if (
+            brightness is not None
+            and wanted_brightness is not None
+            and abs(int(brightness) - int(wanted_brightness)) > MANUAL_BRIGHTNESS_DELTA
+        ):
+            axes |= Axis.BRIGHTNESS
+
+        kelvin = new_state.attributes.get("color_temp_kelvin")
+        wanted_kelvin = commanded.get("color_temp_kelvin")
+        if kelvin and wanted_kelvin:
+            if abs(1e6 / float(kelvin) - 1e6 / float(wanted_kelvin)) > (
+                MANUAL_MIRED_DELTA
+            ):
+                axes |= Axis.COLOR
+        elif wanted_kelvin and new_state.attributes.get("color_mode") not in (
+            None,
+            "color_temp",
+        ):
+            # A scene on the bridge flipped it from white to colour. No numeric
+            # threshold sees that, but the mode change itself is conclusive.
+            axes |= Axis.COLOR
+
+        if axes is not Axis.NONE:
+            self.note_manual(entity_id, axes)
+
+    @callback
+    def note_manual(self, entity_id: str, axes: Axis) -> None:
+        """Record that a human owns these axes of this light, for now."""
+        current = self.manual.get(entity_id, Axis.NONE)
+        if axes in current:
+            return
+        self.manual[entity_id] = current | axes
+        _LOGGER.debug(
+            "%s: %s taken over manually (%s)", self.zone.name, entity_id, axes
+        )
+        self._arm_manual_reset(entity_id)
+        self.async_notify()
+
+    @callback
+    def _arm_manual_reset(self, entity_id: str) -> None:
+        if (cancel := self._manual_timers.pop(entity_id, None)) is not None:
+            cancel()
+        seconds = self.hub.autoreset_manual_seconds
+        if not seconds:
+            return
+
+        @callback
+        def _reset(_now: datetime.datetime) -> None:
+            self._manual_timers.pop(entity_id, None)
+            if self.manual.pop(entity_id, None) is not None:
+                _LOGGER.debug(
+                    "%s: %s handed back to the engine", self.zone.name, entity_id
+                )
+                self.async_notify()
+                self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
+
+        self._manual_timers[entity_id] = async_call_later(self.hass, seconds, _reset)
+
+    @callback
+    def clear_manual(self, entity_id: str | None = None) -> None:
+        """Hand control back to the engine."""
+        targets = [entity_id] if entity_id else list(self.manual)
+        for target in targets:
+            self.manual.pop(target, None)
+            if (cancel := self._manual_timers.pop(target, None)) is not None:
+                cancel()
+        if targets:
+            self.async_notify()
 
     # -- state -------------------------------------------------------------
 
@@ -418,6 +744,12 @@ class ZoneController:
         context = self.contexts.new_context(self.zone.subentry_id, str(trigger))
         for entity_id in entity_ids:
             self.contexts.note_command(entity_id)
+        if action == "turn_on":
+            payload = {
+                key: value for key, value in data.items() if key != ATTR_ENTITY_ID
+            }
+            for entity_id in entity_ids:
+                self._last_commanded[entity_id] = payload
         _LOGGER.debug("%s %s %s -> %s", self.zone.name, trigger, action, data)
         await self.hass.services.async_call(
             LIGHT_DOMAIN,

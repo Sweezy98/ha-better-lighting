@@ -17,11 +17,20 @@ from typing import TYPE_CHECKING
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import PLATFORMS, SubentryType
+from .const import PLATFORMS, BindingType, SubentryType
 from .context import ContextRegistry
-from .models import HubConfig, LightProfileConfig, SceneConfig, ZoneConfig
+from .controllers import ControllerRuntime
+from .models import (
+    ControllerConfig,
+    HubConfig,
+    LightProfileConfig,
+    SceneConfig,
+    ZoneConfig,
+    synthetic_controller,
+)
 from .profiles import LightProfile
 from .scenes import Scene
+from .services import async_register_services
 from .zone import ZoneController
 
 if TYPE_CHECKING:
@@ -46,6 +55,12 @@ class BetterLightingRuntime:
     scenes: dict[str, Scene] = field(default_factory=dict)
     # One controller per zone; the only thing that commands member lights.
     controllers: dict[str, ZoneController] = field(default_factory=dict)
+    # Configured switches, keyed by subentry_id.
+    switches: dict[str, ControllerConfig] = field(default_factory=dict)
+    switch_runtimes: dict[str, ControllerRuntime] = field(default_factory=dict)
+    # The controller a bare turn-on on a zone's light entity is attributed to,
+    # keyed by zone subentry_id.
+    default_switch: dict[str, ControllerConfig] = field(default_factory=dict)
     # Live entity objects, registered as their platforms come up. Keyed by
     # zone subentry_id so any subsystem can reach a zone without a global.
     zone_lights: dict[str, ZoneLight] = field(default_factory=dict)
@@ -98,11 +113,35 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
         if subentry.subentry_type == SubentryType.SCENE.value
         and (scene := SceneConfig.from_subentry(subentry))
     }
+    switches = {
+        controller.subentry_id: controller
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == SubentryType.CONTROLLER.value
+        and (controller := ControllerConfig.from_subentry(subentry))
+    }
+
+    # One controller per zone owns bare turn-ons. An explicitly flagged one
+    # wins; otherwise any controller bound to the zone light; otherwise a
+    # synthetic one, so a plain switch cycles without configuration.
+    scene_ids = tuple(scenes)
+    default_switch: dict[str, ControllerConfig] = {}
+    for zone_id, zone in zones.items():
+        candidates = [c for c in switches.values() if c.zone_id == zone_id]
+        chosen = next((c for c in candidates if c.is_default), None)
+        if chosen is None:
+            chosen = next(
+                (c for c in candidates if c.binding_type is BindingType.ZONE_LIGHT),
+                None,
+            )
+        default_switch[zone_id] = chosen or synthetic_controller(zone, scene_ids)
+
     return BetterLightingRuntime(
         hub=HubConfig.from_options(dict(entry.options)),
         zones=zones,
         profiles=profiles,
         scenes=scenes,
+        switches=switches,
+        default_switch=default_switch,
         config_fingerprint=_fingerprint(entry),
     )
 
@@ -114,9 +153,11 @@ async def async_setup_entry(
     runtime = build_runtime(entry)
     entry.runtime_data = runtime
     _LOGGER.debug(
-        "Setting up with %d zone(s), %d scene(s), %d light profile(s)",
+        "Setting up with %d zone(s), %d scene(s), %d controller(s), "
+        "%d light profile(s)",
         len(runtime.zones),
         len(runtime.scenes),
+        len(runtime.switches),
         len(runtime.profiles),
     )
 
@@ -132,6 +173,23 @@ async def async_setup_entry(
         runtime.controllers[subentry_id] = controller
         await controller.async_setup()
         entry.async_on_unload(controller.async_shutdown)
+
+    for controller in runtime.switches.values():
+        zone_controller = runtime.controllers.get(controller.zone_id)
+        if zone_controller is None:
+            _LOGGER.warning(
+                "Controller %r points at a zone that no longer exists; ignoring it",
+                controller.name,
+            )
+            continue
+        switch_runtime = ControllerRuntime(
+            hass, controller, zone_controller, runtime.contexts
+        )
+        runtime.switch_runtimes[controller.subentry_id] = switch_runtime
+        await switch_runtime.async_setup()
+        entry.async_on_unload(switch_runtime.async_shutdown)
+
+    async_register_services(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))

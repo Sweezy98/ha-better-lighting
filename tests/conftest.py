@@ -24,7 +24,12 @@ from pytest_homeassistant_custom_component.common import (
     setup_test_component_platform,
 )
 
-from custom_components.better_lighting.const import DOMAIN, SubentryType
+from custom_components.better_lighting.const import (
+    DOMAIN,
+    FieldSpec,
+    Section,
+    SubentryType,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -131,3 +136,19 @@ async def setup_hub(hass: HomeAssistant, entry: MockConfigEntry) -> MockConfigEn
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     return entry
+
+
+def form_input(specs: tuple[FieldSpec, ...], **overrides) -> dict:
+    """A complete form submission for ``specs``.
+
+    The frontend always submits every section, so the tests do too -- and
+    deriving them from the spec table means adding a section to a form cannot
+    quietly break every test that fills in a different part of it.
+    """
+    data: dict = {}
+    for spec in specs:
+        if spec.section is not Section.BASIC:
+            data.setdefault(spec.section.value, {})
+        elif spec.default is not None:
+            data[spec.key] = spec.default
+    return {**data, **overrides}

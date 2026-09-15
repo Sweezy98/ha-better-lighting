@@ -1,0 +1,557 @@
+"""Switch presses, cycling, and manual-override detection."""
+
+from __future__ import annotations
+
+import datetime as dt
+
+from homeassistant.config_entries import ConfigSubentryData
+from homeassistant.core import Context, HomeAssistant
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+from custom_components.better_lighting.const import DOMAIN, SubentryType
+from tests.conftest import (
+    MemberLight,
+    hub_entry,
+    setup_hub,
+    setup_members,
+    zone_subentry,
+)
+from tests.ha.test_scenes import scene_subentry
+
+ZONE = "light.kitchen"
+SELECT = "select.kitchen_mode"
+
+
+def controller_subentry(
+    name: str = "Oven switch",
+    *,
+    zone_id: str,
+    scene_order: list[str],
+    binding_entity: str | None = None,
+    **overrides,
+) -> ConfigSubentryData:
+    data = {
+        "name": name,
+        "zone_id": zone_id,
+        "binding_type": "entity_state" if binding_entity else "service_only",
+        "binding_entity": binding_entity,
+        "is_default": False,
+        "scene_order": scene_order,
+        "adaptive_position": "first",
+        "off_at_end": False,
+        "wrap_around": True,
+        "on_foreign_state": "restart",
+        "double_press_action": "cycle_previous",
+        "long_press_action": "reset_adaptive",
+        "press_states": ["on", "single"],
+        "double_press_states": ["double"],
+        "long_press_states": ["hold"],
+        "press_attribute": "event_type",
+        "min_press_interval_ms": 0,
+        "coalesce_window_ms": 0,
+        **overrides,
+    }
+    return ConfigSubentryData(
+        data=data,
+        subentry_type=SubentryType.CONTROLLER.value,
+        title=name,
+        unique_id=f"ctrl:{name.lower().replace(' ', '_')}",
+    )
+
+
+async def press_zone(hass: HomeAssistant) -> None:
+    """A bare turn_on on the zone light: the plain-wall-switch path."""
+    await hass.services.async_call(
+        "light", "turn_on", {"entity_id": ZONE}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+
+class TestPlainSwitchCycling:
+    """Requirement 1, with no controller configured at all."""
+
+    async def test_first_press_turns_on_adaptive(self, hass: HomeAssistant) -> None:
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        )
+
+        await press_zone(hass)
+
+        assert hass.states.get(SELECT).state == "Adaptive"
+        assert hass.states.get("light.one").state == "on"
+
+    async def test_further_presses_cycle_the_scenes(self, hass: HomeAssistant) -> None:
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(
+            hass,
+            hub_entry(
+                subentries_data=[
+                    zone_subentry(),
+                    scene_subentry("Cosy"),
+                    scene_subentry("Bright", brightness=100),
+                ]
+            ),
+        )
+
+        await press_zone(hass)
+        assert hass.states.get(SELECT).state == "Adaptive"
+        await press_zone(hass)
+        assert hass.states.get(SELECT).state == "Cosy"
+        await press_zone(hass)
+        assert hass.states.get(SELECT).state == "Bright"
+
+    async def test_the_cycle_wraps_back_to_adaptive(self, hass: HomeAssistant) -> None:
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        )
+
+        for _ in range(3):
+            await press_zone(hass)
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+
+class TestPerSwitchOrders:
+    """Requirement 8: two switches in one room, different orders."""
+
+    async def _setup(self, hass: HomeAssistant):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        zone = zone_subentry()
+        entry = hub_entry(
+            subentries_data=[
+                zone,
+                scene_subentry("Cooking", brightness=100),
+                scene_subentry("Dining", brightness=30),
+            ]
+        )
+        await setup_hub(hass, entry)
+
+        ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+        zone_id = ids["Kitchen"]
+        hass.config_entries.async_add_subentry(
+            entry,
+            _make(
+                controller_subentry(
+                    "Oven", zone_id=zone_id, scene_order=[ids["Cooking"]]
+                )
+            ),
+        )
+        hass.config_entries.async_add_subentry(
+            entry,
+            _make(
+                controller_subentry(
+                    "Door", zone_id=zone_id, scene_order=[ids["Dining"]]
+                )
+            ),
+        )
+        await hass.async_block_till_done()
+        return entry
+
+    async def test_each_switch_reaches_its_own_scene_first(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._setup(hass)
+
+        await hass.services.async_call(
+            DOMAIN, "press", {"zone": "kitchen", "controller": "Oven"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        await hass.services.async_call(
+            DOMAIN, "press", {"zone": "kitchen", "controller": "Oven"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cooking"
+
+    async def test_the_other_switch_restarts_its_own_list(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._setup(hass)
+
+        for _ in range(2):
+            await hass.services.async_call(
+                DOMAIN,
+                "press",
+                {"zone": "kitchen", "controller": "Oven"},
+                blocking=True,
+            )
+            await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cooking"
+
+        # Cooking is not on the door switch's list, so it starts from the top.
+        await hass.services.async_call(
+            DOMAIN, "press", {"zone": "kitchen", "controller": "Door"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        await hass.services.async_call(
+            DOMAIN, "press", {"zone": "kitchen", "controller": "Door"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Dining"
+
+
+def _make(data: ConfigSubentryData):
+    from homeassistant.config_entries import ConfigSubentry
+
+    return ConfigSubentry(
+        data=data["data"],
+        subentry_type=data["subentry_type"],
+        title=data["title"],
+        unique_id=data["unique_id"],
+    )
+
+
+class TestEntityBinding:
+    """A switch we watch ourselves."""
+
+    async def _setup(self, hass: HomeAssistant, scenes=("Cosy",), **overrides):
+        # Seed with a real, if stale, timestamp. Starting from "unknown" would
+        # make the first fire an unknown -> value transition, which is
+        # deliberately suppressed as a restart artefact.
+        hass.states.async_set(
+            "event.button",
+            (dt_util.utcnow() - dt.timedelta(days=1)).isoformat(),
+            {"event_type": "single"},
+        )
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        zone = zone_subentry()
+        entry = hub_entry(
+            subentries_data=[zone, *(scene_subentry(name) for name in scenes)]
+        )
+        await setup_hub(hass, entry)
+        ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+        hass.config_entries.async_add_subentry(
+            entry,
+            _make(
+                controller_subentry(
+                    "Wall",
+                    zone_id=ids["Kitchen"],
+                    scene_order=[ids[name] for name in scenes],
+                    binding_entity="event.button",
+                    **overrides,
+                )
+            ),
+        )
+        await hass.async_block_till_done()
+        return entry
+
+    def _fire(self, hass: HomeAssistant, event_type: str = "single") -> None:
+        hass.states.async_set(
+            "event.button",
+            dt_util.utcnow().isoformat(),
+            {"event_type": event_type},
+        )
+
+    async def test_a_press_cycles_the_zone(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        # The room is dark, so the first press lights it in adaptive rather
+        # than jumping straight into a scene.
+        self._fire(hass)
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+        assert hass.states.get("light.one").state == "on"
+
+        self._fire(hass)
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cosy"
+
+    async def test_the_same_value_twice_is_two_presses(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Pressing one button twice publishes the same value twice.
+
+        That is not a state *change*, so a listener watching only for changes
+        loses every second press. This is the most common way switch handling
+        goes quietly wrong.
+        """
+        await self._setup(hass, scenes=("Cosy", "Bright"))
+        fixed = dt_util.utcnow().isoformat()
+
+        for _ in range(3):
+            hass.states.async_set("event.button", fixed, {"event_type": "single"})
+            await hass.async_block_till_done()
+
+        # Three identical presses: on to adaptive, then Cosy, then Bright.
+        assert hass.states.get(SELECT).state == "Bright"
+
+    async def test_an_unknown_starting_state_is_not_a_press(
+        self, hass: HomeAssistant
+    ) -> None:
+        """A restart leaves entities at unknown; that first write is not a press."""
+        await self._setup(hass)
+        hass.states.async_set("event.button", "unknown", {})
+        await hass.async_block_till_done()
+        self._fire(hass)
+        await hass.async_block_till_done()
+        # Only the unknown -> value transition happened, which is ignored.
+        assert hass.states.get("light.one").state == "off"
+
+    async def test_a_stale_timestamp_is_not_a_press(self, hass: HomeAssistant) -> None:
+        """Some integrations restore an event entity's state across a restart."""
+        await self._setup(hass)
+        hass.states.async_set(
+            "event.button",
+            (dt_util.utcnow() - dt.timedelta(hours=2)).isoformat(),
+            {"event_type": "single"},
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+    async def test_recovering_from_unavailable_is_not_a_press(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._setup(hass)
+        self._fire(hass)
+        await hass.async_block_till_done()
+
+        hass.states.async_set("event.button", "unavailable", {})
+        await hass.async_block_till_done()
+        self._fire(hass)
+        await hass.async_block_till_done()
+        # The unavailable -> value transition must not count, so only the
+        # first press landed: still Adaptive rather than Cosy.
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+    async def test_an_unknown_event_type_is_ignored(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        self._fire(hass, "brightness_move_up")
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+    async def test_long_press_returns_to_adaptive(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        self._fire(hass, "single")
+        await hass.async_block_till_done()
+        self._fire(hass, "single")
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cosy"
+
+        self._fire(hass, "hold")
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+    async def test_rapid_taps_move_as_many_places(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """A burst must not be collapsed to a single step, nor strobe through."""
+        await self._setup(hass, scenes=("Cosy", "Bright"), coalesce_window_ms=300)
+        self._fire(hass)  # light the room, landing on adaptive
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        for _ in range(2):
+            self._fire(hass)
+            await hass.async_block_till_done()
+        # Still waiting for the window to close.
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+        # Two taps, two places: adaptive -> Cosy -> Bright, rendered once.
+        assert hass.states.get(SELECT).state == "Bright"
+
+    async def test_a_single_tap_moves_one_place(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        await self._setup(hass, scenes=("Cosy", "Bright"), coalesce_window_ms=300)
+        self._fire(hass)
+        await hass.async_block_till_done()
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        self._fire(hass)
+        await hass.async_block_till_done()
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cosy"
+
+
+class TestServices:
+    async def _setup(self, hass: HomeAssistant):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        )
+        await press_zone(hass)
+
+    async def test_activate_scene_by_name(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        await hass.services.async_call(
+            DOMAIN,
+            "activate_scene",
+            {"zone": "kitchen", "scene": "Cosy"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cosy"
+
+    async def test_set_adaptive_returns_from_a_scene(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        await hass.services.async_call(
+            DOMAIN,
+            "activate_scene",
+            {"zone": "kitchen", "scene": "Cosy"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        await hass.services.async_call(
+            DOMAIN, "set_adaptive", {"zone": "kitchen"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+    async def test_cycle_service(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        await hass.services.async_call(
+            DOMAIN, "cycle", {"zone": "kitchen"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cosy"
+
+    async def test_targeting_by_entity(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        await hass.services.async_call(
+            DOMAIN, "cycle", {"entity_id": ZONE}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cosy"
+
+    async def test_an_unknown_zone_is_rejected(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        from homeassistant.exceptions import ServiceValidationError
+
+        try:
+            await hass.services.async_call(
+                DOMAIN, "cycle", {"zone": "nowhere"}, blocking=True
+            )
+        except ServiceValidationError:
+            return
+        raise AssertionError("expected a ServiceValidationError")
+
+
+class TestButtons:
+    async def test_cycle_and_reset_buttons(self, hass: HomeAssistant) -> None:
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        )
+        await press_zone(hass)
+
+        await hass.services.async_call(
+            "button", "press", {"entity_id": "button.kitchen_cycle"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cosy"
+
+        await hass.services.async_call(
+            "button",
+            "press",
+            {"entity_id": "button.kitchen_back_to_adaptive"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+
+class TestManualOverride:
+    async def _setup(self, hass: HomeAssistant):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry(subentries_data=[zone_subentry()]))
+        await press_zone(hass)
+        return entry.runtime_data.controllers[next(iter(entry.runtime_data.zones))]
+
+    async def test_a_foreign_change_marks_the_light_manual(
+        self, hass: HomeAssistant
+    ) -> None:
+        controller = await self._setup(hass)
+        assert not controller.manual
+
+        # Somebody moves the bulb well away from what we asked for, under a
+        # context that is not ours.
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"entity_id": "light.one", "brightness": 4},
+            blocking=True,
+            context=Context(),
+        )
+        await hass.async_block_till_done()
+
+        assert "light.one" in controller.manual
+
+    async def test_a_small_drift_is_not_manual(self, hass: HomeAssistant) -> None:
+        """Devices round their own brightness; that is not a person."""
+        controller = await self._setup(hass)
+        current = hass.states.get("light.one").attributes["brightness"]
+
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"entity_id": "light.one", "brightness": current - 2},
+            blocking=True,
+            context=Context(),
+        )
+        await hass.async_block_till_done()
+
+        assert "light.one" not in controller.manual
+
+    async def test_manual_is_per_light(self, hass: HomeAssistant) -> None:
+        controller = await self._setup(hass)
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"entity_id": "light.one", "brightness": 4},
+            blocking=True,
+            context=Context(),
+        )
+        await hass.async_block_till_done()
+
+        assert "light.one" in controller.manual
+        assert "light.two" not in controller.manual
+
+    async def test_switching_a_light_off_clears_it(self, hass: HomeAssistant) -> None:
+        controller = await self._setup(hass)
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"entity_id": "light.one", "brightness": 4},
+            blocking=True,
+            context=Context(),
+        )
+        await hass.async_block_till_done()
+        assert "light.one" in controller.manual
+
+        await hass.services.async_call(
+            "light", "turn_off", {"entity_id": "light.one"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert "light.one" not in controller.manual
+
+    async def test_a_press_hands_control_back(self, hass: HomeAssistant) -> None:
+        """The dismiss rule: the press lands on adaptive without advancing."""
+        controller = await self._setup(hass)
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"entity_id": "light.one", "brightness": 4},
+            blocking=True,
+            context=Context(),
+        )
+        await hass.async_block_till_done()
+        assert controller.manual
+
+        await press_zone(hass)
+
+        assert not controller.manual
+        assert hass.states.get(SELECT).state == "Adaptive"

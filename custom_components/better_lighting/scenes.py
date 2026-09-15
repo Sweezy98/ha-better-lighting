@@ -185,10 +185,18 @@ class Scene:
     # Empty means "every member of whatever zone this is applied to".
     lights: Mapping[str, SceneLightSpec] = field(default_factory=dict)
     on_lights_only: bool = False
+    # Rooms this scene is offered in. Empty means everywhere. Purely about
+    # what the pickers show: applying a scene has only ever affected the one
+    # room it was applied to.
+    zones: frozenset[str] = frozenset()
     others: OthersPolicy = OthersPolicy.ADAPTIVE
     ignore_presence: bool = False
     transition: float | None = None
     on_unsupported_color: UnsupportedColorPolicy = UnsupportedColorPolicy.ADAPTIVE
+
+    def offered_in(self, zone_id: str) -> bool:
+        """Whether this scene should appear in a given room's choices."""
+        return not self.zones or zone_id in self.zones
 
     def spec_for(self, entity_id: str) -> SceneLightSpec:
         """This scene's intent for one light, with scene-level values filled in."""

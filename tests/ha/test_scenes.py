@@ -306,3 +306,119 @@ class TestNightScene:
         await hass.async_block_till_done()
 
         assert hass.states.get("light.one").attributes["color_temp_kelvin"] == 2200
+
+
+class TestSceneScope:
+    """Which rooms a scene is *offered* in. Requirement raised in review."""
+
+    async def _two_rooms(self, hass: HomeAssistant, scene_zones=None):
+        await setup_members(
+            hass,
+            [
+                MemberLight("Lr", is_on=True, brightness=200),
+                MemberLight("Kt", is_on=True, brightness=200),
+            ],
+        )
+        scene = scene_subentry("Reading", brightness=35)
+        entry = hub_entry(
+            subentries_data=[
+                zone_subentry("Living Room", ["light.lr"]),
+                zone_subentry("Kitchen", ["light.kt"]),
+                scene,
+            ]
+        )
+        await setup_hub(hass, entry)
+        if scene_zones is not None:
+            ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+            scene_sub = next(
+                sub for sub in entry.subentries.values() if sub.title == "Reading"
+            )
+            hass.config_entries.async_update_subentry(
+                entry,
+                scene_sub,
+                data={
+                    **scene_sub.data,
+                    "scene_zones": [ids[name] for name in scene_zones],
+                },
+            )
+            await hass.async_block_till_done()
+        return entry
+
+    async def test_applying_a_scene_never_touches_another_room(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The thing the README's wording made sound doubtful."""
+        await self._two_rooms(hass)
+        before = hass.states.get("light.kt").attributes["brightness"]
+
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": "select.living_room_mode", "option": "Reading"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        assert hass.states.get("light.lr").attributes["brightness"] < before
+        assert hass.states.get("light.kt").attributes["brightness"] == before
+        assert hass.states.get("select.kitchen_mode").state == "Adaptive"
+
+    async def test_an_unscoped_scene_is_offered_everywhere(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Right for a Night or Movie scene."""
+        await self._two_rooms(hass)
+        for room in ("living_room", "kitchen"):
+            options = hass.states.get(f"select.{room}_mode").attributes["options"]
+            assert "Reading" in options
+
+    async def test_a_scoped_scene_is_only_offered_there(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._two_rooms(hass, scene_zones=["Living Room"])
+
+        assert (
+            "Reading"
+            in hass.states.get("select.living_room_mode").attributes["options"]
+        )
+        assert (
+            "Reading"
+            not in hass.states.get("select.kitchen_mode").attributes["options"]
+        )
+
+    async def test_a_scene_can_be_scoped_to_several_rooms(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._two_rooms(hass, scene_zones=["Living Room", "Kitchen"])
+        for room in ("living_room", "kitchen"):
+            assert (
+                "Reading"
+                in hass.states.get(f"select.{room}_mode").attributes["options"]
+            )
+
+    async def test_an_active_scene_is_still_reported(self, hass: HomeAssistant) -> None:
+        """Scoping hides a scene from the picker, not from the readout."""
+        entry = await self._two_rooms(hass)
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": "select.kitchen_mode", "option": "Reading"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+        scene_sub = next(
+            sub for sub in entry.subentries.values() if sub.title == "Reading"
+        )
+        hass.config_entries.async_update_subentry(
+            entry,
+            scene_sub,
+            data={**scene_sub.data, "scene_zones": [ids["Living Room"]]},
+        )
+        await hass.async_block_till_done()
+
+        # The kitchen no longer offers it, but if it is somehow showing it the
+        # select must still be able to say so rather than reporting nothing.
+        kitchen = hass.states.get("select.kitchen_mode")
+        assert kitchen.state in kitchen.attributes["options"]

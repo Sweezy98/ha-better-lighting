@@ -541,6 +541,7 @@ CONF_IGNORE_PRESENCE = "ignore_presence"
 CONF_OTHERS = "others"
 CONF_ON_UNSUPPORTED_COLOR = "on_unsupported_color"
 CONF_SCENE_ID = "scene_id"
+CONF_SCENE_ZONES = "scene_zones"
 
 # The data model supports all eight Home Assistant colour formats; the UI
 # offers the three with a real picker. The rest stay reachable through
@@ -565,6 +566,16 @@ SCENE_SPECS: tuple[FieldSpec, ...] = (
         required=True,
     ),
     FieldSpec(CONF_ICON, "mdi:palette", selector.IconSelector()),
+    # Which rooms this scene is *offered* in. Empty means every room, which is
+    # right for a Night or Movie scene; a Reading scene usually belongs to one.
+    # This never changes what applying a scene does -- a scene only ever
+    # affects the room it is applied to.
+    FieldSpec(
+        CONF_SCENE_ZONES,
+        [],
+        _select([], "zone", multiple=True),
+        options_key="zones",
+    ),
     FieldSpec(
         CONF_OVERRIDE_MODE,
         "both",

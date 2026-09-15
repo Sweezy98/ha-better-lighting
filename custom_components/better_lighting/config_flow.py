@@ -38,7 +38,9 @@ from .const import (
     CONF_RULE_ZONES,
     CONF_RULES,
     CONF_SCENE_ORDER,
+    CONF_SCENE_ZONES,
     CONF_STATES,
+    CONF_ZONE_ID,
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
@@ -58,13 +60,24 @@ _LOGGER = logging.getLogger(__name__)
 HUB_TITLE = "Better Lighting"
 
 
-def scene_options(entry: ConfigEntry) -> list[dict[str, str]]:
-    """The scenes defined so far, for any form that needs to pick one."""
-    return [
-        {"value": sub.subentry_id, "label": sub.title}
-        for sub in entry.subentries.values()
-        if sub.subentry_type == SubentryType.SCENE.value
-    ]
+def scene_options(
+    entry: ConfigEntry, zone_id: str | None = None
+) -> list[dict[str, str]]:
+    """The scenes available to pick.
+
+    When a room is given, only the scenes offered in that room -- so the list
+    a switch cycles through cannot contain a scene meant for somewhere else.
+    """
+    options = []
+    for sub in entry.subentries.values():
+        if sub.subentry_type != SubentryType.SCENE.value:
+            continue
+        if zone_id is not None:
+            scoped = sub.data.get(CONF_SCENE_ZONES) or []
+            if scoped and zone_id not in scoped:
+                continue
+        options.append({"value": sub.subentry_id, "label": sub.title})
+    return options
 
 
 def _zone_subentries(entry: ConfigEntry) -> dict[str, Any]:
@@ -357,7 +370,11 @@ class SceneSubentryFlow(ConfigSubentryFlow):
         existing = dict(subentry.data) if subentry else None
         return self.async_show_form(
             step_id="reconfigure" if subentry else "user",
-            data_schema=build_schema(SCENE_SPECS, user_input or existing),
+            data_schema=build_schema(
+                SCENE_SPECS,
+                user_input or existing,
+                options={"zones": zone_options(self._get_entry())},
+            ),
             errors=errors,
         )
 
@@ -459,8 +476,9 @@ class ControllerSubentryFlow(ConfigSubentryFlow):
                 existing_order = (
                     list(subentry.data.get(CONF_SCENE_ORDER) or []) if subentry else []
                 )
-                known = {s["value"] for s in scene_options(entry)}
-                # Drop positions whose scene has since been deleted.
+                known = {s["value"] for s in scene_options(entry, self._zone_id)}
+                # Drop positions whose scene has been deleted, or which is no
+                # longer offered in this room.
                 self._order = [s for s in existing_order if s in known]
                 return await self.async_step_order()
 
@@ -476,6 +494,10 @@ class ControllerSubentryFlow(ConfigSubentryFlow):
         )
 
     # -- the ordering loop -------------------------------------------------
+
+    @property
+    def _zone_id(self) -> str | None:
+        return self._data.get(CONF_ZONE_ID)
 
     def _order_summary(self) -> str:
         entry = self._get_entry()
@@ -510,7 +532,7 @@ class ControllerSubentryFlow(ConfigSubentryFlow):
         entry = self._get_entry()
         available = [
             option
-            for option in scene_options(entry)
+            for option in scene_options(entry, self._zone_id)
             if option["value"] not in self._order
         ]
         if not available:

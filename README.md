@@ -69,7 +69,7 @@ walks through adaptive and then every scene, so a dumb wall switch works with no
 | Object | What it is |
 |---|---|
 | **Zone** | One room's lights, controlled together. Creates a `light`, a mode `select`, switches for adaptive and night, and buttons. |
-| **Scene** | A reusable recipe — a brightness, one colour, and which of those it takes over. Not tied to a room. |
+| **Scene** | A named look — a brightness, one colour, and which of those it takes over. Applied to one room at a time; define it once and reuse it in as many rooms as you like. |
 | **Light switch** | A physical switch, with its own ordered list of scenes. |
 | **Light calibration** | Per-light minimum, maximum and offsets, to match a mismatched bulb to its neighbours. |
 | **Mode** | A cross-zone mode such as Home Cinema: named states, and what each room does in each. |
@@ -106,8 +106,17 @@ without flashing through the two in between.
 
 ## Scenes
 
-A scene says what a room should *look like*, with no reference to any particular light — which
-is what makes *Cooking* reusable in every room rather than redefined in each.
+**A scene only ever affects the room you apply it to.** Selecting *Reading* in the living room
+changes the living room and nothing else.
+
+What a scene does *not* do is name particular lights. It says "35% brightness, warm white" —
+so you can define *Reading* once and use it in the living room, the study and the bedroom,
+instead of writing it out three times. That reuse is optional, not a consequence: most scenes
+belong to one room, and the **Offer this scene in** field keeps them out of the other rooms'
+lists. Leave it empty for the handful that genuinely are house-wide, such as a night scene.
+
+If you want a scene that spans rooms *at the same time* — everything dimming when the film
+starts — that is what a [cross-zone mode](#cross-zone-modes-home-cinema) is for.
 
 Each scene chooses what it overrides, and **whatever it leaves alone keeps following the sun**:
 
@@ -123,6 +132,7 @@ while the colour still warms through the evening.
 
 Other options worth knowing:
 
+- **Offer this scene in** — which rooms list it. Empty means all of them.
 - **Only affect lights that are already on** — adjust a room without lighting it up.
 - **Lights this scene does not mention** — keep adapting (the default), switch off, or leave
   alone.

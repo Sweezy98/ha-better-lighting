@@ -73,9 +73,20 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
 
     @property
     def _scene_names(self) -> dict[str, str]:
-        """Display name -> scene id, with collisions made unambiguous."""
+        """Display name -> scene id, with collisions made unambiguous.
+
+        Only the scenes offered in this room, so a Reading scene meant for the
+        living room does not clutter every other room's list. A scene that is
+        somehow already active is always included, so the select can still
+        report what the room is doing.
+        """
         names: dict[str, str] = {}
+        zone_id = self.zone.subentry_id
         for scene_id, scene in self.controller.scenes.items():
+            if not scene.offered_in(zone_id) and (
+                scene_id != self.controller.active_scene_id
+            ):
+                continue
             name = scene.name or scene_id
             if name in (OPTION_OFF, OPTION_ADAPTIVE) or name in names:
                 # A scene called "Off" would otherwise shadow the real option.

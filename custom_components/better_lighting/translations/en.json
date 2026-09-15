@@ -425,11 +425,13 @@
             "override_mode": "This scene sets",
             "brightness_pct": "Brightness",
             "color_format": "Colour given as",
-            "transition": "Transition"
+            "transition": "Transition",
+            "scene_zones": "Offer this scene in"
           },
           "data_description": {
             "override_mode": "'Brightness' pins the brightness and lets the colour keep tracking the sun. 'Colour' does the opposite. 'Both' fixes the look entirely. 'Neither' only chooses which lights are on.",
-            "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness."
+            "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness.",
+            "scene_zones": "Leave empty to offer it in every room. Applying a scene only ever affects the one room you apply it to -- this just keeps a room's list to the scenes that make sense there."
           },
           "sections": {
             "advanced": {
@@ -457,11 +459,13 @@
             "override_mode": "This scene sets",
             "brightness_pct": "Brightness",
             "color_format": "Colour given as",
-            "transition": "Transition"
+            "transition": "Transition",
+            "scene_zones": "Offer this scene in"
           },
           "data_description": {
             "override_mode": "'Brightness' pins the brightness and lets the colour keep tracking the sun. 'Colour' does the opposite. 'Both' fixes the look entirely. 'Neither' only chooses which lights are on.",
-            "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness."
+            "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness.",
+            "scene_zones": "Leave empty to offer it in every room. Applying a scene only ever affects the one room you apply it to -- this just keeps a room's list to the scenes that make sense there."
           },
           "sections": {
             "advanced": {

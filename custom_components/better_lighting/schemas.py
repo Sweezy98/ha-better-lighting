@@ -53,10 +53,18 @@ def build_schema(
                 # produces a dead control, so the field is left out and the
                 # form explains why instead.
                 continue
+            # Rebuild the widget around the runtime choices, but carry the
+            # spec's own settings across. Dropping them silently turned every
+            # multi-select whose options are runtime-supplied into a
+            # single-select, which the form then rejected.
+            original = getattr(spec.selector, "config", {}) or {}
             widget = selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=choices,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    multiple=bool(original.get("multiple", False)),
+                    mode=original.get(
+                        "mode", selector.SelectSelectorMode.DROPDOWN
+                    ),
                     sort=False,
                 )
             )

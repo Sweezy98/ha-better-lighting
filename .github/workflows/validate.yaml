@@ -19,3 +19,8 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
+          # The brands check requires an accepted pull request to
+          # home-assistant/brands, which is a separate repository. Remove this
+          # line once https://github.com/home-assistant/brands has merged the
+          # better_lighting icon and logo.
+          ignore: brands

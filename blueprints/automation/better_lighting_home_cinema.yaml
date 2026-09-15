@@ -1,0 +1,121 @@
+blueprint:
+  name: Better Lighting — Home Cinema
+  description: >-
+    Drive a Better Lighting cross-zone mode from a media player.
+
+
+    Starting playback puts the house into the mode's *playing* state, pausing
+    moves it to *paused*, and stopping returns it to *off* — which ends the
+    session and puts the rooms back, relighting only the lights that were on
+    beforehand.
+
+
+    Everything about *what each room does* lives in the mode itself, not here.
+    This blueprint only translates a media player into a state name.
+  domain: automation
+  homeassistant:
+    min_version: "2026.1.0"
+  source_url: https://github.com/Sweezy98/ha-better-lighting/blob/main/blueprints/automation/better_lighting_home_cinema.yaml
+  input:
+    media_player:
+      name: Media player
+      description: The player whose state drives the mode.
+      selector:
+        entity:
+          filter:
+            - domain: media_player
+
+    mode_select:
+      name: Mode
+      description: >-
+        The Better Lighting mode to drive. This is the "State" entity of a
+        cross-zone mode, such as select.home_cinema_state.
+      selector:
+        entity:
+          filter:
+            - integration: better_lighting
+              domain: select
+
+    playing_state:
+      name: State while playing
+      default: playing
+      selector:
+        text:
+
+    paused_state:
+      name: State while paused
+      default: paused
+      selector:
+        text:
+
+    stop_delay:
+      name: Wait before ending the session
+      description: >-
+        Stopping briefly while switching episodes should not relight the whole
+        house. The session only ends once the player has stayed stopped for
+        this long.
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 600
+          unit_of_measurement: seconds
+          mode: box
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input media_player
+    to: playing
+    id: playing
+  - trigger: state
+    entity_id: !input media_player
+    to: paused
+    id: paused
+  # Anything else that means "the film is over". The delay stops a brief stop
+  # between episodes tearing the session down.
+  - trigger: state
+    entity_id: !input media_player
+    to:
+      - "off"
+      - idle
+      - standby
+      - unavailable
+    for:
+      seconds: !input stop_delay
+    id: stopped
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: playing
+        sequence:
+          - action: select.select_option
+            target:
+              entity_id: !input mode_select
+            data:
+              option: !input playing_state
+
+      - conditions:
+          - condition: trigger
+            id: paused
+        sequence:
+          - action: select.select_option
+            target:
+              entity_id: !input mode_select
+            data:
+              option: !input paused_state
+
+      - conditions:
+          - condition: trigger
+            id: stopped
+        sequence:
+          # "off" is always a valid state and ends the session.
+          - action: select.select_option
+            target:
+              entity_id: !input mode_select
+            data:
+              option: "off"

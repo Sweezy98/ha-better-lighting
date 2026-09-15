@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest supported Home Assistant and the newest. 2026.1 runs on
+        # Python 3.13 and 2026.9 needs 3.14, so this matrix is also what stops
+        # 3.14-only syntax reaching a release that cannot parse it.
+        include:
+          - homeassistant: "2026.1.3"
+            python: "3.13"
+          - homeassistant: "2026.9.2"
+            python: "3.14"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python ${{ matrix.python }}
+        run: uv python install ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: |
+          uv venv --python ${{ matrix.python }} .venv
+          uv pip install \
+            "homeassistant==${{ matrix.homeassistant }}" \
+            pytest-homeassistant-custom-component \
+            ruff
+
+      - name: Lint
+        run: .venv/bin/ruff check custom_components/ tests/
+
+      - name: Check formatting
+        run: .venv/bin/ruff format --check custom_components/ tests/
+
+      - name: Test
+        run: .venv/bin/python -m pytest tests/ -q

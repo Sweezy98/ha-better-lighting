@@ -1,0 +1,12 @@
+{
+  "services": {
+    "press": { "service": "mdi:gesture-tap-button" },
+    "cycle": { "service": "mdi:skip-next" },
+    "set_adaptive": { "service": "mdi:theme-light-dark" },
+    "activate_scene": { "service": "mdi:palette" },
+    "clear_manual_override": { "service": "mdi:hand-back-left-off" },
+    "set_mode": { "service": "mdi:movie-open" },
+    "end_mode": { "service": "mdi:stop" },
+    "rejoin_mode": { "service": "mdi:account-arrow-left" }
+  }
+}

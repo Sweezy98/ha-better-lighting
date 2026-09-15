@@ -1,0 +1,17 @@
+{
+  "domain": "better_lighting",
+  "name": "Better Lighting",
+  "codeowners": [
+    "@Sweezy98"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "light"
+  ],
+  "documentation": "https://github.com/Sweezy98/ha-better-lighting",
+  "integration_type": "hub",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/Sweezy98/ha-better-lighting/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -1,0 +1,184 @@
+"""Config, options and subentry flows.
+
+Every form is generated from the ``FieldSpec`` tables in :mod:`.const` via
+:mod:`.schemas`, so adding an option means editing one table.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    ConfigSubentryFlow,
+    OptionsFlow,
+    SubentryFlowResult,
+)
+from homeassistant.core import callback
+
+from .const import (
+    CONF_LIGHTS,
+    CONF_NAME,
+    DOMAIN,
+    HUB_SPECS,
+    ZONE_SPECS,
+    SubentryType,
+)
+from .schemas import build_schema, flatten_sections, post_validate
+
+_LOGGER = logging.getLogger(__name__)
+
+HUB_TITLE = "Better Lighting"
+
+
+def _zone_subentries(entry: ConfigEntry) -> dict[str, Any]:
+    """Every zone subentry, keyed by subentry_id."""
+    return {
+        sub.subentry_id: sub
+        for sub in entry.subentries.values()
+        if sub.subentry_type == SubentryType.ZONE.value
+    }
+
+
+def validate_zone_lights(
+    entry: ConfigEntry, lights: list[str], *, exclude_subentry_id: str | None = None
+) -> dict[str, str]:
+    """Enforce the one-light-one-zone invariant.
+
+    This is the rule the whole architecture rests on: because a light belongs to
+    exactly one zone, manual-override tracking, render ownership and press
+    attribution are all unambiguous without any of Adaptive Lighting's
+    multi-switch disambiguation machinery.
+    """
+    if not lights:
+        return {CONF_LIGHTS: "no_lights"}
+
+    claimed: dict[str, str] = {}
+    for subentry_id, subentry in _zone_subentries(entry).items():
+        if subentry_id == exclude_subentry_id:
+            continue
+        for entity_id in subentry.data.get(CONF_LIGHTS) or ():
+            claimed[entity_id] = subentry.title
+
+    for entity_id in lights:
+        if entity_id in claimed:
+            _LOGGER.debug(
+                "%s is already a member of zone %r", entity_id, claimed[entity_id]
+            )
+            return {CONF_LIGHTS: "light_in_other_zone"}
+
+    return {}
+
+
+class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Set up the single hub entry."""
+
+    VERSION = 1
+    MINOR_VERSION = 1
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create the hub, collecting the global adaptive defaults."""
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            flat = flatten_sections(HUB_SPECS, user_input)
+            cleaned, errors = post_validate(HUB_SPECS, flat)
+            if not errors:
+                await self.async_set_unique_id(DOMAIN)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=HUB_TITLE, data={}, options=cleaned
+                )
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=build_schema(HUB_SPECS, user_input),
+            errors=errors,
+        )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        return BetterLightingOptionsFlow()
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """The kinds of object that can be added to the hub."""
+        return {SubentryType.ZONE.value: ZoneSubentryFlow}
+
+
+class BetterLightingOptionsFlow(OptionsFlow):
+    """Edit the hub's global defaults."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            flat = flatten_sections(HUB_SPECS, user_input)
+            cleaned, errors = post_validate(HUB_SPECS, flat)
+            if not errors:
+                return self.async_create_entry(data=cleaned)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=build_schema(
+                HUB_SPECS, user_input or dict(self.config_entry.options)
+            ),
+            errors=errors,
+        )
+
+
+class ZoneSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure a zone."""
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_zone_form(user_input, subentry=None)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_zone_form(
+            user_input, subentry=self._get_reconfigure_subentry()
+        )
+
+    async def _async_zone_form(
+        self, user_input: dict[str, Any] | None, *, subentry: Any
+    ) -> SubentryFlowResult:
+        entry = self._get_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            flat = flatten_sections(ZONE_SPECS, user_input)
+            cleaned, errors = post_validate(ZONE_SPECS, flat)
+            errors |= validate_zone_lights(
+                entry,
+                cleaned.get(CONF_LIGHTS) or [],
+                exclude_subentry_id=subentry.subentry_id if subentry else None,
+            )
+            if not errors:
+                title = cleaned[CONF_NAME]
+                if subentry is None:
+                    return self.async_create_entry(title=title, data=cleaned)
+                return self.async_update_and_abort(
+                    entry, subentry, data=cleaned, title=title
+                )
+
+        existing = dict(subentry.data) if subentry else None
+        return self.async_show_form(
+            step_id="reconfigure" if subentry else "user",
+            data_schema=build_schema(ZONE_SPECS, user_input or existing),
+            errors=errors,
+        )

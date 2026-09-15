@@ -1,0 +1,185 @@
+{
+  "title": "Better Lighting",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Better Lighting",
+        "description": "These are the house-wide defaults. Every zone inherits them, and any zone or individual light can override them later.",
+        "data": {
+          "interval": "Update interval",
+          "transition": "Transition",
+          "min_brightness_pct": "Minimum brightness",
+          "max_brightness_pct": "Maximum brightness",
+          "min_color_temp_k": "Warmest colour temperature",
+          "max_color_temp_k": "Coldest colour temperature",
+          "brightness_mode": "Brightness curve"
+        },
+        "data_description": {
+          "interval": "How often lights are re-adapted while in adaptive mode.",
+          "min_brightness_pct": "Brightness at the darkest point of the day. This shapes the curve; individual lights clamp on top of it.",
+          "max_brightness_pct": "Brightness at the brightest point of the day.",
+          "brightness_mode": "'Sun' holds maximum all day and ramps only at night. 'Tanh' fades smoothly around sunrise and sunset, starting before the sun is down."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "data": {
+              "initial_transition": "Transition when turning on",
+              "scene_transition": "Transition when changing scene",
+              "brightness_mode_time_dark": "Fade duration on the dark side",
+              "brightness_mode_time_light": "Fade duration on the light side",
+              "sunrise_offset": "Sunrise offset",
+              "sunset_offset": "Sunset offset",
+              "night_brightness_pct": "Night brightness",
+              "night_color_temp_k": "Night colour temperature",
+              "prefer_rgb_color": "Prefer RGB over colour temperature",
+              "take_over_control": "Detect manual changes",
+              "autoreset_manual_seconds": "Forget a manual change after",
+              "separate_turn_on_commands": "Send brightness and colour separately",
+              "send_split_delay_ms": "Delay between split commands",
+              "intercept_member_calls": "Intercept calls made directly to member lights"
+            },
+            "data_description": {
+              "take_over_control": "When someone changes a light by hand, stop adapting it until it is switched off again or the timer below expires.",
+              "separate_turn_on_commands": "Some bulbs drop the colour when brightness arrives in the same command. Enable this only for those.",
+              "intercept_member_calls": "Only needed if your switches are wired to the individual bulbs instead of the zone. Falls back automatically if unavailable."
+            }
+          }
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Better Lighting is already set up. Add zones, scenes and controllers from its entry."
+    },
+    "error": {
+      "invalid_value": "This value is not valid."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Global defaults",
+        "description": "Changing these re-applies to every zone that has not overridden them.",
+        "data": {
+          "interval": "Update interval",
+          "transition": "Transition",
+          "min_brightness_pct": "Minimum brightness",
+          "max_brightness_pct": "Maximum brightness",
+          "min_color_temp_k": "Warmest colour temperature",
+          "max_color_temp_k": "Coldest colour temperature",
+          "brightness_mode": "Brightness curve"
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "data": {
+              "initial_transition": "Transition when turning on",
+              "scene_transition": "Transition when changing scene",
+              "brightness_mode_time_dark": "Fade duration on the dark side",
+              "brightness_mode_time_light": "Fade duration on the light side",
+              "sunrise_offset": "Sunrise offset",
+              "sunset_offset": "Sunset offset",
+              "night_brightness_pct": "Night brightness",
+              "night_color_temp_k": "Night colour temperature",
+              "prefer_rgb_color": "Prefer RGB over colour temperature",
+              "take_over_control": "Detect manual changes",
+              "autoreset_manual_seconds": "Forget a manual change after",
+              "separate_turn_on_commands": "Send brightness and colour separately",
+              "send_split_delay_ms": "Delay between split commands",
+              "intercept_member_calls": "Intercept calls made directly to member lights"
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "invalid_value": "This value is not valid."
+    }
+  },
+  "config_subentries": {
+    "zone": {
+      "title": "Zone",
+      "entry_type": "Zone",
+      "initiate_flow": {
+        "user": "Add zone",
+        "reconfigure": "Reconfigure zone"
+      },
+      "step": {
+        "user": {
+          "title": "Add zone",
+          "description": "A zone is one room's lights, controlled together. Each light can belong to only one zone.",
+          "data": {
+            "name": "Name",
+            "lights": "Lights",
+            "icon": "Icon",
+            "area_id": "Area"
+          },
+          "data_description": {
+            "lights": "The lights in this room. A light may belong to only one zone, so that manual changes and scene control are never ambiguous."
+          },
+          "sections": {
+            "group": {
+              "name": "Group behaviour",
+              "data": {
+                "all": "Only report on when every light is on",
+                "hide_members": "Hide the individual lights",
+                "remember_on_state": "Remember which lights were on",
+                "brightness_strategy": "Reported brightness",
+                "expand_light_groups": "Expand nested light groups"
+              },
+              "data_description": {
+                "remember_on_state": "When the zone is switched back on, light only the lights that were on when it was switched off.",
+                "brightness_strategy": "How one brightness value is derived from the lights that are on."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure zone",
+          "data": {
+            "name": "Name",
+            "lights": "Lights",
+            "icon": "Icon",
+            "area_id": "Area"
+          },
+          "sections": {
+            "group": {
+              "name": "Group behaviour",
+              "data": {
+                "all": "Only report on when every light is on",
+                "hide_members": "Hide the individual lights",
+                "remember_on_state": "Remember which lights were on",
+                "brightness_strategy": "Reported brightness",
+                "expand_light_groups": "Expand nested light groups"
+              }
+            }
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "This value is not valid.",
+        "no_lights": "Pick at least one light.",
+        "light_in_other_zone": "One of these lights already belongs to another zone. A light can only be in one zone."
+      },
+      "abort": {
+        "reconfigure_successful": "Zone updated."
+      }
+    }
+  },
+  "selector": {
+    "brightness_mode": {
+      "options": {
+        "sun": "Sun (flat by day, ramps at night)",
+        "tanh": "Smooth (fades around sunrise and sunset)"
+      }
+    },
+    "brightness_strategy": {
+      "options": {
+        "average": "Average",
+        "median": "Median",
+        "max": "Brightest light",
+        "min": "Dimmest light"
+      }
+    }
+  }
+}

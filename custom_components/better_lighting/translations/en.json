@@ -431,7 +431,7 @@
           "data_description": {
             "override_mode": "'Brightness' pins the brightness and lets the colour keep tracking the sun. 'Colour' does the opposite. 'Both' fixes the look entirely. 'Neither' only chooses which lights are on.",
             "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness.",
-            "scene_zones": "Leave empty to offer it in every room. Applying a scene only ever affects the one room you apply it to -- this just keeps a room's list to the scenes that make sense there."
+            "scene_zones": "Leave empty for a scene the whole house uses, such as a night scene. Naming one room keeps it out of every other room's list, and puts the room in front of its name so a Reading scene in the living room and one in the bedroom can both simply be called Reading."
           },
           "sections": {
             "advanced": {
@@ -465,7 +465,7 @@
           "data_description": {
             "override_mode": "'Brightness' pins the brightness and lets the colour keep tracking the sun. 'Colour' does the opposite. 'Both' fixes the look entirely. 'Neither' only chooses which lights are on.",
             "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness.",
-            "scene_zones": "Leave empty to offer it in every room. Applying a scene only ever affects the one room you apply it to -- this just keeps a room's list to the scenes that make sense there."
+            "scene_zones": "Leave empty for a scene the whole house uses, such as a night scene. Naming one room keeps it out of every other room's list, and puts the room in front of its name so a Reading scene in the living room and one in the bedroom can both simply be called Reading."
           },
           "sections": {
             "advanced": {
@@ -511,26 +511,12 @@
           "data": {
             "light": "Light",
             "action": "What happens to it",
-            "brightness_pct": "Brightness"
+            "brightness_pct": "Brightness",
+            "color_format": "Colour for this light"
           },
           "data_description": {
-            "brightness_pct": "Leave empty to use the scene's own brightness."
-          },
-          "sections": {
-            "advanced": {
-              "name": "Colour",
-              "data": {
-                "color_format": "Colour for this light",
-                "color_temp_kelvin": "Colour temperature",
-                "rgb_color": "Colour",
-                "warm_white": "Warm white channel",
-                "cold_white": "Cold white channel"
-              },
-              "data_description": {
-                "color_format": "'Leave the colour to the sun' lets this light take the scene's brightness while its colour keeps adapting — useful for a desk lamp in a film scene.",
-                "warm_white": "RGBWW strips have white LEDs behind the colour ones. Leave both at zero for a pure colour; raise the warm channel to sit a strip against a wooden floor."
-              }
-            }
+            "brightness_pct": "Leave empty to use the scene's own brightness.",
+            "color_format": "'Leave the colour to the sun' lets this light take the scene's brightness while its colour keeps adapting — useful for a desk lamp in a film scene. You are asked for the colour itself next."
           }
         },
         "remove_light": {
@@ -538,6 +524,18 @@
           "description": "Named lights:\n\n{lights}",
           "data": {
             "light": "Light"
+          }
+        },
+        "light_color": {
+          "title": "Colour for {light}",
+          "data": {
+            "color_temp_kelvin": "Colour temperature",
+            "rgb_color": "Colour",
+            "warm_white": "Warm white channel",
+            "cold_white": "Cold white channel"
+          },
+          "data_description": {
+            "warm_white": "RGBWW strips have white LEDs behind the colour ones. Leave both at zero for a pure colour; raise the warm channel to sit a strip against a wooden floor."
           }
         }
       },

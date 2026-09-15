@@ -56,6 +56,7 @@ from .const import (
     BindingType,
     SubentryType,
     mode_rule_specs,
+    scene_light_color_specs,
     scene_light_specs,
 )
 from .schemas import build_schema, flatten_sections, post_validate
@@ -344,6 +345,7 @@ class SceneSubentryFlow(ConfigSubentryFlow):
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
         self._lights: dict[str, Any] = {}
+        self._pending_light: tuple[str, dict[str, Any]] = ("", {})
         self._subentry: Any = None
 
     async def async_step_user(
@@ -475,6 +477,9 @@ class SceneSubentryFlow(ConfigSubentryFlow):
             if not entity_id:
                 errors["light"] = "light_required"
             if not errors:
+                self._pending_light = (entity_id, cleaned)
+                if _light_needs_color(cleaned):
+                    return await self.async_step_light_color()
                 self._lights[entity_id] = cleaned
                 return await self.async_step_lights()
 
@@ -491,6 +496,35 @@ class SceneSubentryFlow(ConfigSubentryFlow):
             data_schema=build_schema(specs, user_input, options={"lights": available}),
             errors=errors,
             description_placeholders={"lights": self._lights_summary()},
+        )
+
+    async def async_step_light_color(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Ask for the colour itself, showing only the control that was chosen.
+
+        Home Assistant has no combined light-colour control for config flows --
+        only a colour picker and a colour-temperature slider, which are exactly
+        what these are. Asking which one first means the user sees that one
+        rather than every colour field at once.
+        """
+        entity_id, pending = self._pending_light
+        fmt = pending.get(CONF_COLOR_FORMAT)
+        specs = scene_light_color_specs(fmt)
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            cleaned, errors = post_validate(specs, user_input)
+            if not errors:
+                self._lights[entity_id] = {**pending, **cleaned}
+                self._pending_light = ("", {})
+                return await self.async_step_lights()
+
+        return self.async_show_form(
+            step_id="light_color",
+            data_schema=build_schema(specs, user_input),
+            errors=errors,
+            description_placeholders={"light": entity_id},
         )
 
     async def async_step_remove_light(
@@ -525,13 +559,35 @@ class SceneSubentryFlow(ConfigSubentryFlow):
         return self._finish()
 
     def _finish(self) -> SubentryFlowResult:
+        entry = self._get_entry()
         data = {**self._data, CONF_SCENE_LIGHTS: self._lights}
-        title = data[CONF_NAME]
+        title = scene_title(entry, data[CONF_NAME], data.get(CONF_SCENE_ZONES))
         if self._subentry is None:
             return self.async_create_entry(title=title, data=data)
         return self.async_update_and_abort(
-            self._get_entry(), self._subentry, data=data, title=title
+            entry, self._subentry, data=data, title=title
         )
+
+
+def scene_title(entry: ConfigEntry, name: str, zone_ids: list[str] | None) -> str:
+    """The name a scene is listed under.
+
+    Home Assistant lists every scene flat under the integration, with no way to
+    nest them under a room, so the title is the only lever. Putting the room
+    first for a single-room scene means all of a room's scenes sort together,
+    and two rooms can each have a Reading scene without either being renamed.
+    """
+    titles = {
+        sub.subentry_id: sub.title
+        for sub in entry.subentries.values()
+        if sub.subentry_type == SubentryType.ZONE.value
+    }
+    rooms = [titles[z] for z in (zone_ids or []) if z in titles]
+    if not rooms:
+        return name
+    if len(rooms) == 1:
+        return f"{rooms[0]} \u00b7 {name}"
+    return f"{name} \u00b7 {', '.join(sorted(rooms))}"
 
 
 def scene_light_options(
@@ -919,3 +975,12 @@ class ModeSubentryFlow(ConfigSubentryFlow):
         return self.async_update_and_abort(
             self._get_entry(), self._subentry, data=data, title=title
         )
+
+
+def _light_needs_color(entry: dict[str, Any]) -> bool:
+    """Whether this light's colour needs a value of its own."""
+    return entry.get(CONF_COLOR_FORMAT) not in (
+        None,
+        COLOR_FORMAT_INHERIT,
+        COLOR_FORMAT_NONE,
+    )

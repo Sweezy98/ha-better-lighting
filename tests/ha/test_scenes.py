@@ -281,15 +281,24 @@ class TestPerLightScene:
             result["flow_id"], {"next_step_id": "add_light"}
         )
         assert result["step_id"] == "add_light"
+        colour = fields.pop("colour", None)
         payload = {
             "light": light,
             "action": fields.pop("action", "apply"),
-            "advanced": fields.pop("advanced", {}),
+            "color_format": fields.pop("color_format", "inherit"),
         }
         payload |= fields
-        return await hass.config_entries.subentries.async_configure(
+        result = await hass.config_entries.subentries.async_configure(
             result["flow_id"], payload
         )
+        if colour is not None:
+            # The colour is asked for on its own, showing only the control
+            # that was chosen.
+            assert result["step_id"] == "light_color"
+            result = await hass.config_entries.subentries.async_configure(
+                result["flow_id"], colour
+            )
+        return result
 
     async def test_the_movie_scene_from_the_review(self, hass: HomeAssistant) -> None:
         """The exact scenario asked about: four lights, four different jobs."""
@@ -310,12 +319,8 @@ class TestPerLightScene:
             result,
             "light.one",
             brightness_pct=7,
-            advanced={
-                "color_format": "rgb_white",
-                "rgb_color": [255, 96, 16],
-                "warm_white": 0,
-                "cold_white": 0,
-            },
+            color_format="rgb_white",
+            colour={"rgb_color": [255, 96, 16], "warm_white": 0, "cold_white": 0},
         )
         # A desk lamp: the scene's brightness, but its colour keeps adapting.
         result = await self._add(
@@ -323,7 +328,7 @@ class TestPerLightScene:
             result,
             "light.two",
             brightness_pct=20,
-            advanced={"color_format": "none"},
+            color_format="none",
         )
 
         result = await hass.config_entries.subentries.async_configure(
@@ -369,14 +374,15 @@ class TestPerLightScene:
             result,
             "light.strip",
             brightness_pct=7,
-            advanced={"color_format": "color_temp_kelvin", "color_temp_kelvin": 2200},
+            color_format="color_temp_kelvin",
+            colour={"color_temp_kelvin": 2200},
         )
         result = await self._add(
             hass,
             result,
             "light.desk",
             brightness_pct=20,
-            advanced={"color_format": "none"},
+            color_format="none",
         )
         await hass.config_entries.subentries.async_configure(
             result["flow_id"], {"next_step_id": "finish"}
@@ -595,3 +601,91 @@ class TestSceneScope:
         # select must still be able to say so rather than reporting nothing.
         kitchen = hass.states.get("select.kitchen_mode")
         assert kitchen.state in kitchen.attributes["options"]
+
+
+class TestSceneTitles:
+    """Home Assistant lists scenes flat, so the title has to do the organising."""
+
+    async def _add_scene(self, hass: HomeAssistant, entry, name: str, zones: list[str]):
+        ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+        result = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SubentryType.SCENE.value),
+            context={"source": config_entries.SOURCE_USER},
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"],
+            {
+                "name": name,
+                "icon": "mdi:palette",
+                "scene_zones": [ids[z] for z in zones],
+                "override_mode": "brightness",
+                "brightness_pct": 40,
+                "color_format": "none",
+                "transition": 1,
+                "advanced": {},
+            },
+        )
+        return await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "finish"}
+        )
+
+    async def _two_rooms(self, hass: HomeAssistant):
+        await setup_members(hass, [MemberLight("A"), MemberLight("B")])
+        return await setup_hub(
+            hass,
+            hub_entry(
+                subentries_data=[
+                    zone_subentry("Living Room", ["light.a"]),
+                    zone_subentry("Bedroom", ["light.b"]),
+                ]
+            ),
+        )
+
+    async def test_a_one_room_scene_is_listed_under_its_room(
+        self, hass: HomeAssistant
+    ) -> None:
+        entry = await self._two_rooms(hass)
+        result = await self._add_scene(hass, entry, "Reading", ["Living Room"])
+        assert result["title"] == "Living Room · Reading"
+
+    async def test_two_rooms_can_both_have_a_reading_scene(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The point: neither has to be renamed to tell them apart."""
+        entry = await self._two_rooms(hass)
+        await self._add_scene(hass, entry, "Reading", ["Living Room"])
+        await self._add_scene(hass, entry, "Reading", ["Bedroom"])
+
+        titles = sorted(
+            sub.title
+            for sub in entry.subentries.values()
+            if sub.subentry_type == SubentryType.SCENE.value
+        )
+        assert titles == ["Bedroom · Reading", "Living Room · Reading"]
+
+    async def test_a_house_wide_scene_keeps_its_plain_name(
+        self, hass: HomeAssistant
+    ) -> None:
+        entry = await self._two_rooms(hass)
+        result = await self._add_scene(hass, entry, "Night", [])
+        assert result["title"] == "Night"
+
+    async def test_a_multi_room_scene_names_its_rooms(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Answers "which rooms is this one in?" from the list itself."""
+        entry = await self._two_rooms(hass)
+        result = await self._add_scene(hass, entry, "Movie", ["Living Room", "Bedroom"])
+        assert result["title"] == "Movie · Bedroom, Living Room"
+
+    async def test_the_room_prefix_does_not_leak_into_the_select(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Inside a room there is no ambiguity, so the plain name is shown."""
+        entry = await self._two_rooms(hass)
+        await self._add_scene(hass, entry, "Reading", ["Living Room"])
+        await hass.async_block_till_done()
+
+        options = hass.states.get("select.living_room_mode").attributes["options"]
+        assert "Reading" in options
+        assert "Living Room · Reading" not in options

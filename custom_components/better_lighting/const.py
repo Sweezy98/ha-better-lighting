@@ -659,7 +659,12 @@ SCENE_LIGHT_COLOR_FORMATS = [
 
 
 def scene_light_specs() -> tuple[FieldSpec, ...]:
-    """The form for one light inside a scene."""
+    """The form for one light inside a scene.
+
+    Deliberately short. The colour value is asked for in a second step, so the
+    user sees the one control they chose rather than every colour field at
+    once.
+    """
     return (
         FieldSpec(
             "light",
@@ -679,38 +684,56 @@ def scene_light_specs() -> tuple[FieldSpec, ...]:
             CONF_COLOR_FORMAT,
             COLOR_FORMAT_INHERIT,
             _select(SCENE_LIGHT_COLOR_FORMATS, "scene_light_color_format"),
-            section=Section.ADVANCED,
-        ),
-        FieldSpec(CONF_COLOR_TEMP_KELVIN, 2700, _kelvin(), section=Section.ADVANCED),
-        FieldSpec(
-            CONF_RGB_COLOR,
-            [255, 96, 16],
-            selector.ColorRGBSelector(),
-            section=Section.ADVANCED,
-        ),
-        # RGBWW fixtures have two white LEDs behind the colour ones. Home
-        # Assistant has no five-channel picker, so they are two sliders.
-        FieldSpec(
-            CONF_WARM_WHITE,
-            0,
-            selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0, max=255, step=1, mode=selector.NumberSelectorMode.SLIDER
-                )
-            ),
-            section=Section.ADVANCED,
-        ),
-        FieldSpec(
-            CONF_COLD_WHITE,
-            0,
-            selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0, max=255, step=1, mode=selector.NumberSelectorMode.SLIDER
-                )
-            ),
-            section=Section.ADVANCED,
         ),
     )
+
+
+def _white_channel(key: str) -> FieldSpec:
+    return FieldSpec(
+        key,
+        0,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0, max=255, step=1, mode=selector.NumberSelectorMode.SLIDER
+            )
+        ),
+    )
+
+
+def scene_light_color_specs(color_format: str | None) -> tuple[FieldSpec, ...]:
+    """The second step: just the control for the chosen colour format.
+
+    These are Home Assistant's own colour picker and colour-temperature
+    slider. There is no combined light-colour control available to config
+    flows -- the wheel in the more-info dialog is a frontend component -- so
+    picking the format first and showing one control is as close as it gets.
+    """
+    if color_format == CONF_COLOR_TEMP_KELVIN:
+        return (FieldSpec(CONF_COLOR_TEMP_KELVIN, 2700, _kelvin(), required=True),)
+    if color_format == CONF_RGB_COLOR:
+        return (
+            FieldSpec(
+                CONF_RGB_COLOR,
+                [255, 96, 16],
+                selector.ColorRGBSelector(),
+                required=True,
+            ),
+        )
+    if color_format == COLOR_FORMAT_RGB_WHITE:
+        # RGBWW strips have two white LEDs behind the colour ones. Home
+        # Assistant has no five-channel picker, so the whites are sliders
+        # alongside its ordinary colour picker.
+        return (
+            FieldSpec(
+                CONF_RGB_COLOR,
+                [255, 96, 16],
+                selector.ColorRGBSelector(),
+                required=True,
+            ),
+            _white_channel(CONF_WARM_WHITE),
+            _white_channel(CONF_COLD_WHITE),
+        )
+    return ()
 
 
 # --------------------------------------------------------------------------

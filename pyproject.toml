@@ -2,10 +2,16 @@
 name = "better-lighting"
 version = "0.1.0"
 description = "Home Assistant integration combining adaptive lighting, relative light groups and scene cycling"
-requires-python = ">=3.14"
+# Home Assistant 2026.1 and 2026.2 -- the oldest releases this integration
+# supports -- run on Python 3.13, so 3.13 is the real floor even though
+# development happens on 3.14.
+requires-python = ">=3.13"
 
 [tool.ruff]
-target-version = "py314"
+# Must match the oldest Python a supported Home Assistant runs on, or ruff
+# will happily rewrite code into syntax that release cannot parse. It did
+# exactly that once: PEP 758 unparenthesized except groups are 3.14-only.
+target-version = "py313"
 line-length = 88
 
 [tool.ruff.lint]

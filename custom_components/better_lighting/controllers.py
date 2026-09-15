@@ -213,7 +213,7 @@ class ControllerRuntime:
         """For timestamp-valued entities, did this just happen?"""
         try:
             fired = dt_util.parse_datetime(state.state)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return True
         if fired is None:
             return True
@@ -271,6 +271,6 @@ class ControllerRuntime:
 def _is_number(value: str) -> bool:
     try:
         float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return False
     return True

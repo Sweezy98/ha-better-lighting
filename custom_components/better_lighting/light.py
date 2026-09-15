@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections import deque
 from collections.abc import Iterable, Mapping
 from math import atan2, cos, degrees, radians, sin
 from typing import Any
@@ -59,9 +58,10 @@ from .brightness import (
     representative_brightness,
 )
 from .const import DOMAIN
+from .context import ContextRegistry
 from .group_entity import GroupEntity
 from .models import HubConfig, ZoneConfig
-from .zone import ZoneController
+from .zone import Trigger, ZoneController
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,7 +95,12 @@ async def async_setup_entry(
     """Create one light entity per zone subentry."""
     runtime = entry.runtime_data
     for subentry_id, zone in runtime.zones.items():
-        entity = ZoneLight(zone, runtime.hub, runtime.controllers[subentry_id])
+        entity = ZoneLight(
+            zone,
+            runtime.hub,
+            runtime.controllers[subentry_id],
+            runtime.contexts,
+        )
         runtime.zone_lights[subentry_id] = entity
         # Binding to the subentry gives the zone its own device, and lets HA
         # clean both up automatically when the subentry is deleted.
@@ -176,11 +181,16 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
     _attr_should_poll = False
 
     def __init__(
-        self, zone: ZoneConfig, hub: HubConfig, controller: ZoneController
+        self,
+        zone: ZoneConfig,
+        hub: HubConfig,
+        controller: ZoneController,
+        contexts: ContextRegistry,
     ) -> None:
         self.zone = zone
         self.hub = hub
         self.controller = controller
+        self.contexts = contexts
         self._entity_ids = list(zone.lights)
 
         self._attr_unique_id = f"{zone.subentry_id}_light"
@@ -208,9 +218,6 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         # whole room. `None` means "no trustworthy memory, use all members".
         self._remembered: list[str] | None = None
         self._remembered_brightness: dict[str, int] = {}
-
-        # Contexts of commands we issued, so member echoes can be recognised.
-        self._command_contexts: deque[str] = deque(maxlen=512)
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -257,13 +264,13 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         return [s for s in states if s.state == STATE_ON]
 
     def is_our_context(self, context: Context | None) -> bool:
-        """Did we cause this? Checks the parent link too, as HA nests contexts."""
-        if context is None:
-            return False
-        return (
-            context.id in self._command_contexts
-            or context.parent_id in self._command_contexts
-        )
+        """Did we cause this?
+
+        Shared with the zone controller, so a command issued by either is
+        recognised by both. Keeping two separate registries would mean the
+        group treating the controller's renders as external user activity.
+        """
+        return self.contexts.is_ours(context)
 
     @callback
     def async_should_defer_state_change(
@@ -389,8 +396,11 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         """Issue one service call to a set of members, tagged as ours."""
         if not entity_ids:
             return
-        context = Context(parent_id=self._context.id if self._context else None)
-        self._command_contexts.append(context.id)
+        context = self.contexts.new_context(
+            self.zone.subentry_id, f"group_{service}", parent=self._context
+        )
+        for entity_id in entity_ids:
+            self.contexts.note_command(entity_id)
         await self.hass.services.async_call(
             LIGHT_DOMAIN,
             service,
@@ -467,7 +477,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
 
     async def _async_turn_on_adaptive(self, targets: list[str]) -> bool:
         """Light ``targets`` at their adaptive values. False if nothing to send."""
-        resolved = self.controller.targets_for(targets)
+        resolved = self.controller.targets_for(targets, trigger=Trigger.TURN_ON)
         if not resolved:
             return False
 

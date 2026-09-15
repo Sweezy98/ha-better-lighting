@@ -275,13 +275,24 @@ class ZoneController:
         return True
 
     def targets_for(
-        self, entity_ids: list[str], *, want: Axis = Axis.ALL, bias_pct: float = 0.0
+        self,
+        entity_ids: list[str],
+        *,
+        trigger: Trigger = Trigger.TICK,
+        want: Axis = Axis.ALL,
+        bias_pct: float = 0.0,
     ) -> list[LightTarget]:
-        """Resolve the adaptive curve into a concrete target per light."""
+        """Resolve the adaptive curve into a concrete target per light.
+
+        The curve is evaluated at the moment this fade will *finish*, so the
+        light lands on the right value instead of trailing a transition behind.
+        That means the trigger matters: a turn-on fades over a second, a tick
+        over the best part of a minute.
+        """
         try:
             settings = compute_for_transition(
                 self.adaptive_config(),
-                self._transition_for(Trigger.TICK),
+                self._transition_for(trigger),
                 is_night=self.is_night,
             )
         except SunEventOrderError as err:
@@ -329,7 +340,7 @@ class ZoneController:
         if not candidates:
             return
 
-        targets = self.targets_for(candidates)
+        targets = self.targets_for(candidates, trigger=trigger)
         transition = self._transition_for(trigger)
         payloads: dict[tuple, list[str]] = {}
 

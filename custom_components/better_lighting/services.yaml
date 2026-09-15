@@ -87,3 +87,41 @@ clear_manual_override:
         entity:
           domain: light
           multiple: true
+
+set_mode:
+  fields:
+    mode:
+      required: true
+      selector:
+        text:
+    state:
+      required: true
+      selector:
+        text:
+
+end_mode:
+  fields:
+    mode:
+      required: true
+      selector:
+        text:
+    restore:
+      default: true
+      selector:
+        boolean:
+
+rejoin_mode:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    mode:
+      required: true
+      selector:
+        text:
+    zone:
+      selector:
+        text:

@@ -18,6 +18,7 @@ import datetime
 import hashlib
 import logging
 import zoneinfo
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import astral
@@ -71,6 +72,7 @@ from .cycle import (
 from .cycle import (
     press_previous as cycle_press_previous,
 )
+from .presence import ZonePresence
 from .profiles import Axis, LightCapabilities, LightProfile, Saturation
 from .render import (
     LightCommand,
@@ -141,6 +143,15 @@ class ZoneController:
         # construction, because this dict belongs to one zone.
         self.manual: dict[str, Axis] = {}
 
+        # Set while a cross-zone mode is driving this room. A press clears it,
+        # which is how requirement 2's "press a switch during the film and that
+        # room goes back to normal" is expressed -- and it is scoped to the
+        # session, so nothing needs a timeout to expire.
+        self.session_owner: tuple[str, str] | None = None
+        self._opt_out_callback: Callable[[str], None] | None = None
+        # Presence, for modes that gate on whether a room is occupied.
+        self.presence: ZonePresence | None = None
+
         # The zone's own light entity, attached once its platform is up. It
         # owns the on-state memory, so turning the room off or back on has to
         # go through it rather than commanding members directly.
@@ -208,6 +219,22 @@ class ZoneController:
         self._manual_timers.clear()
         self._unsubscribers.clear()
         self._listeners.clear()
+
+    @callback
+    def set_session_owner(
+        self,
+        mode_id: str,
+        session_id: str,
+        on_opt_out: Callable[[str], None] | None = None,
+    ) -> None:
+        """Hand this room to a cross-zone mode for the length of its session."""
+        self.session_owner = (mode_id, session_id)
+        self._opt_out_callback = on_opt_out
+
+    @callback
+    def release_session_owner(self) -> None:
+        self.session_owner = None
+        self._opt_out_callback = None
 
     @callback
     def attach_light(self, light: ZoneLight) -> None:
@@ -375,6 +402,15 @@ class ZoneController:
         dismissed = False
         if self.manual:
             self.clear_manual()
+            dismissed = True
+        if self.session_owner is not None:
+            # The user has reached for the switch during a film. This room
+            # leaves the mode's control for the rest of the session.
+            mode_id, _session_id = self.session_owner
+            callback_fn, self._opt_out_callback = self._opt_out_callback, None
+            self.session_owner = None
+            if callback_fn is not None:
+                callback_fn(mode_id)
             dismissed = True
         if self.mode in (ZoneMode.INSECT, ZoneMode.EXTERNAL):
             dismissed = True

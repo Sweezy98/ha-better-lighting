@@ -21,10 +21,10 @@ override only brightness *or* only colour while the other keeps tracking the sun
 [relative-light-group]: https://github.com/Cheerpipe/relative-light-group
 [scenery]: https://github.com/j9brown/scenery
 
-> **Status: early development.** Milestones 1 to 4 of 8 are complete. The wall-switch
-> experience works end to end: a press lights the room in adaptive mode and each further
-> press cycles that switch's own list of scenes. Presence, window sensors and the cross-zone
-> cinema modes are not implemented yet.
+> **Status: early development.** Milestones 1 to 4 and 6 of 8 are complete. The wall-switch
+> experience works end to end, and so does the home-cinema case. Still to come: what presence
+> sensors do on their own (M5), window sensors and insect mode (M5), then robustness and
+> packaging (M7, M8).
 
 ## Concepts
 
@@ -79,6 +79,27 @@ normally. That one rule is why there is no "user mode" with a timeout to expire.
 Pressing the same button twice publishes the same value twice, which is not a state
 *change*. Watching only for changes loses every second press, so the integration listens for
 state reports as well.
+
+### Cross-zone modes
+
+A **mode** spans several rooms and has named states — *playing*, *paused*, *credits* — that
+an external automation moves between by setting one `select` entity. Each (state, room) pair
+has a rule: apply a scene, switch the room off, return it to adaptive, or leave it alone.
+
+Three things make this behave the way people actually expect:
+
+- **An occupied room is not plunged into darkness.** The instruction waits for the room to
+  empty, and is re-checked when it fires — by then the film may have ended, been paused, or
+  the room may have been taken back, and each of those cancels it.
+- **The snapshot is taken once**, when the session starts, and survives every state change
+  within it. Re-snapshotting on *paused* would capture the film-watching state, and the
+  restore at the end would relight nothing.
+- **On the way out, rooms return to adaptive, filtered to the lights that were on
+  beforehand.** The snapshot says *which* lights; the curve says *how bright*. Replaying
+  stored brightness would immediately be corrected a tick later.
+
+Press a switch in a room during the film and that room is yours for the rest of the session —
+later state changes skip it, and the ending leaves it as you left it.
 
 ### A scene is a recipe, not a room
 

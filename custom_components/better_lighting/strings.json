@@ -175,6 +175,16 @@
               "data_description": {
                 "resume_max_age_minutes": "So a room left off overnight starts the next morning in adaptive rather than in last night's dinner scene."
               }
+            },
+            "presence": {
+              "name": "Presence",
+              "data": {
+                "presence_entity": "Occupancy sensor",
+                "presence_clear_delay": "Consider the room empty after"
+              },
+              "data_description": {
+                "presence_clear_delay": "Occupancy sensors flicker. Waiting avoids switching a room off while somebody is still in it."
+              }
             }
           }
         },
@@ -239,6 +249,16 @@
               },
               "data_description": {
                 "resume_max_age_minutes": "So a room left off overnight starts the next morning in adaptive rather than in last night's dinner scene."
+              }
+            },
+            "presence": {
+              "name": "Presence",
+              "data": {
+                "presence_entity": "Occupancy sensor",
+                "presence_clear_delay": "Consider the room empty after"
+              },
+              "data_description": {
+                "presence_clear_delay": "Occupancy sensors flicker. Waiting avoids switching a room off while somebody is still in it."
               }
             }
           }
@@ -554,6 +574,118 @@
       "abort": {
         "reconfigure_successful": "Light switch updated."
       }
+    },
+    "mode": {
+      "title": "Cross-zone mode",
+      "entry_type": "Mode",
+      "initiate_flow": {
+        "user": "Add mode",
+        "reconfigure": "Reconfigure mode"
+      },
+      "step": {
+        "user": {
+          "title": "Cross-zone mode",
+          "description": "A mode spans several rooms and has named states an automation moves between -- playing, paused, credits. The next step defines what each room does in each state.",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "states": "States"
+          },
+          "data_description": {
+            "states": "The states your automation will select. 'off' always exists and ends the session."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "data": {
+                "snapshot_on_enter": "Remember the rooms when the mode starts",
+                "restore_mode": "When the mode ends",
+                "opted_out_on_exit": "Rooms the user took back",
+                "deferred_ttl_minutes": "Give up on a waiting instruction after"
+              },
+              "data_description": {
+                "restore_mode": "The default relights only what was on beforehand, at whatever the curve says now.",
+                "deferred_ttl_minutes": "A room that never empties -- a stuck sensor, say -- must not leave an instruction armed forever."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Cross-zone mode",
+          "description": "A mode spans several rooms and has named states an automation moves between -- playing, paused, credits. The next step defines what each room does in each state.",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "states": "States"
+          },
+          "data_description": {
+            "states": "The states your automation will select. 'off' always exists and ends the session."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "data": {
+                "snapshot_on_enter": "Remember the rooms when the mode starts",
+                "restore_mode": "When the mode ends",
+                "opted_out_on_exit": "Rooms the user took back",
+                "deferred_ttl_minutes": "Give up on a waiting instruction after"
+              },
+              "data_description": {
+                "restore_mode": "The default relights only what was on beforehand, at whatever the curve says now.",
+                "deferred_ttl_minutes": "A room that never empties -- a stuck sensor, say -- must not leave an instruction armed forever."
+              }
+            }
+          }
+        },
+        "rules": {
+          "title": "Rules",
+          "description": "Current rules:\n\n{rules}",
+          "menu_options": {
+            "add_rule": "Add a rule",
+            "remove_rule": "Remove a rule",
+            "finish": "Done"
+          }
+        },
+        "add_rule": {
+          "title": "Add a rule",
+          "description": "Current rules:\n\n{rules}",
+          "data": {
+            "mode_states": "In these states",
+            "zones": "These rooms",
+            "action": "Do this",
+            "scene_id": "Scene"
+          },
+          "sections": {
+            "advanced": {
+              "name": "Presence",
+              "data": {
+                "respect_presence": "Do not darken an occupied room",
+                "defer_if_occupied": "Wait until the room empties",
+                "presence_entry_scene": "If somebody walks in",
+                "on_free_action": "When they leave again"
+              },
+              "data_description": {
+                "defer_if_occupied": "The instruction waits rather than being dropped, and is re-checked when the room finally empties."
+              }
+            }
+          }
+        },
+        "remove_rule": {
+          "title": "Remove a rule",
+          "description": "Current rules:\n\n{rules}",
+          "data": {
+            "rule": "Rule"
+          }
+        }
+      },
+      "error": {
+        "invalid_value": "This value is not valid.",
+        "no_states": "A mode needs at least one state.",
+        "scene_required": "Choose the scene to apply."
+      },
+      "abort": {
+        "reconfigure_successful": "Mode updated."
+      }
     }
   },
   "selector": {
@@ -649,6 +781,41 @@
     },
     "zone": {
       "options": {}
+    },
+    "mode_state": {
+      "options": {}
+    },
+    "zone_action": {
+      "options": {
+        "apply_scene": "Apply a scene",
+        "turn_off": "Switch the room off",
+        "keep": "Leave it alone",
+        "adaptive": "Return it to adaptive"
+      }
+    },
+    "restore_mode": {
+      "options": {
+        "adaptive_on_previously_on": "Relight what was on, adaptively",
+        "exact": "Replay exactly what was showing",
+        "none": "Leave the lights alone"
+      }
+    },
+    "opted_out_on_exit": {
+      "options": {
+        "keep": "Leave it as the user left it",
+        "restore": "Restore it anyway",
+        "adaptive": "Return it to adaptive"
+      }
+    },
+    "on_free_action": {
+      "options": {
+        "turn_off": "Switch it off again",
+        "keep": "Leave it on",
+        "reapply_mode_action": "Re-apply the mode's rule"
+      }
+    },
+    "scene": {
+      "options": {}
     }
   },
   "entity": {
@@ -665,6 +832,9 @@
     "select": {
       "zone_mode": {
         "name": "Mode"
+      },
+      "mode_state": {
+        "name": "State"
       }
     },
     "button": {
@@ -679,6 +849,9 @@
       },
       "clear_manual": {
         "name": "Clear manual override"
+      },
+      "mode_clear": {
+        "name": "Clear"
       }
     },
     "event": {
@@ -759,6 +932,48 @@
         "lights": {
           "name": "Lights",
           "description": "Limit to these lights. Defaults to all in the room."
+        }
+      }
+    },
+    "set_mode": {
+      "name": "Set mode state",
+      "description": "Move a cross-zone mode to one of its states.",
+      "fields": {
+        "mode": {
+          "name": "Mode",
+          "description": "Mode name or id."
+        },
+        "state": {
+          "name": "State",
+          "description": "One of the mode's states, or off."
+        }
+      }
+    },
+    "end_mode": {
+      "name": "End mode",
+      "description": "End a mode's session and put the rooms back.",
+      "fields": {
+        "mode": {
+          "name": "Mode",
+          "description": "Mode name or id."
+        },
+        "restore": {
+          "name": "Restore",
+          "description": "Put the rooms back."
+        }
+      }
+    },
+    "rejoin_mode": {
+      "name": "Rejoin mode",
+      "description": "Hand a room the user took back to the mode again.",
+      "fields": {
+        "mode": {
+          "name": "Mode",
+          "description": "Mode name or id."
+        },
+        "zone": {
+          "name": "Room",
+          "description": "Room name or id."
         }
       }
     }

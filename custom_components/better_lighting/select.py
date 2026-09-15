@@ -11,8 +11,9 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import BetterLightingConfigEntry
-from .const import DOMAIN
+from .const import DOMAIN, IDLE_STATE
 from .models import ZoneConfig
+from .modes import ModeGroupRuntime
 from .render import ZoneMode
 from .zone import ZoneController
 
@@ -33,6 +34,10 @@ async def async_setup_entry(
         async_add_entities(
             [ZoneModeSelect(zone, runtime.controllers[subentry_id])],
             config_subentry_id=subentry_id,
+        )
+    for subentry_id, mode_runtime in runtime.mode_runtimes.items():
+        async_add_entities(
+            [ModeStateSelect(mode_runtime)], config_subentry_id=subentry_id
         )
 
 
@@ -148,3 +153,70 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
             self.controller.mode = target
             self.controller.active_scene_id = scene_id
             self.async_write_ha_state()
+
+
+class ModeStateSelect(SelectEntity, RestoreEntity):
+    """The state of a cross-zone mode.
+
+    This is the integration point for an external automation: a media player
+    template calls ``select.select_option`` with playing, paused or credits,
+    and everything else follows from the rules.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "mode_state"
+
+    def __init__(self, mode_runtime: ModeGroupRuntime) -> None:
+        self.runtime = mode_runtime
+        config = mode_runtime.config
+        self._attr_unique_id = f"{config.subentry_id}_state"
+        self._attr_icon = config.icon
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, config.subentry_id)},
+            name=config.name,
+            manufacturer="Better Lighting",
+            model="Mode",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    @property
+    def options(self) -> list[str]:
+        return [IDLE_STATE, *self.runtime.config.states]
+
+    @property
+    def current_option(self) -> str:
+        return self.runtime.state
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        runtime = self.runtime
+        return {
+            "bl_session_id": runtime.session_id,
+            "bl_zones": sorted(runtime.config.zone_ids),
+            "bl_opted_out": sorted(runtime.opted_out),
+            "bl_deferred": sorted(
+                action.zone_id
+                for action in runtime.deferred
+                if action.session_id == runtime.session_id
+            ),
+            "bl_snapshot_taken_at": (
+                runtime.snapshot.taken_at if runtime.snapshot else None
+            ),
+        }
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.runtime.async_add_listener(self._handle_update))
+        # A restart mid-film should not silently end the session.
+        if (last := await self.async_get_last_state()) is not None and (
+            last.state in self.options and last.state != IDLE_STATE
+        ):
+            await self.runtime.async_set_state(last.state)
+
+    @callback
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+    async def async_select_option(self, option: str) -> None:
+        await self.runtime.async_set_state(option)

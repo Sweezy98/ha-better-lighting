@@ -45,6 +45,7 @@ from .const import (
     CONF_COLOR_NAME,
     CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
+    CONF_DEFERRED_TTL_MIN,
     CONF_DOUBLE_PRESS_ACTION,
     CONF_DOUBLE_PRESS_STATES,
     CONF_ENABLED,
@@ -77,19 +78,34 @@ from .const import (
     CONF_ON_FOREIGN,
     CONF_ON_LIGHTS_ONLY,
     CONF_ON_UNSUPPORTED_COLOR,
+    CONF_OPTED_OUT_ON_EXIT,
     CONF_OTHERS,
     CONF_OVERRIDE_MODE,
     CONF_PREFER_RGB_COLOR,
+    CONF_PRESENCE_CLEAR_DELAY,
+    CONF_PRESENCE_ENTITY,
     CONF_PRESS_ATTRIBUTE,
     CONF_PRESS_STATES,
     CONF_REMEMBER_ON_STATE,
+    CONF_RESTORE_MODE,
     CONF_RESTORE_ON_POWER_CYCLE,
     CONF_RESUME_MAX_AGE_MIN,
     CONF_RGB_COLOR,
+    CONF_RULE_ACTION,
+    CONF_RULE_DEFER_IF_OCCUPIED,
+    CONF_RULE_ENTRY_SCENE,
+    CONF_RULE_ON_FREE,
+    CONF_RULE_RESPECT_PRESENCE,
+    CONF_RULE_SCENE,
+    CONF_RULE_STATES,
+    CONF_RULE_ZONES,
+    CONF_RULES,
     CONF_SCENE_ORDER,
     CONF_SCENE_TRANSITION,
     CONF_SEND_SPLIT_DELAY_MS,
     CONF_SEPARATE_TURN_ON,
+    CONF_SNAPSHOT_ON_ENTER,
+    CONF_STATES,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_TAKE_OVER_CONTROL,
@@ -101,13 +117,17 @@ from .const import (
     CONTROLLER_SPECS,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
+    MODE_SPECS,
     SCENE_SPECS,
     ZONE_SPECS,
     BindingType,
     BrightnessMode,
     NightBehavior,
+    OptedOutOnExit,
     PressAction,
+    RestoreMode,
     RestoreOnPowerCycle,
+    ZoneAction,
     defaults_for,
 )
 from .cycle import AdaptivePosition, CycleConfig, ForeignPolicy, build_cycle
@@ -127,6 +147,7 @@ _ZONE_DEFAULTS = defaults_for(ZONE_SPECS)
 _PROFILE_DEFAULTS = defaults_for(LIGHT_PROFILE_SPECS)
 _SCENE_DEFAULTS = defaults_for(SCENE_SPECS)
 _CONTROLLER_DEFAULTS = defaults_for(CONTROLLER_SPECS)
+_MODE_DEFAULTS = defaults_for(MODE_SPECS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +247,10 @@ class ZoneConfig:
     restore_on_power_cycle: RestoreOnPowerCycle
     resume_max_age_minutes: int
 
+    # Only the occupancy input here; what presence *does* is milestone 5.
+    presence_entity: str | None
+    presence_clear_delay: int
+
     @property
     def slug(self) -> str:
         """Human-facing id for service calls and logs. Never a stored reference."""
@@ -265,6 +290,8 @@ class ZoneConfig:
                 raw[CONF_RESTORE_ON_POWER_CYCLE]
             ),
             resume_max_age_minutes=int(raw[CONF_RESUME_MAX_AGE_MIN]),
+            presence_entity=raw.get(CONF_PRESENCE_ENTITY) or None,
+            presence_clear_delay=int(raw[CONF_PRESENCE_CLEAR_DELAY]),
         )
 
     # -- layer resolution --------------------------------------------------
@@ -511,3 +538,89 @@ def synthetic_controller(
         min_press_interval_ms=0,
         coalesce_window_ms=350,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ModeRule:
+    """What one cross-zone mode does to one room, in one or more of its states."""
+
+    states: frozenset[str]
+    zones: frozenset[str]
+    action: ZoneAction = ZoneAction.KEEP
+    scene_id: str | None = None
+    # Requirement 2: a room with somebody in it is not plunged into darkness.
+    respect_presence: bool = True
+    defer_if_occupied: bool = True
+    # What somebody walking in mid-session gets.
+    presence_entry_scene: str | None = None
+    on_free_action: str = "turn_off"
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> ModeRule:
+        return cls(
+            states=frozenset(raw.get(CONF_RULE_STATES) or ()),
+            zones=frozenset(raw.get(CONF_RULE_ZONES) or ()),
+            action=ZoneAction(raw.get(CONF_RULE_ACTION, ZoneAction.KEEP.value)),
+            scene_id=raw.get(CONF_RULE_SCENE) or None,
+            respect_presence=bool(raw.get(CONF_RULE_RESPECT_PRESENCE, True)),
+            defer_if_occupied=bool(raw.get(CONF_RULE_DEFER_IF_OCCUPIED, True)),
+            presence_entry_scene=raw.get(CONF_RULE_ENTRY_SCENE) or None,
+            on_free_action=raw.get(CONF_RULE_ON_FREE, "turn_off"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ModeConfig:
+    """A named group of rooms with named states -- Home Cinema and its like."""
+
+    subentry_id: str
+    name: str
+    icon: str
+    states: tuple[str, ...]
+    snapshot_on_enter: bool
+    restore_mode: RestoreMode
+    opted_out_on_exit: OptedOutOnExit
+    deferred_ttl_minutes: int
+    rules: tuple[ModeRule, ...]
+
+    @property
+    def slug(self) -> str:
+        return slugify(self.name)
+
+    @property
+    def zone_ids(self) -> frozenset[str]:
+        """Every room any rule mentions."""
+        return (
+            frozenset().union(*(rule.zones for rule in self.rules))
+            if self.rules
+            else frozenset()
+        )
+
+    def rule_for(self, state: str, zone_id: str) -> ModeRule | None:
+        """The rule governing one room in one state.
+
+        Later rules win, so a broad rule can be written first and a specific
+        exception added after it without reordering anything.
+        """
+        found = None
+        for rule in self.rules:
+            if state in rule.states and zone_id in rule.zones:
+                found = rule
+        return found
+
+    @classmethod
+    def from_subentry(cls, subentry: ConfigSubentry) -> Self:
+        raw = {**_MODE_DEFAULTS, **dict(subentry.data)}
+        return cls(
+            subentry_id=subentry.subentry_id,
+            name=raw.get(CONF_NAME) or subentry.title,
+            icon=raw[CONF_ICON],
+            states=tuple(raw.get(CONF_STATES) or ()),
+            snapshot_on_enter=bool(raw[CONF_SNAPSHOT_ON_ENTER]),
+            restore_mode=RestoreMode(raw[CONF_RESTORE_MODE]),
+            opted_out_on_exit=OptedOutOnExit(raw[CONF_OPTED_OUT_ON_EXIT]),
+            deferred_ttl_minutes=int(raw[CONF_DEFERRED_TTL_MIN]),
+            rules=tuple(
+                ModeRule.from_dict(rule) for rule in (raw.get(CONF_RULES) or ())
+            ),
+        )

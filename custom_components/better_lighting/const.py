@@ -17,6 +17,8 @@ from typing import Any
 from homeassistant.components.light import VALID_TRANSITION
 from homeassistant.helpers import selector
 
+from .session import OptedOutOnExit, RestoreMode, ZoneAction
+
 DOMAIN = "better_lighting"
 
 # Sentinel for "unset" in a form. Options flows round-trip through JSON, which
@@ -735,7 +737,171 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
 )
 
 
-ZONE_SPECS = ZONE_SPECS + ZONE_ADAPTIVE_SPECS + ZONE_NIGHT_SPECS + ZONE_POWER_SPECS
+# --------------------------------------------------------------------------
+# Zone presence. The full presence subsystem is milestone 5; this is only the
+# input a cross-zone mode needs in order to gate on "is anybody in there".
+# --------------------------------------------------------------------------
+
+CONF_PRESENCE_ENTITY = "presence_entity"
+CONF_PRESENCE_CLEAR_DELAY = "presence_clear_delay"
+
+ZONE_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_PRESENCE_ENTITY,
+        None,
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["binary_sensor", "input_boolean", "device_tracker", "person"]
+            )
+        ),
+        section=Section.PRESENCE,
+    ),
+    FieldSpec(
+        CONF_PRESENCE_CLEAR_DELAY,
+        120,
+        _seconds(0, 3600),
+        section=Section.PRESENCE,
+    ),
+)
+
+
+# --------------------------------------------------------------------------
+# Mode subentry: a cross-zone mode such as Home Cinema.
+# --------------------------------------------------------------------------
+
+CONF_STATES = "states"
+CONF_SNAPSHOT_ON_ENTER = "snapshot_on_enter"
+CONF_RESTORE_MODE = "restore_mode"
+CONF_OPTED_OUT_ON_EXIT = "opted_out_on_exit"
+CONF_DEFERRED_TTL_MIN = "deferred_ttl_minutes"
+CONF_RULES = "rules"
+
+# Rule fields.
+CONF_RULE_STATES = "mode_states"
+CONF_RULE_ZONES = "zones"
+CONF_RULE_ACTION = "action"
+CONF_RULE_SCENE = "scene_id"
+CONF_RULE_RESPECT_PRESENCE = "respect_presence"
+CONF_RULE_DEFER_IF_OCCUPIED = "defer_if_occupied"
+CONF_RULE_ENTRY_SCENE = "presence_entry_scene"
+CONF_RULE_ON_FREE = "on_free_action"
+
+IDLE_STATE = "off"
+DEFAULT_MODE_STATES = ["playing", "paused", "credits"]
+
+ZONE_ACTIONS = [a.value for a in ZoneAction]
+RESTORE_MODES = [r.value for r in RestoreMode]
+OPTED_OUT_ON_EXIT = [o.value for o in OptedOutOnExit]
+ON_FREE_ACTIONS = ["turn_off", "keep", "reapply_mode_action"]
+
+MODE_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(CONF_ICON, "mdi:movie-open", selector.IconSelector()),
+    FieldSpec(
+        CONF_STATES,
+        DEFAULT_MODE_STATES,
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=DEFAULT_MODE_STATES,
+                multiple=True,
+                custom_value=True,
+                mode=selector.SelectSelectorMode.LIST,
+                sort=False,
+            )
+        ),
+    ),
+    # --- advanced ---
+    FieldSpec(CONF_SNAPSHOT_ON_ENTER, True, _boolean(), section=Section.ADVANCED),
+    FieldSpec(
+        CONF_RESTORE_MODE,
+        RestoreMode.ADAPTIVE_ON_PREVIOUSLY_ON.value,
+        _select(RESTORE_MODES, "restore_mode"),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_OPTED_OUT_ON_EXIT,
+        OptedOutOnExit.KEEP.value,
+        _select(OPTED_OUT_ON_EXIT, "opted_out_on_exit"),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_DEFERRED_TTL_MIN,
+        240,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=1440,
+                step=10,
+                unit_of_measurement="min",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.ADVANCED,
+    ),
+)
+
+
+def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
+    """The form for one (states x zones) rule.
+
+    One rule can cover several states and several rooms, so the common case --
+    "these three rooms go dark while the film is playing or the credits roll"
+    -- is a single form rather than nine.
+    """
+    return (
+        FieldSpec(
+            CONF_RULE_STATES,
+            states,
+            _select(states, "mode_state", multiple=True),
+            required=True,
+        ),
+        FieldSpec(
+            CONF_RULE_ZONES,
+            None,
+            _select([], "zone", multiple=True),
+            required=True,
+            options_key="zones",
+        ),
+        FieldSpec(
+            CONF_RULE_ACTION,
+            ZoneAction.KEEP.value,
+            _select(ZONE_ACTIONS, "zone_action"),
+        ),
+        FieldSpec(CONF_RULE_SCENE, None, _select([], "scene"), options_key="scenes"),
+        FieldSpec(
+            CONF_RULE_RESPECT_PRESENCE, True, _boolean(), section=Section.ADVANCED
+        ),
+        FieldSpec(
+            CONF_RULE_DEFER_IF_OCCUPIED, True, _boolean(), section=Section.ADVANCED
+        ),
+        FieldSpec(
+            CONF_RULE_ENTRY_SCENE,
+            None,
+            _select([], "scene"),
+            options_key="scenes",
+            section=Section.ADVANCED,
+        ),
+        FieldSpec(
+            CONF_RULE_ON_FREE,
+            "turn_off",
+            _select(ON_FREE_ACTIONS, "on_free_action"),
+            section=Section.ADVANCED,
+        ),
+    )
+
+
+ZONE_SPECS = (
+    ZONE_SPECS
+    + ZONE_ADAPTIVE_SPECS
+    + ZONE_NIGHT_SPECS
+    + ZONE_POWER_SPECS
+    + ZONE_PRESENCE_SPECS
+)
 
 
 SPECS_BY_SUBENTRY: dict[str, tuple[FieldSpec, ...]] = {
@@ -743,6 +909,7 @@ SPECS_BY_SUBENTRY: dict[str, tuple[FieldSpec, ...]] = {
     SubentryType.LIGHT_PROFILE.value: LIGHT_PROFILE_SPECS,
     SubentryType.SCENE.value: SCENE_SPECS,
     SubentryType.CONTROLLER.value: CONTROLLER_SPECS,
+    SubentryType.MODE.value: MODE_SPECS,
 }
 
 

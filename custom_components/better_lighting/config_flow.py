@@ -32,16 +32,24 @@ from .const import (
     CONF_NAME,
     CONF_OFF_AT_END,
     CONF_OVERRIDE_MODE,
+    CONF_RULE_ACTION,
+    CONF_RULE_SCENE,
+    CONF_RULE_STATES,
+    CONF_RULE_ZONES,
+    CONF_RULES,
     CONF_SCENE_ORDER,
+    CONF_STATES,
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
+    MODE_SPECS,
     SCENE_COLOR_SPECS,
     SCENE_SPECS,
     ZONE_SPECS,
     BindingType,
     SubentryType,
+    mode_rule_specs,
 )
 from .schemas import build_schema, flatten_sections, post_validate
 
@@ -144,6 +152,7 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
             SubentryType.LIGHT_PROFILE.value: LightProfileSubentryFlow,
             SubentryType.SCENE.value: SceneSubentryFlow,
             SubentryType.CONTROLLER.value: ControllerSubentryFlow,
+            SubentryType.MODE.value: ModeSubentryFlow,
         }
 
 
@@ -588,6 +597,167 @@ class ControllerSubentryFlow(ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         data = {**self._data, CONF_SCENE_ORDER: self._order}
+        title = data[CONF_NAME]
+        if self._subentry is None:
+            return self.async_create_entry(title=title, data=data)
+        return self.async_update_and_abort(
+            self._get_entry(), self._subentry, data=data, title=title
+        )
+
+
+class ModeSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure a cross-zone mode, such as Home Cinema.
+
+    Settings first, then a loop for the rules. A rule can name several states
+    and several rooms at once, so "these three rooms go dark while the film is
+    playing or the credits roll" is one form rather than nine.
+    """
+
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+        self._rules: list[dict[str, Any]] = []
+        self._subentry: Any = None
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_settings(user_input, subentry=None)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_settings(
+            user_input, subentry=self._get_reconfigure_subentry()
+        )
+
+    async def _async_settings(
+        self, user_input: dict[str, Any] | None, *, subentry: Any
+    ) -> SubentryFlowResult:
+        self._subentry = subentry
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            flat = flatten_sections(MODE_SPECS, user_input)
+            cleaned, errors = post_validate(MODE_SPECS, flat)
+            if not cleaned.get(CONF_STATES):
+                errors[CONF_STATES] = "no_states"
+            if not errors:
+                self._data = cleaned
+                known = set(cleaned[CONF_STATES])
+                existing = list(subentry.data.get(CONF_RULES) or []) if subentry else []
+                # Drop rules naming states that no longer exist.
+                self._rules = [
+                    rule
+                    for rule in existing
+                    if set(rule.get(CONF_RULE_STATES) or ()) & known
+                ]
+                return await self.async_step_rules()
+
+        existing = dict(subentry.data) if subentry else None
+        return self.async_show_form(
+            step_id="reconfigure" if subentry else "user",
+            data_schema=build_schema(MODE_SPECS, user_input or existing),
+            errors=errors,
+        )
+
+    # -- the rules loop ----------------------------------------------------
+
+    def _rules_summary(self) -> str:
+        entry = self._get_entry()
+        zones = {z["value"]: z["label"] for z in zone_options(entry)}
+        scenes = {s["value"]: s["label"] for s in scene_options(entry)}
+        if not self._rules:
+            return "(no rules yet -- the mode will not change anything)"
+        lines = []
+        for index, rule in enumerate(self._rules, start=1):
+            states = ", ".join(rule.get(CONF_RULE_STATES) or ())
+            rooms = ", ".join(
+                zones.get(z, z) for z in (rule.get(CONF_RULE_ZONES) or ())
+            )
+            action = rule.get(CONF_RULE_ACTION, "keep")
+            if action == "apply_scene":
+                action = f"apply {scenes.get(rule.get(CONF_RULE_SCENE), '?')}"
+            lines.append(f"{index}. [{states}] {rooms}: {action}")
+        return "\n".join(lines)
+
+    async def async_step_rules(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_rule", "finish"]
+        if self._rules:
+            options = ["add_rule", "remove_rule", "finish"]
+        return self.async_show_menu(
+            step_id="rules",
+            menu_options=options,
+            description_placeholders={"rules": self._rules_summary()},
+        )
+
+    async def async_step_add_rule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        entry = self._get_entry()
+        specs = mode_rule_specs(list(self._data.get(CONF_STATES) or ()))
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            flat = flatten_sections(specs, user_input)
+            cleaned, errors = post_validate(specs, flat)
+            if cleaned.get(CONF_RULE_ACTION) == "apply_scene" and not cleaned.get(
+                CONF_RULE_SCENE
+            ):
+                errors[CONF_RULE_SCENE] = "scene_required"
+            if not errors:
+                self._rules.append(cleaned)
+                return await self.async_step_rules()
+
+        return self.async_show_form(
+            step_id="add_rule",
+            data_schema=build_schema(
+                specs,
+                user_input,
+                options={
+                    "zones": zone_options(entry),
+                    "scenes": scene_options(entry),
+                },
+            ),
+            errors=errors,
+            description_placeholders={"rules": self._rules_summary()},
+        )
+
+    async def async_step_remove_rule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            index = int(user_input["rule"])
+            if 0 <= index < len(self._rules):
+                self._rules.pop(index)
+            return await self.async_step_rules()
+
+        return self.async_show_form(
+            step_id="remove_rule",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("rule"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": str(index), "label": line}
+                                for index, line in enumerate(
+                                    self._rules_summary().split("\n")
+                                )
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            sort=False,
+                        )
+                    )
+                }
+            ),
+            description_placeholders={"rules": self._rules_summary()},
+        )
+
+    async def async_step_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        data = {**self._data, CONF_RULES: self._rules}
         title = data[CONF_NAME]
         if self._subentry is None:
             return self.async_create_entry(title=title, data=data)

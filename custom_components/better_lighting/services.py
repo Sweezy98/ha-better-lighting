@@ -29,12 +29,18 @@ SERVICE_CYCLE = "cycle"
 SERVICE_SET_ADAPTIVE = "set_adaptive"
 SERVICE_ACTIVATE_SCENE = "activate_scene"
 SERVICE_CLEAR_MANUAL = "clear_manual_override"
+SERVICE_SET_MODE = "set_mode"
+SERVICE_END_MODE = "end_mode"
+SERVICE_REJOIN_MODE = "rejoin_mode"
 
 ATTR_ZONE = "zone"
 ATTR_CONTROLLER = "controller"
 ATTR_KIND = "kind"
 ATTR_DIRECTION = "direction"
 ATTR_SCENE = "scene"
+ATTR_MODE = "mode"
+ATTR_STATE = "state"
+ATTR_RESTORE = "restore"
 
 _TARGET = {
     vol.Optional(ATTR_ZONE): vol.All(cv.ensure_list, [cv.string]),
@@ -59,6 +65,17 @@ CYCLE_SCHEMA = vol.Schema(
 )
 SET_ADAPTIVE_SCHEMA = vol.Schema(_TARGET)
 ACTIVATE_SCENE_SCHEMA = vol.Schema({**_TARGET, vol.Required(ATTR_SCENE): cv.string})
+SET_MODE_SCHEMA = vol.Schema(
+    {vol.Required(ATTR_MODE): cv.string, vol.Required(ATTR_STATE): cv.string}
+)
+END_MODE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_MODE): cv.string,
+        vol.Optional(ATTR_RESTORE, default=True): cv.boolean,
+    }
+)
+REJOIN_MODE_SCHEMA = vol.Schema({**_TARGET, vol.Required(ATTR_MODE): cv.string})
+
 CLEAR_MANUAL_SCHEMA = vol.Schema(
     {**_TARGET, vol.Optional("lights"): vol.All(cv.ensure_list, [cv.entity_id])}
 )
@@ -182,6 +199,39 @@ def async_register_services(hass: HomeAssistant) -> None:
                 controller.clear_manual()
             await controller.async_render(Trigger.ACTIVATE)
 
+    def _find_mode(named: str):
+        for runtime in _runtimes(hass):
+            for mode_runtime in runtime.mode_runtimes.values():
+                config = mode_runtime.config
+                if named in (config.subentry_id, config.slug, config.name):
+                    return mode_runtime
+        raise ServiceValidationError(f"No Better Lighting mode called {named!r}.")
+
+    async def _set_mode(call: ServiceCall) -> None:
+        mode_runtime = _find_mode(call.data[ATTR_MODE])
+        await mode_runtime.async_set_state(call.data[ATTR_STATE])
+
+    async def _end_mode(call: ServiceCall) -> None:
+        mode_runtime = _find_mode(call.data[ATTR_MODE])
+        await mode_runtime.async_end(restore=call.data[ATTR_RESTORE])
+
+    async def _rejoin_mode(call: ServiceCall) -> None:
+        mode_runtime = _find_mode(call.data[ATTR_MODE])
+        for controller in resolve_controllers(hass, call):
+            zone_id = controller.zone.subentry_id
+            mode_runtime.opted_out.discard(zone_id)
+            if mode_runtime.snapshot and zone_id in mode_runtime.snapshot.zones:
+                mode_runtime.snapshot.zones[zone_id].restore_on_exit = True
+            rule = mode_runtime.config.rule_for(mode_runtime.state, zone_id)
+            if mode_runtime.active and rule is not None:
+                await mode_runtime._async_apply_rule(zone_id, controller, rule)
+        mode_runtime.async_notify()
+
+    hass.services.async_register(DOMAIN, SERVICE_SET_MODE, _set_mode, SET_MODE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_END_MODE, _end_mode, END_MODE_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, SERVICE_REJOIN_MODE, _rejoin_mode, REJOIN_MODE_SCHEMA
+    )
     hass.services.async_register(DOMAIN, SERVICE_PRESS, _press, PRESS_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_CYCLE, _cycle, CYCLE_SCHEMA)
     hass.services.async_register(

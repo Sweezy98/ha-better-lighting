@@ -24,13 +24,17 @@ from .models import (
     ControllerConfig,
     HubConfig,
     LightProfileConfig,
+    ModeConfig,
     SceneConfig,
     ZoneConfig,
     synthetic_controller,
 )
+from .modes import ModeGroupRuntime
+from .presence import ZonePresence
 from .profiles import LightProfile
 from .scenes import Scene
 from .services import async_register_services
+from .session import DeferredRegistry
 from .zone import ZoneController
 
 if TYPE_CHECKING:
@@ -61,6 +65,10 @@ class BetterLightingRuntime:
     # The controller a bare turn-on on a zone's light entity is attributed to,
     # keyed by zone subentry_id.
     default_switch: dict[str, ControllerConfig] = field(default_factory=dict)
+    # Cross-zone modes, and the deferred actions their sessions are waiting on.
+    modes: dict[str, ModeConfig] = field(default_factory=dict)
+    mode_runtimes: dict[str, ModeGroupRuntime] = field(default_factory=dict)
+    deferred: DeferredRegistry = field(default_factory=DeferredRegistry)
     # Live entity objects, registered as their platforms come up. Keyed by
     # zone subentry_id so any subsystem can reach a zone without a global.
     zone_lights: dict[str, ZoneLight] = field(default_factory=dict)
@@ -135,6 +143,13 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
             )
         default_switch[zone_id] = chosen or synthetic_controller(zone, scene_ids)
 
+    modes = {
+        mode.subentry_id: mode
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == SubentryType.MODE.value
+        and (mode := ModeConfig.from_subentry(subentry))
+    }
+
     return BetterLightingRuntime(
         hub=HubConfig.from_options(dict(entry.options)),
         zones=zones,
@@ -142,6 +157,7 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
         scenes=scenes,
         switches=switches,
         default_switch=default_switch,
+        modes=modes,
         config_fingerprint=_fingerprint(entry),
     )
 
@@ -174,6 +190,16 @@ async def async_setup_entry(
         await controller.async_setup()
         entry.async_on_unload(controller.async_shutdown)
 
+        presence = ZonePresence(
+            hass,
+            zone,
+            on_occupied=_zone_occupied(hass, runtime, subentry_id),
+            on_cleared=_zone_cleared(hass, runtime, subentry_id),
+        )
+        controller.presence = presence
+        await presence.async_setup()
+        entry.async_on_unload(presence.async_shutdown)
+
     for controller in runtime.switches.values():
         zone_controller = runtime.controllers.get(controller.zone_id)
         if zone_controller is None:
@@ -188,6 +214,14 @@ async def async_setup_entry(
         runtime.switch_runtimes[controller.subentry_id] = switch_runtime
         await switch_runtime.async_setup()
         entry.async_on_unload(switch_runtime.async_shutdown)
+
+    for subentry_id, mode in runtime.modes.items():
+        mode_runtime = ModeGroupRuntime(
+            hass, mode, runtime.controllers, runtime.deferred
+        )
+        runtime.mode_runtimes[subentry_id] = mode_runtime
+        await mode_runtime.async_setup()
+        entry.async_on_unload(mode_runtime.async_shutdown)
 
     async_register_services(hass)
 
@@ -218,3 +252,23 @@ async def async_unload_entry(
 ) -> bool:
     """Tear down the hub entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+def _zone_occupied(hass: HomeAssistant, runtime: BetterLightingRuntime, zone_id: str):
+    """Tell every running mode that somebody has walked into this room."""
+
+    def _notify() -> None:
+        for mode_runtime in runtime.mode_runtimes.values():
+            hass.async_create_task(mode_runtime.async_zone_occupied(zone_id))
+
+    return _notify
+
+
+def _zone_cleared(hass: HomeAssistant, runtime: BetterLightingRuntime, zone_id: str):
+    """Tell every running mode that this room has emptied."""
+
+    def _notify() -> None:
+        for mode_runtime in runtime.mode_runtimes.values():
+            hass.async_create_task(mode_runtime.async_zone_cleared(zone_id))
+
+    return _notify

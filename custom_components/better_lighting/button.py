@@ -13,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import BetterLightingConfigEntry
 from .const import DOMAIN
 from .models import ControllerConfig, ZoneConfig
+from .modes import ModeGroupRuntime
 from .zone import ZoneController
 
 PARALLEL_UPDATES = 0
@@ -63,6 +64,11 @@ async def async_setup_entry(
                 ),
             ],
             config_subentry_id=subentry_id,
+        )
+
+    for subentry_id, mode_runtime in runtime.mode_runtimes.items():
+        async_add_entities(
+            [ModeClearButton(mode_runtime)], config_subentry_id=subentry_id
         )
 
 
@@ -121,4 +127,28 @@ class ZoneButton(ButtonEntity):
         await self._action()
 
 
-__all__ = ["ControllerConfig", "ZoneButton", "async_setup_entry"]
+class ModeClearButton(ButtonEntity):
+    """End a mode's session and put the rooms back."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "mode_clear"
+    _attr_icon = "mdi:stop"
+
+    def __init__(self, mode_runtime: ModeGroupRuntime) -> None:
+        self.runtime = mode_runtime
+        config = mode_runtime.config
+        self._attr_unique_id = f"{config.subentry_id}_clear"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, config.subentry_id)},
+            name=config.name,
+            manufacturer="Better Lighting",
+            model="Mode",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    async def async_press(self) -> None:
+        await self.runtime.async_end()
+
+
+__all__ = ["ControllerConfig", "ModeClearButton", "ZoneButton", "async_setup_entry"]

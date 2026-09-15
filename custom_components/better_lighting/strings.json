@@ -495,10 +495,55 @@
           "data_description": {
             "color_name": "A CSS colour name, such as 'coral' or 'warmwhite'."
           }
+        },
+        "lights": {
+          "title": "Individual lights",
+          "description": "Named lights:\n\n{lights}\n\nAnything you do not name here takes the scene's own brightness and colour. Name a light to give it different values, switch it off while the rest of the room is lit, or leave it untouched.",
+          "menu_options": {
+            "add_light": "Name a light",
+            "remove_light": "Stop naming a light",
+            "finish": "Done"
+          }
+        },
+        "add_light": {
+          "title": "Name a light",
+          "description": "Named lights:\n\n{lights}",
+          "data": {
+            "light": "Light",
+            "action": "What happens to it",
+            "brightness_pct": "Brightness"
+          },
+          "data_description": {
+            "brightness_pct": "Leave empty to use the scene's own brightness."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Colour",
+              "data": {
+                "color_format": "Colour for this light",
+                "color_temp_kelvin": "Colour temperature",
+                "rgb_color": "Colour",
+                "warm_white": "Warm white channel",
+                "cold_white": "Cold white channel"
+              },
+              "data_description": {
+                "color_format": "'Leave the colour to the sun' lets this light take the scene's brightness while its colour keeps adapting — useful for a desk lamp in a film scene.",
+                "warm_white": "RGBWW strips have white LEDs behind the colour ones. Leave both at zero for a pure colour; raise the warm channel to sit a strip against a wooden floor."
+              }
+            }
+          }
+        },
+        "remove_light": {
+          "title": "Stop naming a light",
+          "description": "Named lights:\n\n{lights}",
+          "data": {
+            "light": "Light"
+          }
         }
       },
       "error": {
-        "invalid_value": "This value is not valid."
+        "invalid_value": "This value is not valid.",
+        "light_required": "Choose a light."
       },
       "abort": {
         "reconfigure_successful": "Scene updated."
@@ -898,6 +943,25 @@
         "adaptive": "Return it to adaptive",
         "none": "Nothing"
       }
+    },
+    "scene_light_action": {
+      "options": {
+        "apply": "Apply settings to it",
+        "off": "Switch it off",
+        "leave": "Leave it exactly as it is"
+      }
+    },
+    "scene_light_color_format": {
+      "options": {
+        "inherit": "Use the scene's colour",
+        "none": "Leave the colour to the sun",
+        "color_temp_kelvin": "Colour temperature",
+        "rgb_color": "Colour picker",
+        "rgb_white": "Colour picker plus white channels (RGBWW)"
+      }
+    },
+    "light": {
+      "options": {}
     }
   },
   "entity": {

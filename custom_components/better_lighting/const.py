@@ -65,6 +65,16 @@ class BrightnessMode(StrEnum):
     TANH = "tanh"
 
 
+class SceneLightAction(StrEnum):
+    """What a scene does to one named light."""
+
+    APPLY = "apply"
+    # Dark, while the rest of the room is lit.
+    OFF = "off"
+    # Not touched at all.
+    LEAVE = "leave"
+
+
 class CoverCondition(StrEnum):
     """When the covers allow presence to light a room."""
 
@@ -543,6 +553,7 @@ CONF_ON_UNSUPPORTED_COLOR = "on_unsupported_color"
 CONF_SCENE_ID = "scene_id"
 CONF_SCENE_ZONES = "scene_zones"
 
+
 # The data model supports all eight Home Assistant colour formats; the UI
 # offers the three with a real picker. The rest stay reachable through
 # services and imported configuration.
@@ -627,6 +638,79 @@ SCENE_COLOR_SPECS: dict[str, FieldSpec] = {
         required=True,
     ),
 }
+
+# Per-light entries inside a scene.
+CONF_SCENE_LIGHTS = "lights"
+CONF_LIGHT_ACTION = "action"
+CONF_WARM_WHITE = "warm_white"
+CONF_COLD_WHITE = "cold_white"
+
+# "inherit" takes the scene's own colour; "none" leaves this light's colour to
+# the sun; "rgb_white" is RGB plus the two white channels an RGBWW fixture has.
+COLOR_FORMAT_INHERIT = "inherit"
+COLOR_FORMAT_RGB_WHITE = "rgb_white"
+SCENE_LIGHT_COLOR_FORMATS = [
+    COLOR_FORMAT_INHERIT,
+    COLOR_FORMAT_NONE,
+    CONF_COLOR_TEMP_KELVIN,
+    CONF_RGB_COLOR,
+    COLOR_FORMAT_RGB_WHITE,
+]
+
+
+def scene_light_specs() -> tuple[FieldSpec, ...]:
+    """The form for one light inside a scene."""
+    return (
+        FieldSpec(
+            "light",
+            None,
+            _select([], "light", multiple=False),
+            required=True,
+            options_key="lights",
+        ),
+        FieldSpec(
+            CONF_LIGHT_ACTION,
+            SceneLightAction.APPLY.value,
+            _select([a.value for a in SceneLightAction], "scene_light_action"),
+        ),
+        # Omit to use the scene's own brightness.
+        FieldSpec(CONF_BRIGHTNESS_PCT, None, _pct()),
+        FieldSpec(
+            CONF_COLOR_FORMAT,
+            COLOR_FORMAT_INHERIT,
+            _select(SCENE_LIGHT_COLOR_FORMATS, "scene_light_color_format"),
+            section=Section.ADVANCED,
+        ),
+        FieldSpec(CONF_COLOR_TEMP_KELVIN, 2700, _kelvin(), section=Section.ADVANCED),
+        FieldSpec(
+            CONF_RGB_COLOR,
+            [255, 96, 16],
+            selector.ColorRGBSelector(),
+            section=Section.ADVANCED,
+        ),
+        # RGBWW fixtures have two white LEDs behind the colour ones. Home
+        # Assistant has no five-channel picker, so they are two sliders.
+        FieldSpec(
+            CONF_WARM_WHITE,
+            0,
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=255, step=1, mode=selector.NumberSelectorMode.SLIDER
+                )
+            ),
+            section=Section.ADVANCED,
+        ),
+        FieldSpec(
+            CONF_COLD_WHITE,
+            0,
+            selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=255, step=1, mode=selector.NumberSelectorMode.SLIDER
+                )
+            ),
+            section=Section.ADVANCED,
+        ),
+    )
 
 
 # --------------------------------------------------------------------------

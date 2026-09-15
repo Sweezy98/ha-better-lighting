@@ -186,65 +186,76 @@ class TestOnLightsOnly:
 
 
 class TestSceneFlow:
-    async def test_two_step_flow_collects_the_colour(self, hass: HomeAssistant):
-        entry = await setup_hub(hass, hub_entry())
-
+    async def _start(self, hass: HomeAssistant, entry, **overrides):
         result = await hass.config_entries.subentries.async_init(
             (entry.entry_id, SubentryType.SCENE.value),
             context={"source": config_entries.SOURCE_USER},
         )
-        assert result["type"] is FlowResultType.FORM
-
-        result = await hass.config_entries.subentries.async_configure(
+        return await hass.config_entries.subentries.async_configure(
             result["flow_id"],
             {
                 "name": "Movie",
                 "icon": "mdi:movie",
+                "scene_zones": [],
                 "override_mode": "both",
                 "brightness_pct": 15,
                 "color_format": "color_temp_kelvin",
                 "transition": 2,
                 "advanced": {},
+                **overrides,
             },
         )
-        # Step two asks only for the format that was chosen.
-        assert result["type"] is FlowResultType.FORM
+
+    async def _menu(self, hass: HomeAssistant, result, step: str, data=None):
+        """Pick a menu option, or submit a form."""
+        return await hass.config_entries.subentries.async_configure(
+            result["flow_id"],
+            {"next_step_id": step} if data is None else data,
+        )
+
+    async def test_two_step_flow_collects_the_colour(self, hass: HomeAssistant) -> None:
+        entry = await setup_hub(hass, hub_entry())
+        result = await self._start(hass, entry)
         assert result["step_id"] == "color"
 
         result = await hass.config_entries.subentries.async_configure(
             result["flow_id"], {"color_temp_kelvin": 2000}
         )
+        # Colour done, now the per-light step.
+        assert result["step_id"] == "lights"
+
+        result = await self._menu(hass, result, "finish")
         assert result["type"] is FlowResultType.CREATE_ENTRY
-        assert result["title"] == "Movie"
         assert result["data"]["color_temp_kelvin"] == 2000
 
     async def test_brightness_only_scene_skips_the_colour_step(
         self, hass: HomeAssistant
-    ):
+    ) -> None:
         entry = await setup_hub(hass, hub_entry())
-
-        result = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, SubentryType.SCENE.value),
-            context={"source": config_entries.SOURCE_USER},
-        )
-        result = await hass.config_entries.subentries.async_configure(
-            result["flow_id"],
-            {
-                "name": "Task",
-                "icon": "mdi:desk-lamp",
-                "override_mode": "brightness",
-                "brightness_pct": 100,
-                "color_format": "color_temp_kelvin",
-                "transition": 1,
-                "advanced": {},
-            },
+        result = await self._start(
+            hass, entry, name="Task", override_mode="brightness", brightness_pct=100
         )
         # Nothing to ask: the scene does not own the colour axis.
+        assert result["step_id"] == "lights"
+
+        result = await self._menu(hass, result, "finish")
         assert result["type"] is FlowResultType.CREATE_ENTRY
 
-    async def test_no_colour_format_skips_the_colour_step(self, hass: HomeAssistant):
+    async def test_no_colour_format_skips_the_colour_step(
+        self, hass: HomeAssistant
+    ) -> None:
         entry = await setup_hub(hass, hub_entry())
+        result = await self._start(hass, entry, name="Plain", color_format="none")
+        assert result["step_id"] == "lights"
 
+        result = await self._menu(hass, result, "finish")
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+class TestPerLightScene:
+    """Naming individual lights inside a scene."""
+
+    async def _flow_to_lights(self, hass: HomeAssistant, entry):
         result = await hass.config_entries.subentries.async_init(
             (entry.entry_id, SubentryType.SCENE.value),
             context={"source": config_entries.SOURCE_USER},
@@ -252,16 +263,178 @@ class TestSceneFlow:
         result = await hass.config_entries.subentries.async_configure(
             result["flow_id"],
             {
-                "name": "Plain",
-                "icon": "mdi:palette",
+                "name": "Movie",
+                "icon": "mdi:movie",
+                "scene_zones": [],
                 "override_mode": "both",
-                "brightness_pct": 50,
+                "brightness_pct": 15,
                 "color_format": "none",
-                "transition": 1,
+                "transition": 2,
                 "advanced": {},
             },
         )
+        assert result["step_id"] == "lights"
+        return result
+
+    async def _add(self, hass: HomeAssistant, result, light: str, **fields):
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "add_light"}
+        )
+        assert result["step_id"] == "add_light"
+        payload = {
+            "light": light,
+            "action": fields.pop("action", "apply"),
+            "advanced": fields.pop("advanced", {}),
+        }
+        payload |= fields
+        return await hass.config_entries.subentries.async_configure(
+            result["flow_id"], payload
+        )
+
+    async def test_the_movie_scene_from_the_review(self, hass: HomeAssistant) -> None:
+        """The exact scenario asked about: four lights, four different jobs."""
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(
+            hass,
+            hub_entry(
+                subentries_data=[
+                    zone_subentry("Living Room", ["light.one", "light.two"])
+                ]
+            ),
+        )
+        result = await self._flow_to_lights(hass, entry)
+
+        # A strip behind the TV: dim, and a deliberate orange with no white.
+        result = await self._add(
+            hass,
+            result,
+            "light.one",
+            brightness_pct=7,
+            advanced={
+                "color_format": "rgb_white",
+                "rgb_color": [255, 96, 16],
+                "warm_white": 0,
+                "cold_white": 0,
+            },
+        )
+        # A desk lamp: the scene's brightness, but its colour keeps adapting.
+        result = await self._add(
+            hass,
+            result,
+            "light.two",
+            brightness_pct=20,
+            advanced={"color_format": "none"},
+        )
+
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "finish"}
+        )
         assert result["type"] is FlowResultType.CREATE_ENTRY
+
+        lights = result["data"]["lights"]
+        assert lights["light.one"]["brightness_pct"] == 7
+        assert lights["light.one"]["color_format"] == "rgb_white"
+        assert lights["light.two"]["color_format"] == "none"
+
+    async def test_it_renders_the_way_it_was_configured(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Straight through the real config path to real light entities."""
+        await setup_members(
+            hass,
+            [
+                MemberLight("Strip", is_on=True, brightness=200),
+                MemberLight("Desk", is_on=True, brightness=200),
+            ],
+        )
+        entry = await setup_hub(
+            hass,
+            hub_entry(
+                subentries_data=[
+                    zone_subentry("Living Room", ["light.strip", "light.desk"])
+                ]
+            ),
+        )
+        # Render adaptively first, so the captured value is what the curve
+        # actually says rather than the fixture's own starting colour.
+        await hass.services.async_call(
+            "light", "turn_on", {"entity_id": "light.living_room"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        adaptive_kelvin = hass.states.get("light.desk").attributes["color_temp_kelvin"]
+
+        result = await self._flow_to_lights(hass, entry)
+        result = await self._add(
+            hass,
+            result,
+            "light.strip",
+            brightness_pct=7,
+            advanced={"color_format": "color_temp_kelvin", "color_temp_kelvin": 2200},
+        )
+        result = await self._add(
+            hass,
+            result,
+            "light.desk",
+            brightness_pct=20,
+            advanced={"color_format": "none"},
+        )
+        await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "finish"}
+        )
+        await hass.async_block_till_done()
+
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": "select.living_room_mode", "option": "Movie"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        strip = hass.states.get("light.strip").attributes
+        desk = hass.states.get("light.desk").attributes
+        assert strip["brightness"] == pytest.approx(18, abs=2)
+        assert strip["color_temp_kelvin"] == 2200
+        assert desk["brightness"] == pytest.approx(51, abs=2)
+        # The desk lamp kept the sun's colour rather than the scene's.
+        assert desk["color_temp_kelvin"] == pytest.approx(adaptive_kelvin, abs=100)
+
+    async def test_a_light_can_be_switched_off_by_a_scene(
+        self, hass: HomeAssistant
+    ) -> None:
+        await setup_members(
+            hass,
+            [
+                MemberLight("Strip", is_on=True, brightness=200),
+                MemberLight("Ceiling", is_on=True, brightness=200),
+            ],
+        )
+        entry = await setup_hub(
+            hass,
+            hub_entry(
+                subentries_data=[
+                    zone_subentry("Living Room", ["light.strip", "light.ceiling"])
+                ]
+            ),
+        )
+        result = await self._flow_to_lights(hass, entry)
+        result = await self._add(hass, result, "light.ceiling", action="off")
+        await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "finish"}
+        )
+        await hass.async_block_till_done()
+
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": "select.living_room_mode", "option": "Movie"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        assert hass.states.get("light.ceiling").state == "off"
+        # The rest of the room is still lit by the scene.
+        assert hass.states.get("light.strip").state == "on"
 
 
 class TestNightScene:

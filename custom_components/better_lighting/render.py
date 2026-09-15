@@ -225,6 +225,17 @@ def render_zone(request: RenderRequest) -> RenderResult:
                 skipped[entity_id] = "others_leave"
                 continue
 
+        # A light this scene wants dark, while the rest of the room is lit.
+        if scene is not None and scene.spec_for(entity_id).turn_off:
+            if entity_id in on_now and request.trigger is not Trigger.TICK:
+                data = (
+                    {ATTR_TRANSITION: request.transition} if request.transition else {}
+                )
+                commands.append(
+                    LightCommand(entity_id, "turn_off", data, reason="scene_light_off")
+                )
+            continue
+
         if emit is Axis.NONE:
             skipped[entity_id] = "manual" if engine_axes is Axis.NONE else "no_axes"
             continue

@@ -23,7 +23,9 @@ from homeassistant.util import slugify
 from .adaptive import AdaptiveConfig
 from .brightness import BrightnessStrategy
 from .const import (
+    COLOR_FORMAT_INHERIT,
     COLOR_FORMAT_NONE,
+    COLOR_FORMAT_RGB_WHITE,
     CONF_ADAPT_BRIGHTNESS,
     CONF_ADAPT_COLOR,
     CONF_ADAPTIVE_DEFAULT_ON,
@@ -41,6 +43,7 @@ from .const import (
     CONF_BRIGHTNESS_STRATEGY,
     CONF_CLAMP_TO_DEVICE,
     CONF_COALESCE_WINDOW_MS,
+    CONF_COLD_WHITE,
     CONF_COLOR_FORMAT,
     CONF_COLOR_NAME,
     CONF_COLOR_TEMP_KELVIN,
@@ -64,6 +67,7 @@ from .const import (
     CONF_INTERCEPT_MEMBER_CALLS,
     CONF_INTERVAL,
     CONF_IS_DEFAULT,
+    CONF_LIGHT_ACTION,
     CONF_LIGHT_ENTITY,
     CONF_LIGHTS,
     CONF_LONG_PRESS_ACTION,
@@ -113,6 +117,7 @@ from .const import (
     CONF_RULE_STATES,
     CONF_RULE_ZONES,
     CONF_RULES,
+    CONF_SCENE_LIGHTS,
     CONF_SCENE_ORDER,
     CONF_SCENE_TRANSITION,
     CONF_SCENE_ZONES,
@@ -126,6 +131,7 @@ from .const import (
     CONF_TIME_DARK,
     CONF_TIME_LIGHT,
     CONF_TRANSITION,
+    CONF_WARM_WHITE,
     CONF_WINDOW_ENTITIES,
     CONF_WRAP_AROUND,
     CONF_ZONE_ID,
@@ -145,6 +151,7 @@ from .const import (
     PressAction,
     RestoreMode,
     RestoreOnPowerCycle,
+    SceneLightAction,
     ZoneAction,
     defaults_for,
 )
@@ -153,6 +160,7 @@ from .profiles import LightProfile
 from .scenes import (
     OthersPolicy,
     Scene,
+    SceneLightSpec,
     SceneOverride,
     UnsupportedColorPolicy,
 )
@@ -465,6 +473,7 @@ class SceneConfig:
             subentry_id=subentry.subentry_id,
             name=name,
             scene=Scene(
+                lights=_scene_lights(raw.get(CONF_SCENE_LIGHTS) or {}),
                 scene_id=subentry.subentry_id,
                 name=name,
                 icon=raw[CONF_ICON],
@@ -673,3 +682,51 @@ class ModeConfig:
                 ModeRule.from_dict(rule) for rule in (raw.get(CONF_RULES) or ())
             ),
         )
+
+
+def _scene_light_color(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """One light's colour inside a scene.
+
+    ``None`` means "use the scene's own colour"; an empty mapping means "leave
+    this light's colour to the sun", which is how a desk lamp takes a scene's
+    brightness while still warming through the evening.
+    """
+    match raw.get(CONF_COLOR_FORMAT, COLOR_FORMAT_INHERIT):
+        case const_format if const_format == COLOR_FORMAT_INHERIT:
+            return None
+        case const_format if const_format == COLOR_FORMAT_NONE:
+            return {}
+        case const_format if const_format == CONF_COLOR_TEMP_KELVIN:
+            return {CONF_COLOR_TEMP_KELVIN: int(raw[CONF_COLOR_TEMP_KELVIN])}
+        case const_format if const_format == CONF_RGB_COLOR:
+            return {CONF_RGB_COLOR: tuple(raw[CONF_RGB_COLOR])}
+        case const_format if const_format == COLOR_FORMAT_RGB_WHITE:
+            red, green, blue = tuple(raw[CONF_RGB_COLOR])
+            # An RGBWW fixture takes five channels. Sending them explicitly is
+            # what lets a strip sit against a warm wooden floor without the
+            # white LEDs washing the colour out.
+            return {
+                "rgbww_color": (
+                    red,
+                    green,
+                    blue,
+                    int(raw.get(CONF_WARM_WHITE, 0)),
+                    int(raw.get(CONF_COLD_WHITE, 0)),
+                )
+            }
+    return None
+
+
+def _scene_lights(raw: dict[str, Any]) -> dict[str, SceneLightSpec]:
+    """Parse a scene's per-light entries."""
+    lights: dict[str, SceneLightSpec] = {}
+    for entity_id, entry in raw.items():
+        action = SceneLightAction(entry.get(CONF_LIGHT_ACTION, "apply"))
+        brightness = entry.get(CONF_BRIGHTNESS_PCT)
+        lights[entity_id] = SceneLightSpec(
+            brightness_pct=float(brightness) if brightness is not None else None,
+            color=_scene_light_color(entry),
+            turn_off=action is SceneLightAction.OFF,
+            skip=action is SceneLightAction.LEAVE,
+        )
+    return lights

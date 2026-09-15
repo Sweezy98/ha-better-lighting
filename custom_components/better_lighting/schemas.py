@@ -62,9 +62,7 @@ def build_schema(
                 selector.SelectSelectorConfig(
                     options=choices,
                     multiple=bool(original.get("multiple", False)),
-                    mode=original.get(
-                        "mode", selector.SelectSelectorMode.DROPDOWN
-                    ),
+                    mode=original.get("mode", selector.SelectSelectorMode.DROPDOWN),
                     sort=False,
                 )
             )

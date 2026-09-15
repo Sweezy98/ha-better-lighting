@@ -165,10 +165,18 @@ class UnsupportedColorPolicy(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class SceneLightSpec:
-    """A per-light tweak inside a scene."""
+    """What a scene says about one particular light.
+
+    Anything left unset falls back to the scene's own value, and anything the
+    scene does not set either stays adaptive -- which is how a desk lamp can
+    take the scene's brightness while its colour keeps tracking the sun.
+    """
 
     brightness_pct: float | None = None
     color: Color | None = None
+    # This light is dark in this scene, while the rest of the room is not.
+    # Distinct from `skip`, which means "do not touch it at all".
+    turn_off: bool = False
     skip: bool = False
 
 
@@ -208,6 +216,7 @@ class Scene:
                 else self.brightness_pct
             ),
             color=spec.color if spec.color is not None else self.color,
+            turn_off=spec.turn_off,
             skip=spec.skip,
         )
 
@@ -222,7 +231,10 @@ class Scene:
         axes = Axis.NONE
         if spec.brightness_pct is not None:
             axes |= Axis.BRIGHTNESS
-        if spec.color is not None:
+        # Truthiness, not `is not None`: an empty colour is how a light says
+        # "leave my colour to the sun" while still taking the scene's
+        # brightness. `None` means "use the scene's colour".
+        if spec.color:
             axes |= Axis.COLOR
         return axes
 

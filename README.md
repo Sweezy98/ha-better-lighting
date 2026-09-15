@@ -130,6 +130,38 @@ Each scene chooses what it overrides, and **whatever it leaves alone keeps follo
 The two partial modes are the useful ones. A *Cooking* scene can pin the brightness at 100%
 while the colour still warms through the evening.
 
+### Naming individual lights
+
+A scene's brightness and colour are its defaults. You can then **name individual lights**
+inside it and give each one different treatment — which is what a film scene usually needs:
+
+| Light | What you set |
+|---|---|
+| Strip behind the TV | 7%, a deliberate orange |
+| Strip on the floor | 16%, a slightly warmer orange to sit against the wood |
+| Ceiling light | *Switch it off* |
+| Desk lamp | 20%, **leave the colour to the sun** |
+
+Three things make that work:
+
+- **Leave the colour to the sun** lets a light take the scene's brightness while its colour
+  keeps adapting through the evening. Leave the brightness empty instead and it takes the
+  scene's colour while its brightness keeps adapting.
+- **Switch it off** darkens one light while the rest of the room stays lit. Distinct from
+  **Leave it exactly as it is**, which does not touch it at all.
+- Any light you do not name simply takes the scene's own brightness and colour.
+
+#### RGBWW strips
+
+Choosing **Colour picker plus white channels** sends all five channels an RGBWW fixture has.
+Leave both white sliders at zero and you get a pure colour from the RGB LEDs, with the white
+ones off — genuinely that orange, rather than a white-washed approximation of it. Raise the
+warm channel to take the edge off a strip sitting against a wooden floor.
+
+Give a plain RGB value to an RGBWW fixture and the white channels are set to zero for you.
+Give one to a colour-temperature-only bulb and it keeps its adaptive white instead, since a
+projection of saturated orange onto white is nobody's idea of the scene.
+
 Other options worth knowing:
 
 - **Offer this scene in** — which rooms list it. Empty means all of them.

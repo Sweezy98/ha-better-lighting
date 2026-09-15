@@ -988,6 +988,10 @@
       "night": {
         "name": "Night",
         "state_attributes": {}
+      },
+      "mode_enabled": {
+        "name": "Enabled",
+        "state_attributes": {}
       }
     },
     "select": {

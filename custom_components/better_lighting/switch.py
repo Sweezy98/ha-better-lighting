@@ -1,4 +1,4 @@
-"""The per-zone adaptive and night-mode switches."""
+"""The per-zone adaptive and night-mode switches, and the mode on/off switch."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import BetterLightingConfigEntry
 from .const import DOMAIN, NightBehavior
 from .models import ZoneConfig
+from .modes import ModeGroupRuntime
 from .profiles import Axis
 from .zone import ZoneController
 
@@ -25,7 +26,7 @@ async def async_setup_entry(
     entry: BetterLightingConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Create the adaptive and night switches for every zone."""
+    """Create the adaptive and night switches per zone, and one per mode."""
     runtime = entry.runtime_data
     for subentry_id, zone in runtime.zones.items():
         controller = runtime.controllers[subentry_id]
@@ -36,6 +37,10 @@ async def async_setup_entry(
                 NightSwitch(zone, controller),
             ],
             config_subentry_id=subentry_id,
+        )
+    for subentry_id, mode_runtime in runtime.mode_runtimes.items():
+        async_add_entities(
+            [ModeEnabledSwitch(mode_runtime)], config_subentry_id=subentry_id
         )
 
 
@@ -143,3 +148,62 @@ class NightSwitch(_ZoneSwitch):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.controller.async_set_night(False)
+
+
+class ModeEnabledSwitch(SwitchEntity, RestoreEntity):
+    """Whether a mode is allowed to act on the rooms.
+
+    The driving automation keeps reporting the state either way -- so this is
+    not a mute button on the automation but on us. That distinction matters
+    because automations fire on *changes*: were the state not tracked while the
+    mode is switched off, turning it back on halfway through a film would find
+    an idle mode and sit there until the film ended.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "mode_enabled"
+    _attr_icon = "mdi:motion-play-outline"
+
+    def __init__(self, mode_runtime: ModeGroupRuntime) -> None:
+        self.runtime = mode_runtime
+        config = mode_runtime.config
+        self._attr_unique_id = f"{config.subentry_id}_enabled"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, config.subentry_id)},
+            name=config.name,
+            manufacturer="Better Lighting",
+            model="Mode",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.runtime.async_add_listener(self._handle_update))
+        # A mode the user switched off should stay off across a restart. The
+        # session file cannot carry this: it is dropped precisely when the mode
+        # is idle, which is the usual case for a mode that is switched off.
+        if (last := await self.async_get_last_state()) is not None:
+            await self.runtime.async_set_enabled(last.state == "on")
+
+    @callback
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        return self.runtime.enabled
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "bl_tracked_state": self.runtime.state,
+            "bl_session_id": self.runtime.session_id,
+        }
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.runtime.async_set_enabled(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.runtime.async_set_enabled(False)

@@ -138,6 +138,7 @@ def _mode_diagnostics(runtime: Any, mode_id: str) -> dict[str, Any]:
     if mode_runtime is not None:
         data |= {
             "state": mode_runtime.state,
+            "enabled": mode_runtime.enabled,
             "session_id": mode_runtime.session_id,
             "opted_out": sorted(mode_runtime.opted_out),
             "snapshot_taken_at": (

@@ -505,3 +505,82 @@ class TestTheFullTrace:
         await set_state(hass, "off")
         assert hass.states.get("light.lounge_main").attributes["brightness"] > 100
         assert hass.states.get("light.kitchen_main").state == "on"
+
+
+class TestEnableToggle:
+    """Switching a mode off mutes us, not the automation driving it."""
+
+    ENABLED = "switch.home_cinema_enabled"
+
+    async def _set_enabled(self, hass: HomeAssistant, on: bool) -> None:
+        await hass.services.async_call(
+            "switch",
+            "turn_on" if on else "turn_off",
+            {"entity_id": self.ENABLED},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    async def test_a_disabled_mode_leaves_the_rooms_alone(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass)
+        await self._set_enabled(hass, False)
+        before = hass.states.get("light.lounge_main").attributes["brightness"]
+
+        await set_state(hass, "playing")
+
+        assert hass.states.get("light.lounge_main").attributes["brightness"] == before
+        assert hass.states.get("light.kitchen_main").state == "on"
+        assert hass.states.get(CINEMA).attributes["bl_session_id"] is None
+
+    async def test_the_state_is_still_tracked_while_disabled(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The whole point: automations fire on changes, so we must remember."""
+        await build(hass)
+        await self._set_enabled(hass, False)
+        await set_state(hass, "playing")
+
+        assert hass.states.get(CINEMA).state == "playing"
+        assert hass.states.get(self.ENABLED).attributes["bl_tracked_state"] == "playing"
+
+    async def test_enabling_mid_film_picks_up_the_tracked_state(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass)
+        await self._set_enabled(hass, False)
+        await set_state(hass, "playing")
+
+        await self._set_enabled(hass, True)
+
+        assert hass.states.get("light.lounge_main").attributes["brightness"] <= 20
+        assert hass.states.get("light.kitchen_main").state == "off"
+        assert hass.states.get(CINEMA).attributes["bl_session_id"] is not None
+
+    async def test_disabling_mid_session_puts_the_rooms_back(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass)
+        await set_state(hass, "playing")
+        assert hass.states.get("light.kitchen_main").state == "off"
+
+        await self._set_enabled(hass, False)
+
+        assert hass.states.get("light.kitchen_main").state == "on"
+        assert hass.states.get(CINEMA).attributes["bl_session_id"] is None
+        # The film has not stopped, so the state stays -- and re-enabling
+        # returns to it rather than waiting for the automation's next trigger.
+        assert hass.states.get(CINEMA).state == "playing"
+
+    async def test_the_film_ending_while_disabled_clears_the_state(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass)
+        await self._set_enabled(hass, False)
+        await set_state(hass, "playing")
+        await set_state(hass, "off")
+
+        assert hass.states.get(CINEMA).state == "off"
+        await self._set_enabled(hass, True)
+        assert hass.states.get(CINEMA).attributes["bl_session_id"] is None

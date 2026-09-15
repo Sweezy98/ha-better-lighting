@@ -75,7 +75,13 @@ class ModeGroupRuntime:
         self.deferred = deferred
         self.store = store
 
+        # What the driving automation last told us, whether or not we are
+        # acting on it. Kept separately from the session so that enabling the
+        # mode halfway through a film knows the film is playing -- automations
+        # fire on *changes*, so there would otherwise be nothing to go on
+        # until the next one.
         self.state: str = IDLE_STATE
+        self.enabled = True
         self.session_id: str | None = None
         self.snapshot: ModeSnapshot | None = None
         self.opted_out: set[str] = set()
@@ -115,8 +121,13 @@ class ModeGroupRuntime:
             self.store.drop(self.config.subentry_id)
             return
 
-        self.session_id = stored.session_id
         self.state = stored.state
+        if not stored.session_id:
+            # Tracked while switched off. Nothing to resume, but the state
+            # survives the restart so switching on still knows where we are.
+            self.async_notify()
+            return
+        self.session_id = stored.session_id
         self.opted_out = set(stored.opted_out)
         self.snapshot = stored.snapshot
         _LOGGER.debug(
@@ -131,7 +142,7 @@ class ModeGroupRuntime:
     def _persist(self) -> None:
         if self.store is None:
             return
-        if not self.active:
+        if not self.active and self.state == IDLE_STATE:
             self.store.drop(self.config.subentry_id)
             return
         self.store.put(
@@ -177,11 +188,34 @@ class ModeGroupRuntime:
         """Move the mode to ``state``. The idle state ends the session."""
         if state == self.state:
             return
+        if state != IDLE_STATE and state not in self.config.states:
+            _LOGGER.warning("%s has no state %r; ignoring", self.config.name, state)
+            return
+
+        if not self.enabled:
+            # Switched off, so nothing happens to the rooms -- but the state is
+            # still recorded, so switching it on mid-film picks up from there.
+            previous, self.state = self.state, state
+            self._persist()
+            self.async_notify()
+            _LOGGER.debug(
+                "%s is switched off; noted %s without acting", self.config.name, state
+            )
+            self.hass.bus.async_fire(
+                EVENT_MODE_CHANGED,
+                {
+                    "mode_id": self.config.subentry_id,
+                    "mode": self.config.name,
+                    "from_state": previous,
+                    "to_state": state,
+                    "session_id": None,
+                    "applied": False,
+                },
+            )
+            return
+
         if state == IDLE_STATE:
             await self.async_end()
-            return
-        if state not in self.config.states:
-            _LOGGER.warning("%s has no state %r; ignoring", self.config.name, state)
             return
 
         starting = not self.active
@@ -213,10 +247,18 @@ class ModeGroupRuntime:
             },
         )
 
-    async def async_end(self, *, restore: bool = True) -> None:
-        """Return to idle, putting the rooms back."""
+    async def async_end(
+        self, *, restore: bool = True, reset_state: bool = True
+    ) -> None:
+        """End the session, putting the rooms back.
+
+        ``reset_state`` is False when the mode is being switched off rather
+        than the film ending: the film is still playing, so the state stays
+        recorded even though we stop acting on it.
+        """
         if not self.active:
-            self.state = IDLE_STATE
+            if reset_state:
+                self.state = IDLE_STATE
             return
 
         session_id = self.session_id or ""
@@ -224,7 +266,9 @@ class ModeGroupRuntime:
             self._fire_deferred(action, "dropped", "session_ended")
 
         snapshot, self.snapshot = self.snapshot, None
-        previous, self.state = self.state, IDLE_STATE
+        previous = self.state
+        if reset_state:
+            self.state = IDLE_STATE
         self.session_id = None
 
         for zone_id in self.config.zone_ids:
@@ -311,6 +355,33 @@ class ModeGroupRuntime:
             return
 
         await controller.async_set_mode(ZoneMode.OFF)
+
+    # -- switched on or off ------------------------------------------------
+
+    async def async_set_enabled(self, enabled: bool) -> None:
+        """Switch this mode on or off without the automation knowing.
+
+        Switching it on part-way through picks up whatever state was last
+        recorded, which is the whole reason the state is tracked while off.
+        """
+        if enabled == self.enabled:
+            return
+        self.enabled = enabled
+        _LOGGER.debug("%s switched %s", self.config.name, "on" if enabled else "off")
+
+        if not enabled:
+            # Put the rooms back, but keep remembering what the film is doing.
+            await self.async_end(restore=True, reset_state=False)
+            self.async_notify()
+            return
+
+        self._persist()
+        self.async_notify()
+        if self.state != IDLE_STATE:
+            # Re-apply from the top: a fresh session, snapshotting the rooms
+            # as they are now, which is what they should return to.
+            state, self.state = self.state, IDLE_STATE
+            await self.async_set_state(state)
 
     # -- presence ----------------------------------------------------------
 

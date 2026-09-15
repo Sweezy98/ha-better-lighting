@@ -257,6 +257,15 @@ Press a switch in a room during the film and that room is **yours** for the rest
 session: later state changes skip it, and the ending leaves it as you left it. Use
 `better_lighting.rejoin_mode` to hand it back.
 
+### Switching a mode off
+
+Each mode has an **Enabled** switch. Turn it off and the mode stops touching the rooms —
+switching it off mid-film puts them back straight away — but it keeps listening, so the
+select still shows what the player is doing. That is the point: your automation only fires on
+*changes*, so a mode that had forgotten the film was playing would sit idle until the credits
+rolled. Turn the switch back on halfway through and the rooms dim there and then, snapshotting
+themselves as they are at that moment so the ending restores what you actually had.
+
 ### The blueprint
 
 A ready-made automation ships with the integration:

@@ -268,6 +268,7 @@ DE |= {
     # --- entities ---------------------------------------------------------
     "Adaptive": "Adaptiv",
     "Night": "Nacht",
+    "Enabled": "Aktiviert",
     "Mode ": "Modus ",
     "State": "Zustand",
     "Cycle": "Durchschalten",

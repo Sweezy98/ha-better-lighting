@@ -18,7 +18,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import PLATFORMS, SubentryType
-from .models import HubConfig, ZoneConfig
+from .context import ContextRegistry
+from .models import HubConfig, LightProfileConfig, ZoneConfig
+from .profiles import LightProfile
+from .zone import ZoneController
 
 if TYPE_CHECKING:
     from .light import ZoneLight
@@ -34,9 +37,15 @@ class BetterLightingRuntime:
 
     hub: HubConfig
     zones: dict[str, ZoneConfig]
+    # Per-light calibration, keyed by light entity_id. A light belongs to one
+    # zone, so one profile per light is unambiguous.
+    profiles: dict[str, LightProfile] = field(default_factory=dict)
+    # One controller per zone; the only thing that commands member lights.
+    controllers: dict[str, ZoneController] = field(default_factory=dict)
     # Live entity objects, registered as their platforms come up. Keyed by
     # zone subentry_id so any subsystem can reach a zone without a global.
     zone_lights: dict[str, ZoneLight] = field(default_factory=dict)
+    contexts: ContextRegistry = field(default_factory=ContextRegistry)
     # Fingerprint of the config this runtime was built from, so an update
     # callback that changes nothing does not trigger a reload storm.
     config_fingerprint: int = 0
@@ -73,9 +82,16 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
         for subentry in entry.subentries.values()
         if subentry.subentry_type == SubentryType.ZONE.value
     }
+    profiles = {
+        profile.light_entity: profile.profile
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == SubentryType.LIGHT_PROFILE.value
+        and (profile := LightProfileConfig.from_subentry(subentry)).light_entity
+    }
     return BetterLightingRuntime(
         hub=HubConfig.from_options(dict(entry.options)),
         zones=zones,
+        profiles=profiles,
         config_fingerprint=_fingerprint(entry),
     )
 
@@ -84,8 +100,21 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: BetterLightingConfigEntry
 ) -> bool:
     """Set up the hub entry."""
-    entry.runtime_data = build_runtime(entry)
-    _LOGGER.debug("Setting up with %d zone(s)", len(entry.runtime_data.zones))
+    runtime = build_runtime(entry)
+    entry.runtime_data = runtime
+    _LOGGER.debug(
+        "Setting up with %d zone(s) and %d light profile(s)",
+        len(runtime.zones),
+        len(runtime.profiles),
+    )
+
+    for subentry_id, zone in runtime.zones.items():
+        controller = ZoneController(
+            hass, zone, runtime.hub, runtime.contexts, runtime.profiles
+        )
+        runtime.controllers[subentry_id] = controller
+        await controller.async_setup()
+        entry.async_on_unload(controller.async_shutdown)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))

@@ -107,9 +107,7 @@ class TestBrightnessQuantisation:
             assert BRIGHTNESS_MIN <= target.brightness <= BRIGHTNESS_MAX
 
     def test_dropped_for_a_light_with_no_brightness(self):
-        target = resolve_target(
-            settings(), LightProfile(), caps(modes={"onoff"})
-        )
+        target = resolve_target(settings(), LightProfile(), caps(modes={"onoff"}))
         assert target.brightness is None
         assert Axis.BRIGHTNESS not in target.axes
 
@@ -131,9 +129,7 @@ class TestColorTemperature:
         assert target.color["color_temp_kelvin"] == 4500
 
     def test_device_clamp_can_be_disabled(self):
-        profile = LightProfile(
-            color_temp_offset_k=5000, clamp_to_device_limits=False
-        )
+        profile = LightProfile(color_temp_offset_k=5000, clamp_to_device_limits=False)
         target = resolve_target(settings(kelvin=3000), profile, caps(max_k=4500))
         assert target.color["color_temp_kelvin"] == 8000
 
@@ -169,9 +165,7 @@ class TestColourOnlyLights:
 
     def test_prefer_rgb_uses_colour_on_a_dual_mode_light(self):
         profile = LightProfile(prefer_rgb=True)
-        target = resolve_target(
-            settings(), profile, caps(modes={"color_temp", "rgb"})
-        )
+        target = resolve_target(settings(), profile, caps(modes={"color_temp", "rgb"}))
         assert "rgb_color" in target.color
         assert "color_temp_kelvin" not in target.color
 
@@ -206,9 +200,7 @@ class TestAxisMasking:
         assert target.is_empty
 
     def test_per_axis_opt_out(self):
-        target = resolve_target(
-            settings(), LightProfile(adapt_color=False), caps()
-        )
+        target = resolve_target(settings(), LightProfile(adapt_color=False), caps())
         assert target.brightness is not None
         assert target.color is None
 

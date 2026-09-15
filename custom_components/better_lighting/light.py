@@ -61,6 +61,7 @@ from .brightness import (
 from .const import DOMAIN
 from .group_entity import GroupEntity
 from .models import HubConfig, ZoneConfig
+from .zone import ZoneController
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ async def async_setup_entry(
     """Create one light entity per zone subentry."""
     runtime = entry.runtime_data
     for subentry_id, zone in runtime.zones.items():
-        entity = ZoneLight(zone, runtime.hub)
+        entity = ZoneLight(zone, runtime.hub, runtime.controllers[subentry_id])
         runtime.zone_lights[subentry_id] = entity
         # Binding to the subentry gives the zone its own device, and lets HA
         # clean both up automatically when the subentry is deleted.
@@ -174,9 +175,12 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
     _attr_name = None
     _attr_should_poll = False
 
-    def __init__(self, zone: ZoneConfig, hub: HubConfig) -> None:
+    def __init__(
+        self, zone: ZoneConfig, hub: HubConfig, controller: ZoneController
+    ) -> None:
         self.zone = zone
         self.hub = hub
+        self.controller = controller
         self._entity_ids = list(zone.lights)
 
         self._attr_unique_id = f"{zone.subentry_id}_light"
@@ -440,6 +444,17 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
             data = base | visual
             if ATTR_BRIGHTNESS in kwargs:
                 data[ATTR_BRIGHTNESS] = kwargs[ATTR_BRIGHTNESS]
+            # Nothing was asked for, so light them at the value the curve says
+            # they should already be. Doing this in one command is what avoids
+            # the flash-then-correct of a two-step turn-on -- and it needs no
+            # patching of Home Assistant internals, because this method runs
+            # before any member is touched.
+            if (
+                not data
+                and self.controller.adaptive_enabled
+                and await self._async_turn_on_adaptive(targets)
+            ):
+                return
             await self._async_call_members(SERVICE_TURN_ON, data, targets)
             return
 
@@ -449,6 +464,30 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         await self._async_call_members(
             SERVICE_TURN_ON, base | visual, on_ids or list(self._entity_ids)
         )
+
+    async def _async_turn_on_adaptive(self, targets: list[str]) -> bool:
+        """Light ``targets`` at their adaptive values. False if nothing to send."""
+        resolved = self.controller.targets_for(targets)
+        if not resolved:
+            return False
+
+        transition = self.hub.initial_transition
+        batched: dict[tuple, list[str]] = {}
+        for target in resolved:
+            data = target.as_service_data()
+            if transition:
+                data[ATTR_TRANSITION] = transition
+            key = tuple(sorted((k, _hashable(v)) for k, v in data.items()))
+            batched.setdefault(key, []).append(target.entity_id)
+
+        # Any member without a resolvable target still needs switching on.
+        covered = {target.entity_id for target in resolved}
+        if remainder := [eid for eid in targets if eid not in covered]:
+            await self._async_call_members(SERVICE_TURN_ON, {}, remainder)
+
+        for key, entity_ids in batched.items():
+            await self._async_call_members(SERVICE_TURN_ON, dict(key), entity_ids)
+        return True
 
     async def _async_relative_dim(
         self, target_brightness: int, extra: dict[str, Any]
@@ -493,3 +532,8 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         if (transition := kwargs.get(ATTR_TRANSITION)) is not None:
             data[ATTR_TRANSITION] = transition
         await self._async_call_members(SERVICE_TURN_OFF, data, list(self._entity_ids))
+
+
+def _hashable(value: Any) -> Any:
+    """Make a service-data value usable as part of a dict key."""
+    return tuple(value) if isinstance(value, list | tuple) else value

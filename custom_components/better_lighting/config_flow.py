@@ -20,10 +20,12 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 
 from .const import (
+    CONF_LIGHT_ENTITY,
     CONF_LIGHTS,
     CONF_NAME,
     DOMAIN,
     HUB_SPECS,
+    LIGHT_PROFILE_SPECS,
     ZONE_SPECS,
     SubentryType,
 )
@@ -114,7 +116,10 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """The kinds of object that can be added to the hub."""
-        return {SubentryType.ZONE.value: ZoneSubentryFlow}
+        return {
+            SubentryType.ZONE.value: ZoneSubentryFlow,
+            SubentryType.LIGHT_PROFILE.value: LightProfileSubentryFlow,
+        }
 
 
 class BetterLightingOptionsFlow(OptionsFlow):
@@ -182,3 +187,83 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             data_schema=build_schema(ZONE_SPECS, user_input or existing),
             errors=errors,
         )
+
+
+def validate_light_profile(
+    entry: ConfigEntry, light_entity: str, *, exclude_subentry_id: str | None = None
+) -> dict[str, str]:
+    """One calibration per light.
+
+    A light belongs to one zone, so a second profile for it could only ever be
+    a contradiction. HA's subentry unique_id would reject it anyway, but doing
+    it here produces an error on the right field instead of an opaque abort.
+    """
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SubentryType.LIGHT_PROFILE.value:
+            continue
+        if subentry.subentry_id == exclude_subentry_id:
+            continue
+        if subentry.data.get(CONF_LIGHT_ENTITY) == light_entity:
+            return {CONF_LIGHT_ENTITY: "profile_exists"}
+    return {}
+
+
+class LightProfileSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure a per-light calibration."""
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_profile_form(user_input, subentry=None)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_profile_form(
+            user_input, subentry=self._get_reconfigure_subentry()
+        )
+
+    async def _async_profile_form(
+        self, user_input: dict[str, Any] | None, *, subentry: Any
+    ) -> SubentryFlowResult:
+        entry = self._get_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            flat = flatten_sections(LIGHT_PROFILE_SPECS, user_input)
+            cleaned, errors = post_validate(LIGHT_PROFILE_SPECS, flat)
+            light_entity = cleaned.get(CONF_LIGHT_ENTITY)
+            if light_entity:
+                errors |= validate_light_profile(
+                    entry,
+                    light_entity,
+                    exclude_subentry_id=subentry.subentry_id if subentry else None,
+                )
+            if not errors:
+                title = _profile_title(self.hass, light_entity)
+                if subentry is None:
+                    return self.async_create_entry(
+                        title=title,
+                        data=cleaned,
+                        unique_id=f"profile:{light_entity}",
+                    )
+                return self.async_update_and_abort(
+                    entry, subentry, data=cleaned, title=title
+                )
+
+        existing = dict(subentry.data) if subentry else None
+        return self.async_show_form(
+            step_id="reconfigure" if subentry else "user",
+            data_schema=build_schema(LIGHT_PROFILE_SPECS, user_input or existing),
+            errors=errors,
+        )
+
+
+def _profile_title(hass, light_entity: str | None) -> str:
+    """Name the subentry after the light, so the list is readable."""
+    if not light_entity:
+        return "Light profile"
+    state = hass.states.get(light_entity)
+    if state is not None and (name := state.attributes.get("friendly_name")):
+        return str(name)
+    return light_entity.removeprefix("light.").replace("_", " ").title()

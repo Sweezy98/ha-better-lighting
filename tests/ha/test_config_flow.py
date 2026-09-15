@@ -20,11 +20,14 @@ HUB_INPUT = {
     "advanced": {},
 }
 
+# The frontend always submits every section, so the tests do too.
 ZONE_INPUT = {
     "name": "Living Room",
     "lights": ["light.three"],
     "icon": "mdi:lightbulb-group",
     "group": {},
+    "adaptive": {},
+    "night": {},
 }
 
 
@@ -132,10 +135,10 @@ async def test_reconfigure_keeps_its_own_lights(hass: HomeAssistant) -> None:
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         {
+            **ZONE_INPUT,
             "name": "Kitchen",
             "lights": ["light.one", "light.two"],
             "icon": "mdi:stove",
-            "group": {},
         },
     )
     assert result["type"] is FlowResultType.ABORT

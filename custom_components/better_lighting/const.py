@@ -27,7 +27,7 @@ NONE_STR = "None"
 # Sentinel for a zone-level value that should fall back to the hub default.
 INHERIT = "__inherit__"
 
-PLATFORMS: list[str] = ["light"]
+PLATFORMS: list[str] = ["light", "switch"]
 
 
 class SubentryType(StrEnum):
@@ -279,7 +279,6 @@ ZONE_SPECS: tuple[FieldSpec, ...] = (
 )
 
 
-
 # --- zone adaptive overrides -------------------------------------------------
 
 CONF_ADAPTIVE_OVERRIDE = "adaptive_override_enabled"
@@ -377,7 +376,10 @@ LIGHT_PROFILE_SPECS: tuple[FieldSpec, ...] = (
         0,
         selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=-100, max=100, step=1, unit_of_measurement="%",
+                min=-100,
+                max=100,
+                step=1,
+                unit_of_measurement="%",
                 mode=selector.NumberSelectorMode.BOX,
             )
         ),
@@ -387,7 +389,10 @@ LIGHT_PROFILE_SPECS: tuple[FieldSpec, ...] = (
         0,
         selector.NumberSelector(
             selector.NumberSelectorConfig(
-                min=-3000, max=3000, step=25, unit_of_measurement="K",
+                min=-3000,
+                max=3000,
+                step=25,
+                unit_of_measurement="K",
                 mode=selector.NumberSelectorMode.BOX,
             )
         ),

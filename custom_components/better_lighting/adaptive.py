@@ -168,9 +168,7 @@ class SunEvents:
                 synthetic = noon + sign * _POLAR_OFFSET
 
             lower, upper = (
-                (midnight, noon)
-                if event is SunEvent.SUNRISE
-                else (noon, next_midnight)
+                (midnight, noon) if event is SunEvent.SUNRISE else (noon, next_midnight)
             )
             return min(
                 max(synthetic + offset, lower + _POLAR_EPSILON),

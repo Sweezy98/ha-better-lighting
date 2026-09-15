@@ -111,10 +111,13 @@ class TestBrightness:
             observer=observer, timezone=tz, brightness_mode=BrightnessMode.SUN
         )
         day = _day(tz).date()
-        midday = config.sun.sunrise(day) + (
-            config.sun.sunset(day) - config.sun.sunrise(day)
-        ) / 2
-        assert config.brightness_pct(midday, is_night=False) == config.max_brightness_pct
+        midday = (
+            config.sun.sunrise(day)
+            + (config.sun.sunset(day) - config.sun.sunrise(day)) / 2
+        )
+        assert (
+            config.brightness_pct(midday, is_night=False) == config.max_brightness_pct
+        )
 
     def test_sun_mode_ramps_below_the_horizon(self, place):
         observer, tz = place
@@ -275,15 +278,15 @@ class TestPolarRegions:
         location = Location(
             LocationInfo("Longyearbyen", "Svalbard", "UTC", 78.22, 15.63)
         )
-        return AdaptiveConfig(observer=location.observer, timezone=zoneinfo.ZoneInfo("UTC"))
+        return AdaptiveConfig(
+            observer=location.observer, timezone=zoneinfo.ZoneInfo("UTC")
+        )
 
     @pytest.mark.parametrize(
         "date", [dt.date(2026, 1, 15), dt.date(2026, 6, 21), dt.date(2026, 12, 21)]
     )
     def test_polar_days_do_not_raise(self, arctic, date):
-        moment = dt.datetime.combine(
-            date, dt.time(12), tzinfo=zoneinfo.ZoneInfo("UTC")
-        )
+        moment = dt.datetime.combine(date, dt.time(12), tzinfo=zoneinfo.ZoneInfo("UTC"))
         settings = compute(arctic, moment)
         assert -1.0 <= settings.sun_position <= 1.0
         assert 0 <= settings.brightness_pct <= 100

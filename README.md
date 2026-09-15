@@ -21,9 +21,10 @@ override only brightness *or* only colour while the other keeps tracking the sun
 [relative-light-group]: https://github.com/Cheerpipe/relative-light-group
 [scenery]: https://github.com/j9brown/scenery
 
-> **Status: early development.** Milestone 1 of 8 is complete: zones exist as light groups
-> with relative dimming and on-state memory. The adaptive engine, scenes, cycling, presence
-> and cross-zone modes are not implemented yet.
+> **Status: early development.** Milestones 1 and 2 of 8 are complete. Zones exist as light
+> groups with relative dimming and on-state memory, they follow the sun, night mode tracks a
+> helper entity, and individual lights can be calibrated with offsets and limits. Scenes,
+> switch cycling, presence and the cross-zone cinema modes are not implemented yet.
 
 ## Concepts
 
@@ -43,6 +44,19 @@ A light entity may belong to **exactly one zone**, and the config flow enforces 
 the constraint the rest of the design rests on: because a light has a single owner, manual
 change detection, render ownership and switch-press attribution are all unambiguous, with
 none of the multi-owner disambiguation that makes this hard elsewhere.
+
+### Three layers of adaptive configuration
+
+Global defaults live on the hub; a zone may override them; an individual light may then be
+calibrated on top. The first two layers define the *curve* — what "darkest" and "brightest"
+mean across the day — while a light profile *clamps and calibrates* whatever the curve
+produced.
+
+Within a light profile the order is deliberate: the offset is applied first, then the
+minimum and maximum. An offset says "this fixture reads dim"; a limit says "never below 15%,
+it flickers". A calibration must never be able to breach a limit you set, so the limit wins.
+A corollary worth knowing: per-light limits are absolute targets, not shifts of the zone's
+range.
 
 ### The zone entity is the input, not just the output
 

@@ -125,11 +125,13 @@
                 "hide_members": "Einzelne Lampen ausblenden",
                 "remember_on_state": "Merken, welche Lampen an waren",
                 "brightness_strategy": "Gemeldete Helligkeit",
-                "expand_light_groups": "Verschachtelte Lichtgruppen auflösen"
+                "expand_light_groups": "Verschachtelte Lichtgruppen auflösen",
+                "color_lights_dark_members": "Farbwechsel schaltet Lampen auch ein"
               },
               "data_description": {
                 "remember_on_state": "Beim Wiedereinschalten nur die Lampen einschalten, die beim Ausschalten an waren.",
-                "brightness_strategy": "Wie aus den eingeschalteten Lampen ein Helligkeitswert gebildet wird."
+                "brightness_strategy": "Wie aus den eingeschalteten Lampen ein Helligkeitswert gebildet wird.",
+                "color_lights_dark_members": "Standardmäßig aus: Ein Farbwechsel passt das vorhandene Licht an, statt den Raum zu beleuchten. Einschalten, um sich wie die Lichtgruppen von Home Assistant zu verhalten."
               }
             },
             "adaptive": {
@@ -235,7 +237,11 @@
                 "hide_members": "Einzelne Lampen ausblenden",
                 "remember_on_state": "Merken, welche Lampen an waren",
                 "brightness_strategy": "Gemeldete Helligkeit",
-                "expand_light_groups": "Verschachtelte Lichtgruppen auflösen"
+                "expand_light_groups": "Verschachtelte Lichtgruppen auflösen",
+                "color_lights_dark_members": "Farbwechsel schaltet Lampen auch ein"
+              },
+              "data_description": {
+                "color_lights_dark_members": "Standardmäßig aus: Ein Farbwechsel passt das vorhandene Licht an, statt den Raum zu beleuchten. Einschalten, um sich wie die Lichtgruppen von Home Assistant zu verhalten."
               }
             },
             "adaptive": {

@@ -331,6 +331,7 @@ CONF_HIDE_MEMBERS = "hide_members"
 CONF_REMEMBER_ON_STATE = "remember_on_state"
 CONF_BRIGHTNESS_STRATEGY = "brightness_strategy"
 CONF_EXPAND_LIGHT_GROUPS = "expand_light_groups"
+CONF_COLOR_LIGHTS_DARK_MEMBERS = "color_lights_dark_members"
 
 BRIGHTNESS_STRATEGIES = ["average", "median", "max", "min"]
 
@@ -362,6 +363,9 @@ ZONE_SPECS: tuple[FieldSpec, ...] = (
         section=Section.GROUP,
     ),
     FieldSpec(CONF_EXPAND_LIGHT_GROUPS, True, _boolean(), section=Section.GROUP),
+    # Off by default: setting a room's colour is an adjustment to the light
+    # that is there, not a request to light the room.
+    FieldSpec(CONF_COLOR_LIGHTS_DARK_MEMBERS, False, _boolean(), section=Section.GROUP),
 )
 
 

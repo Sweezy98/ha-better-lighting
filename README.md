@@ -305,6 +305,25 @@ than failing, and tells you instead of silently shortening your cycle.
 `better_lighting_press`, `better_lighting_zone_mode_changed`, `better_lighting_mode_changed`,
 `better_lighting_zone_opted_out`, `better_lighting_deferred_action`.
 
+### A light is physically on but Home Assistant shows it off
+
+Better Lighting only ever acts on what Home Assistant reports. If a bulb's state is stale,
+this integration will skip it — a colour change reaches the lights Home Assistant believes
+are on, so a bulb wrongly shown as off is left alone.
+
+That is a Zigbee/Z-Wave state-reporting problem rather than a lighting one, and it is worth
+fixing at the source, because every other integration is being misled in the same way. Things
+worth checking:
+
+- Watch the device in your Zigbee stack directly (Zigbee2MQTT's frontend, or the deCONZ app).
+  If the state is wrong *there* too, Home Assistant is only reporting what it was told.
+- A bulb on a mains switch that cuts power comes back on at its last setting, but only
+  announces itself when it rejoins the network — which can take a while.
+- Group or scene commands sent inside the Zigbee network often do not produce a per-bulb
+  report, so bulbs changed that way can drift out of sync until something polls them.
+- `homeassistant.update_entity` on a suspect light forces a refresh, which is a quick way to
+  tell a reporting problem from a state-tracking one.
+
 Common gotchas:
 
 - **My lights stopped adapting.** Something was changed by hand, so the integration backed

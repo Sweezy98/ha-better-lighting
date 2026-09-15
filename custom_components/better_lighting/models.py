@@ -46,6 +46,7 @@ from .const import (
     CONF_COALESCE_WINDOW_MS,
     CONF_COLD_WHITE,
     CONF_COLOR_FORMAT,
+    CONF_COLOR_LIGHTS_DARK_MEMBERS,
     CONF_COLOR_NAME,
     CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
@@ -248,6 +249,7 @@ class ZoneConfig:
     remember_on_state: bool
     brightness_strategy: BrightnessStrategy
     expand_light_groups: bool
+    color_lights_dark_members: bool
 
     # Adaptive. When `adaptive_override` is False every value below is ignored
     # and the hub default is used instead.
@@ -316,6 +318,7 @@ class ZoneConfig:
             remember_on_state=bool(raw[CONF_REMEMBER_ON_STATE]),
             brightness_strategy=BrightnessStrategy(raw[CONF_BRIGHTNESS_STRATEGY]),
             expand_light_groups=bool(raw[CONF_EXPAND_LIGHT_GROUPS]),
+            color_lights_dark_members=bool(raw[CONF_COLOR_LIGHTS_DARK_MEMBERS]),
             adaptive_override=bool(raw[CONF_ADAPTIVE_OVERRIDE]),
             adaptive_brightness_on=bool(raw[CONF_ADAPTIVE_BRIGHTNESS_ON]),
             adaptive_color_on=bool(raw[CONF_ADAPTIVE_COLOR_ON]),

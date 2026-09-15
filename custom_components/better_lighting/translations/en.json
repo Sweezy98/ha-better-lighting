@@ -125,11 +125,13 @@
                 "hide_members": "Hide the individual lights",
                 "remember_on_state": "Remember which lights were on",
                 "brightness_strategy": "Reported brightness",
-                "expand_light_groups": "Expand nested light groups"
+                "expand_light_groups": "Expand nested light groups",
+                "color_lights_dark_members": "A colour change also switches lights on"
               },
               "data_description": {
                 "remember_on_state": "When the zone is switched back on, light only the lights that were on when it was switched off.",
-                "brightness_strategy": "How one brightness value is derived from the lights that are on."
+                "brightness_strategy": "How one brightness value is derived from the lights that are on.",
+                "color_lights_dark_members": "Off by default: changing a room's colour adjusts the light that is there rather than lighting the room. Turn this on to match how Home Assistant's own light groups behave."
               }
             },
             "adaptive": {
@@ -235,7 +237,11 @@
                 "hide_members": "Hide the individual lights",
                 "remember_on_state": "Remember which lights were on",
                 "brightness_strategy": "Reported brightness",
-                "expand_light_groups": "Expand nested light groups"
+                "expand_light_groups": "Expand nested light groups",
+                "color_lights_dark_members": "A colour change also switches lights on"
+              },
+              "data_description": {
+                "color_lights_dark_members": "Off by default: changing a room's colour adjusts the light that is there rather than lighting the room. Turn this on to match how Home Assistant's own light groups behave."
               }
             },
             "adaptive": {

@@ -476,15 +476,20 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         if ATTR_BRIGHTNESS in kwargs:
             data[ATTR_BRIGHTNESS] = kwargs[ATTR_BRIGHTNESS]
 
-        # Every member, including any that are off. Home Assistant's own
-        # light group forwards an explicit turn_on to all of its members, and
-        # dragging a colour wheel on a room and having one lamp ignore it
-        # because it happened to be off is not what anybody means. Relative
-        # dimming above is the exception, because dimming a dark light is not
-        # a sensible reading of the request.
-        targets = [
-            state.entity_id for state in self._valid(self._member_states())
-        ] or list(self._entity_ids)
+        # Only the lights that are actually lit, unless the room is
+        # configured otherwise. Home Assistant's own light group forwards to
+        # every member, but changing a room's colour is an adjustment to the
+        # light that is there rather than a request to light the room -- and
+        # a room that lights itself up because you touched the colour wheel is
+        # a worse surprise than one lamp staying dark.
+        if self.is_on and not self.zone.color_lights_dark_members:
+            targets = [
+                state.entity_id
+                for state in self._on(self._valid(self._member_states()))
+            ]
+        else:
+            targets = [state.entity_id for state in self._valid(self._member_states())]
+        targets = targets or list(self._entity_ids)
 
         axes = Axis.NONE
         if ATTR_BRIGHTNESS in kwargs:

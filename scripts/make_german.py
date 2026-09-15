@@ -68,6 +68,8 @@ DE: dict[str, str] = {
     "Remember which lights were on": "Merken, welche Lampen an waren",
     "Reported brightness": "Gemeldete Helligkeit",
     "Expand nested light groups": "Verschachtelte Lichtgruppen auflösen",
+    "A colour change also switches lights on": "Farbwechsel schaltet Lampen auch ein",
+    "Off by default: changing a room's colour adjusts the light that is there rather than lighting the room. Turn this on to match how Home Assistant's own light groups behave.": "Standardmäßig aus: Ein Farbwechsel passt das vorhandene Licht an, statt den Raum zu beleuchten. Einschalten, um sich wie die Lichtgruppen von Home Assistant zu verhalten.",
     "When the zone is switched back on, light only the lights that were on when it was switched off.": "Beim Wiedereinschalten nur die Lampen einschalten, die beim Ausschalten an waren.",
     "How one brightness value is derived from the lights that are on.": "Wie aus den eingeschalteten Lampen ein Helligkeitswert gebildet wird.",
     "Pick at least one light.": "Mindestens eine Lampe auswählen.",

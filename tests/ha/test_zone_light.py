@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 from homeassistant.core import HomeAssistant
 
-from tests.conftest import MemberLight, hub_entry, setup_hub, setup_members
+from tests.conftest import (
+    MemberLight,
+    hub_entry,
+    setup_hub,
+    setup_members,
+    zone_subentry,
+)
 
 ZONE = "light.kitchen"
 
@@ -139,16 +145,30 @@ async def test_relative_dim_preserves_ordering(hass: HomeAssistant) -> None:
     assert dim < bright, "the dimmer light must stay the dimmer light"
 
 
-async def test_a_colour_reaches_every_member(hass: HomeAssistant) -> None:
-    """Including ones that happen to be off.
+async def test_a_colour_does_not_light_dark_members(hass: HomeAssistant) -> None:
+    """Changing a room's colour adjusts the light that is there.
 
-    Home Assistant's own light group forwards an explicit turn_on to all its
-    members, and a lamp silently ignoring the colour wheel because it was off
-    is not what anybody means by setting a room's colour.
+    Home Assistant's own light group would forward to every member, but a room
+    lighting itself up because you touched the colour wheel is a worse
+    surprise than one lamp staying dark. Configurable per room.
     """
     one = MemberLight("One", is_on=True, brightness=100)
     two = MemberLight("Two", is_on=False)
     await _setup(hass, one, two)
+
+    await _call(hass, "turn_on", color_temp_kelvin=4200)
+
+    assert hass.states.get("light.one").attributes["color_temp_kelvin"] == 4200
+    assert hass.states.get("light.two").state == "off"
+
+
+async def test_dark_members_can_be_opted_in(hass: HomeAssistant) -> None:
+    one = MemberLight("One", is_on=True, brightness=100)
+    two = MemberLight("Two", is_on=False)
+    await setup_members(hass, [one, two])
+    await setup_hub(
+        hass, hub_entry(subentries_data=[zone_subentry(color_lights_dark_members=True)])
+    )
 
     await _call(hass, "turn_on", color_temp_kelvin=4200)
 

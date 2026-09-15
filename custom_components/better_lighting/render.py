@@ -136,6 +136,10 @@ class RenderRequest:
     # Per (zone, light) by construction: this map belongs to one zone.
     manual: Mapping[str, Axis] = field(default_factory=dict)
     bias_pct: float = 0.0
+    # Which axes this room still tracks the sun on. Applied to the adaptive
+    # side only: switching off adaptive colour means "stop following the sun",
+    # not "never set a colour", so a scene can still choose one.
+    adaptive_axes: Axis = Axis.ALL
     transition: float | None = None
     # When set, only these members may be switched on -- used to restore the
     # set that was lit before a cross-zone mode took over.
@@ -197,7 +201,7 @@ def render_zone(request: RenderRequest) -> RenderResult:
             if in_scene
             else Axis.NONE
         )
-        adapt_axes = engine_axes & ~scene_axes
+        adapt_axes = engine_axes & ~scene_axes & request.adaptive_axes
         emit = emitted_axes(request.trigger, scene_axes, adapt_axes)
 
         # -- members the scene does not name ------------------------------

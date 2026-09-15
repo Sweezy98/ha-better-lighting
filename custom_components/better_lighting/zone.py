@@ -144,8 +144,13 @@ class ZoneController:
         self.profiles = profiles or {}
         self.scenes = scenes or {}
 
-        self.adaptive_enabled = zone.adaptive_default_on
+        # Tracked per axis: a room can follow the sun's colour while its
+        # brightness stays put, or the other way round.
+        self.adapt_brightness = zone.adaptive_brightness_on
+        self.adapt_color = zone.adaptive_color_on
         self.night_active = False
+        # Night mode wants this room dark, but somebody is still in it.
+        self._night_turn_off_pending = False
         self.mode: ZoneMode = ZoneMode.ADAPTIVE
         self.active_scene_id: str | None = None
         # A signed relative dim, in percentage points, applied on top of
@@ -319,27 +324,83 @@ class ZoneController:
         self.night_active = active
         _LOGGER.debug("%s night mode -> %s", self.zone.name, active)
         self.async_notify()
-        self.hass.async_create_task(self.async_render(Trigger.ACTIVATE, only_lit=True))
+        # From the source entity, so the whole house is going to bed. That is
+        # what may darken a room, unlike the zone's own night switch.
+        self.hass.async_create_task(self._async_night_changed(from_source=True))
 
     @callback
     def _handle_tick(self, _now: datetime.datetime) -> None:
         self.hass.async_create_task(self.async_render(Trigger.TICK))
 
-    async def async_set_adaptive_enabled(self, enabled: bool) -> None:
-        """Turn this zone's adaptive engine on or off."""
-        if enabled == self.adaptive_enabled:
-            return
-        self.adaptive_enabled = enabled
+    @property
+    def adaptive_axes(self) -> Axis:
+        """Which axes this room still tracks the sun on."""
+        axes = Axis.NONE
+        if self.adapt_brightness:
+            axes |= Axis.BRIGHTNESS
+        if self.adapt_color:
+            axes |= Axis.COLOR
+        return axes
+
+    @property
+    def adaptive_enabled(self) -> bool:
+        """Whether the sun still drives anything in this room."""
+        return self.adaptive_axes is not Axis.NONE
+
+    async def async_set_adaptive_axis(self, axis: Axis, enabled: bool) -> None:
+        """Turn one axis of this zone's adaptive engine on or off."""
+        if axis is Axis.BRIGHTNESS:
+            if enabled == self.adapt_brightness:
+                return
+            self.adapt_brightness = enabled
+        else:
+            if enabled == self.adapt_color:
+                return
+            self.adapt_color = enabled
         self.async_notify()
         if enabled:
             await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
     async def async_set_night(self, active: bool) -> None:
-        """Set night mode directly, for zones with no source entity."""
+        """Set night mode from the zone's own switch.
+
+        Deliberately never darkens the room, even when the zone is configured
+        to switch off at night. Reaching for this switch is someone asking for
+        night light *now*; the whole-house helper going on is the house going
+        to bed, which is a different thing.
+        """
         if active == self.night_active:
             return
         self.night_active = active
         self.async_notify()
+        await self._async_night_changed(from_source=False)
+
+    async def _async_night_changed(self, *, from_source: bool) -> None:
+        """Apply a change of night mode."""
+        if not self.night_active:
+            self._night_turn_off_pending = False
+            await self.async_render(Trigger.ACTIVATE, only_lit=True)
+            return
+
+        if (
+            from_source
+            and self.zone.night_behavior is NightBehavior.TURN_OFF
+            and self._any_member_on()
+        ):
+            presence = self.presence
+            if presence is not None and not presence.is_clear:
+                # Somebody is still in here. Wait rather than switching the
+                # light off from under them; presence will call back when the
+                # room empties.
+                self._night_turn_off_pending = True
+                _LOGGER.debug(
+                    "%s: night turn-off waiting for the room to empty",
+                    self.zone.name,
+                )
+                return
+            await self.async_set_mode(ZoneMode.OFF)
+            return
+
         await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
     async def async_set_mode(self, mode: ZoneMode, scene_id: str | None = None) -> None:
@@ -461,6 +522,10 @@ class ZoneController:
         press land on adaptive without advancing.
         """
         dismissed = False
+        if self._night_turn_off_pending:
+            # Somebody reached for the switch while we were waiting to darken
+            # the room. That is them saying they want it lit.
+            self._night_turn_off_pending = False
         if self.manual:
             self.clear_manual()
             dismissed = True
@@ -617,6 +682,12 @@ class ZoneController:
 
     async def async_presence_cleared(self) -> None:
         """The room has emptied."""
+        if self._night_turn_off_pending:
+            self._night_turn_off_pending = False
+            if self.night_active and self._any_member_on():
+                _LOGGER.debug("%s: night turn-off released", self.zone.name)
+                await self.async_set_mode(ZoneMode.OFF)
+            return
         if self.zone.presence_off_action is PresenceOffAction.NONE:
             return
         if not self._presence_allowed():
@@ -809,8 +880,9 @@ class ZoneController:
         if mode is ZoneMode.SCENE:
             return self.scenes.get(self.active_scene_id or "")
         if mode is ZoneMode.NIGHT:
-            # Only the "apply a scene" behaviour resolves to one; the
-            # "minimum settings" behaviour is handled inside the curve.
+            # Only the "apply a scene" behaviour resolves to one. "Minimum
+            # settings" is handled inside the curve, and "switch off" leaves
+            # the room dark, so neither has a scene.
             if self.zone.night_behavior is NightBehavior.SCENE:
                 return self.scenes.get(self.zone.night_scene_id or "")
             return None
@@ -898,6 +970,7 @@ class ZoneController:
                 profiles=self.profiles,
                 manual=self.manual,
                 bias_pct=self.bias_pct,
+                adaptive_axes=self.adaptive_axes,
                 transition=self._transition_for(trigger),
                 only_lit=only_lit,
             )

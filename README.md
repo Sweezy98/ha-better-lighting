@@ -194,12 +194,25 @@ a room value of 15%, an offset of +10 and a minimum of 30, the result is 30% —
 
 Values that get clipped are reported in the room's diagnostics rather than silently swallowed.
 
+Brightness and colour are **two separate switches** per room, because the axes are genuinely
+independent: a room can keep warming through the evening while its brightness stays where you
+put it, or hold a colour while still dimming with the day. Switching an axis off means "stop
+following the sun" — a scene can still set that axis.
+
 ### Night mode
 
 Night mode follows an **existing helper** — an `input_boolean`, a schedule, a sleep sensor —
 rather than owning a schedule of its own, so the house keeps one source of truth for "we are
-asleep". Each room can then either dim and warm, apply a designated night scene, or ignore
-night entirely.
+asleep". Each room can then dim and warm, apply a designated night scene, **switch off once
+the room is empty**, or ignore night entirely.
+
+That last one waits: if somebody is still in the room when the house goes to bed, the light
+stays exactly as it is and only goes out once they leave. Reaching for the switch meanwhile
+cancels it — that is you saying you want the light.
+
+The waiting only applies when the **helper** turns on, which is the house going to bed. The
+room's own night switch always dims rather than darkens, because reaching for it is a person
+asking for night light now.
 
 ---
 

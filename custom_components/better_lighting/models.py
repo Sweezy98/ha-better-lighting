@@ -28,7 +28,8 @@ from .const import (
     COLOR_FORMAT_RGB_WHITE,
     CONF_ADAPT_BRIGHTNESS,
     CONF_ADAPT_COLOR,
-    CONF_ADAPTIVE_DEFAULT_ON,
+    CONF_ADAPTIVE_BRIGHTNESS_ON,
+    CONF_ADAPTIVE_COLOR_ON,
     CONF_ADAPTIVE_OVERRIDE,
     CONF_ADAPTIVE_POSITION,
     CONF_ALL,
@@ -251,7 +252,10 @@ class ZoneConfig:
     # Adaptive. When `adaptive_override` is False every value below is ignored
     # and the hub default is used instead.
     adaptive_override: bool
-    adaptive_default_on: bool
+    # The two axes are independent: a room can track the sun's colour all
+    # evening while its brightness stays wherever it was put.
+    adaptive_brightness_on: bool
+    adaptive_color_on: bool
     min_brightness_pct: float
     max_brightness_pct: float
     min_color_temp_k: int
@@ -313,7 +317,8 @@ class ZoneConfig:
             brightness_strategy=BrightnessStrategy(raw[CONF_BRIGHTNESS_STRATEGY]),
             expand_light_groups=bool(raw[CONF_EXPAND_LIGHT_GROUPS]),
             adaptive_override=bool(raw[CONF_ADAPTIVE_OVERRIDE]),
-            adaptive_default_on=bool(raw[CONF_ADAPTIVE_DEFAULT_ON]),
+            adaptive_brightness_on=bool(raw[CONF_ADAPTIVE_BRIGHTNESS_ON]),
+            adaptive_color_on=bool(raw[CONF_ADAPTIVE_COLOR_ON]),
             min_brightness_pct=float(raw[CONF_MIN_BRIGHTNESS_PCT]),
             max_brightness_pct=float(raw[CONF_MAX_BRIGHTNESS_PCT]),
             min_color_temp_k=int(raw[CONF_MIN_COLOR_TEMP_K]),

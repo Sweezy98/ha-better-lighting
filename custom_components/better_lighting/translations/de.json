@@ -143,10 +143,12 @@
                 "brightness_mode": "Helligkeitsverlauf",
                 "transition": "Übergangsdauer",
                 "interval": "Aktualisierungsintervall",
-                "adaptive_default_on": "Mit eingeschaltetem adaptivem Licht starten"
+                "adaptive_brightness_default_on": "Helligkeit der Sonne folgen",
+                "adaptive_color_default_on": "Farbe der Sonne folgen"
               },
               "data_description": {
-                "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist."
+                "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist.",
+                "adaptive_brightness_default_on": "Helligkeit und Farbe sind getrennte Schalter — ein Raum kann also abends weiter wärmer werden, während seine Helligkeit dort bleibt, wo sie eingestellt wurde."
               }
             },
             "night": {
@@ -163,7 +165,8 @@
               "data_description": {
                 "night_source_entity": "Ein vorhandener Helfer oder Sensor, der an ist, wenn das Haus schläft. Der Nachtschalter dieses Raums spiegelt ihn.",
                 "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
-                "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist."
+                "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist.",
+                "night_behavior": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht — der Nachtschalter des Raums dimmt immer, statt zu verdunkeln."
               }
             },
             "power": {
@@ -246,10 +249,12 @@
                 "brightness_mode": "Helligkeitsverlauf",
                 "transition": "Übergangsdauer",
                 "interval": "Aktualisierungsintervall",
-                "adaptive_default_on": "Mit eingeschaltetem adaptivem Licht starten"
+                "adaptive_brightness_default_on": "Helligkeit der Sonne folgen",
+                "adaptive_color_default_on": "Farbe der Sonne folgen"
               },
               "data_description": {
-                "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist."
+                "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist.",
+                "adaptive_brightness_default_on": "Helligkeit und Farbe sind getrennte Schalter — ein Raum kann also abends weiter wärmer werden, während seine Helligkeit dort bleibt, wo sie eingestellt wurde."
               }
             },
             "night": {
@@ -266,7 +271,8 @@
               "data_description": {
                 "night_source_entity": "Ein vorhandener Helfer oder Sensor, der an ist, wenn das Haus schläft. Der Nachtschalter dieses Raums spiegelt ihn.",
                 "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
-                "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist."
+                "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist.",
+                "night_behavior": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht — der Nachtschalter des Raums dimmt immer, statt zu verdunkeln."
               }
             },
             "power": {
@@ -810,7 +816,8 @@
       "options": {
         "min_settings": "Dimmen und wärmen (Minimalwerte)",
         "scene": "Eine Nachtszene anwenden",
-        "off": "Nichts tun"
+        "off": "Nichts tun",
+        "turn_off": "Den Raum ausschalten, sobald er leer ist"
       }
     },
     "override_mode": {
@@ -964,8 +971,12 @@
   },
   "entity": {
     "switch": {
-      "adaptive": {
-        "name": "Adaptiv",
+      "adaptive_brightness": {
+        "name": "Adaptive Helligkeit",
+        "state_attributes": {}
+      },
+      "adaptive_color": {
+        "name": "Adaptive Farbe",
         "state_attributes": {}
       },
       "night": {

@@ -143,10 +143,12 @@
                 "brightness_mode": "Brightness curve",
                 "transition": "Transition",
                 "interval": "Update interval",
-                "adaptive_default_on": "Start with adaptive lighting on"
+                "adaptive_brightness_default_on": "Start following the sun's brightness",
+                "adaptive_color_default_on": "Start following the sun's colour"
               },
               "data_description": {
-                "adaptive_override_enabled": "Leave off to follow the global defaults. Everything below is ignored until you turn this on."
+                "adaptive_override_enabled": "Leave off to follow the global defaults. Everything below is ignored until you turn this on.",
+                "adaptive_brightness_default_on": "Brightness and colour are separate switches, so a room can keep warming through the evening while its brightness stays where you put it."
               }
             },
             "night": {
@@ -163,7 +165,8 @@
               "data_description": {
                 "night_source_entity": "An existing helper or sensor that is on when the house is asleep. This zone's night switch mirrors it.",
                 "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
-                "night_scene_id": "Used when 'What night mode does' is set to apply a scene."
+                "night_scene_id": "Used when 'What night mode does' is set to apply a scene.",
+                "night_behavior": "'Switch the room off' waits until the room is empty before darkening it, and only when the helper above turns on — the zone's own night switch always dims rather than darkens."
               }
             },
             "power": {
@@ -246,10 +249,12 @@
                 "brightness_mode": "Brightness curve",
                 "transition": "Transition",
                 "interval": "Update interval",
-                "adaptive_default_on": "Start with adaptive lighting on"
+                "adaptive_brightness_default_on": "Start following the sun's brightness",
+                "adaptive_color_default_on": "Start following the sun's colour"
               },
               "data_description": {
-                "adaptive_override_enabled": "Leave off to follow the global defaults. Everything below is ignored until you turn this on."
+                "adaptive_override_enabled": "Leave off to follow the global defaults. Everything below is ignored until you turn this on.",
+                "adaptive_brightness_default_on": "Brightness and colour are separate switches, so a room can keep warming through the evening while its brightness stays where you put it."
               }
             },
             "night": {
@@ -266,7 +271,8 @@
               "data_description": {
                 "night_source_entity": "An existing helper or sensor that is on when the house is asleep. This zone's night switch mirrors it.",
                 "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
-                "night_scene_id": "Used when 'What night mode does' is set to apply a scene."
+                "night_scene_id": "Used when 'What night mode does' is set to apply a scene.",
+                "night_behavior": "'Switch the room off' waits until the room is empty before darkening it, and only when the helper above turns on — the zone's own night switch always dims rather than darkens."
               }
             },
             "power": {
@@ -810,7 +816,8 @@
       "options": {
         "min_settings": "Dim and warm (minimum settings)",
         "scene": "Apply a night scene",
-        "off": "Do nothing"
+        "off": "Do nothing",
+        "turn_off": "Switch the room off once it is empty"
       }
     },
     "override_mode": {
@@ -964,8 +971,12 @@
   },
   "entity": {
     "switch": {
-      "adaptive": {
-        "name": "Adaptive",
+      "adaptive_brightness": {
+        "name": "Adaptive brightness",
+        "state_attributes": {}
+      },
+      "adaptive_color": {
+        "name": "Adaptive colour",
         "state_attributes": {}
       },
       "night": {

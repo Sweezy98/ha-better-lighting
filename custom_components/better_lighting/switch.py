@@ -14,6 +14,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import BetterLightingConfigEntry
 from .const import DOMAIN, NightBehavior
 from .models import ZoneConfig
+from .profiles import Axis
 from .zone import ZoneController
 
 PARALLEL_UPDATES = 0
@@ -29,7 +30,11 @@ async def async_setup_entry(
     for subentry_id, zone in runtime.zones.items():
         controller = runtime.controllers[subentry_id]
         async_add_entities(
-            [AdaptiveSwitch(zone, controller), NightSwitch(zone, controller)],
+            [
+                AdaptiveAxisSwitch(zone, controller, Axis.BRIGHTNESS),
+                AdaptiveAxisSwitch(zone, controller, Axis.COLOR),
+                NightSwitch(zone, controller),
+            ],
             config_subentry_id=subentry_id,
         )
 
@@ -63,30 +68,44 @@ class _ZoneSwitch(SwitchEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
-class AdaptiveSwitch(_ZoneSwitch):
-    """Whether this zone's lights follow the sun."""
+class AdaptiveAxisSwitch(_ZoneSwitch):
+    """Whether this room tracks the sun on one axis.
 
-    _attr_icon = "mdi:theme-light-dark"
+    Two switches rather than one, because the axes are genuinely independent:
+    a room can keep warming through the evening while its brightness stays
+    where somebody put it, or hold a colour while still dimming with the day.
+    Switching an axis off means "stop following the sun" -- a scene can still
+    set that axis.
+    """
 
-    def __init__(self, zone: ZoneConfig, controller: ZoneController) -> None:
-        super().__init__(zone, controller, "adaptive")
+    def __init__(
+        self, zone: ZoneConfig, controller: ZoneController, axis: Axis
+    ) -> None:
+        self.axis = axis
+        key = "adaptive_brightness" if axis is Axis.BRIGHTNESS else "adaptive_color"
+        super().__init__(zone, controller, key)
+        self._attr_icon = (
+            "mdi:brightness-auto" if axis is Axis.BRIGHTNESS else "mdi:palette-outline"
+        )
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # Survive a restart: a zone the user switched out of adaptive should
-        # not quietly switch itself back on when Home Assistant restarts.
+        # Survive a restart: a room the user took off the curve should not
+        # quietly go back on it when Home Assistant restarts.
         if (last := await self.async_get_last_state()) is not None:
-            await self.controller.async_set_adaptive_enabled(last.state == "on")
+            await self.controller.async_set_adaptive_axis(self.axis, last.state == "on")
 
     @property
     def is_on(self) -> bool:
-        return self.controller.adaptive_enabled
+        if self.axis is Axis.BRIGHTNESS:
+            return self.controller.adapt_brightness
+        return self.controller.adapt_color
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.controller.async_set_adaptive_enabled(True)
+        await self.controller.async_set_adaptive_axis(self.axis, True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.controller.async_set_adaptive_enabled(False)
+        await self.controller.async_set_adaptive_axis(self.axis, False)
 
 
 class NightSwitch(_ZoneSwitch):

@@ -8,7 +8,8 @@ from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import Context, HomeAssistant
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
-from custom_components.better_lighting.const import SubentryType
+from custom_components.better_lighting.const import DOMAIN, SubentryType
+from custom_components.better_lighting.render import Trigger
 from tests.conftest import (
     MemberLight,
     hub_entry,
@@ -16,9 +17,13 @@ from tests.conftest import (
     setup_members,
     zone_subentry,
 )
+from tests.ha.test_scenes import scene_subentry
 
 ZONE = "light.kitchen"
-ADAPTIVE = "switch.kitchen_adaptive"
+ADAPTIVE_BRIGHTNESS = "switch.kitchen_adaptive_brightness"
+# British spelling, because the entity id follows the displayed name and
+# the rest of the interface says "colour".
+ADAPTIVE_COLOR = "switch.kitchen_adaptive_colour"
 NIGHT = "switch.kitchen_night"
 
 
@@ -75,14 +80,15 @@ class TestAdaptiveTurnOn:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(hass, hub_entry())
 
-        await hass.services.async_call(
-            "switch", "turn_off", {"entity_id": ADAPTIVE}, blocking=True
-        )
+        for entity_id in (ADAPTIVE_BRIGHTNESS, ADAPTIVE_COLOR):
+            await hass.services.async_call(
+                "switch", "turn_off", {"entity_id": entity_id}, blocking=True
+            )
         await hass.async_block_till_done()
         await _turn_on_zone(hass)
 
         assert hass.states.get("light.one").state == "on"
-        assert hass.states.get(ADAPTIVE).state == "off"
+        assert hass.states.get(ADAPTIVE_BRIGHTNESS).state == "off"
 
 
 class TestLightProfiles:
@@ -246,3 +252,217 @@ class TestTick:
         await _advance(hass, freezer)
 
         assert hass.states.get("light.two").state == "off"
+
+
+class TestAdaptiveAxes:
+    """Brightness and colour follow the sun independently."""
+
+    async def _setup(self, hass: HomeAssistant):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(hass, hub_entry())
+        await _turn_on_zone(hass)
+
+    async def _set(self, hass: HomeAssistant, entity_id: str, on: bool) -> None:
+        await hass.services.async_call(
+            "switch",
+            "turn_on" if on else "turn_off",
+            {"entity_id": entity_id},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    async def test_both_switches_exist(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        assert hass.states.get(ADAPTIVE_BRIGHTNESS).state == "on"
+        assert hass.states.get(ADAPTIVE_COLOR).state == "on"
+
+    async def test_switching_brightness_off_leaves_colour_adapting(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Asserted on what the engine decides, not on faked entity state.
+
+        Writing a light's state directly is a lie the entity overwrites the
+        moment it next publishes, which makes a state-based assertion here
+        test the mock rather than the code.
+        """
+        await self._setup(hass)
+        controller = next(
+            iter(
+                hass.config_entries.async_entries(DOMAIN)[
+                    0
+                ].runtime_data.controllers.values()
+            )
+        )
+        await self._set(hass, ADAPTIVE_BRIGHTNESS, False)
+
+        payloads = [c.data for c in controller.commands_for(Trigger.TICK)]
+        assert payloads, "the tick should still have something to say"
+        assert all("brightness" not in p for p in payloads)
+        assert any("color_temp_kelvin" in p for p in payloads)
+
+    async def test_switching_colour_off_leaves_brightness_adapting(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._setup(hass)
+        controller = next(
+            iter(
+                hass.config_entries.async_entries(DOMAIN)[
+                    0
+                ].runtime_data.controllers.values()
+            )
+        )
+        await self._set(hass, ADAPTIVE_COLOR, False)
+
+        payloads = [c.data for c in controller.commands_for(Trigger.TICK)]
+        assert payloads
+        assert all("color_temp_kelvin" not in p for p in payloads)
+        assert any("brightness" in p for p in payloads)
+
+    async def test_switching_both_off_stops_the_engine(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._setup(hass)
+        controller = next(
+            iter(
+                hass.config_entries.async_entries(DOMAIN)[
+                    0
+                ].runtime_data.controllers.values()
+            )
+        )
+        await self._set(hass, ADAPTIVE_BRIGHTNESS, False)
+        await self._set(hass, ADAPTIVE_COLOR, False)
+
+        assert controller.commands_for(Trigger.TICK) == []
+
+    async def test_a_scene_can_still_set_a_switched_off_axis(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Off means "stop following the sun", not "never set a colour"."""
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(
+            hass,
+            hub_entry(
+                subentries_data=[zone_subentry(), scene_subentry("Cosy", brightness=20)]
+            ),
+        )
+        await _turn_on_zone(hass)
+        await self._set(hass, ADAPTIVE_COLOR, False)
+
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": "select.kitchen_mode", "option": "Cosy"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        assert hass.states.get("light.one").attributes["color_temp_kelvin"] == 2200
+
+
+class TestNightTurnOff:
+    """Night mode can darken a room, but never while somebody is in it."""
+
+    async def _setup(self, hass: HomeAssistant, *, presence: bool = True):
+        hass.states.async_set("input_boolean.asleep", "off")
+        if presence:
+            hass.states.async_set("binary_sensor.kitchen_presence", "off")
+        await setup_members(
+            hass,
+            [
+                MemberLight("One", is_on=True, brightness=150),
+                MemberLight("Two", is_on=True, brightness=150),
+            ],
+        )
+        extra = (
+            {
+                "presence_entity": "binary_sensor.kitchen_presence",
+                "presence_clear_delay": 0,
+                "presence_off_action": "none",
+            }
+            if presence
+            else {}
+        )
+        await setup_hub(
+            hass,
+            hub_entry(
+                subentries_data=[
+                    zone_subentry(
+                        night_source_entity="input_boolean.asleep",
+                        night_behavior="turn_off",
+                        **extra,
+                    )
+                ]
+            ),
+        )
+
+    async def _sleep(self, hass: HomeAssistant, on: bool = True) -> None:
+        hass.states.async_set("input_boolean.asleep", "on" if on else "off")
+        await hass.async_block_till_done()
+
+    async def test_an_empty_room_goes_dark(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        await self._sleep(hass)
+        assert hass.states.get("light.one").state == "off"
+
+    async def test_an_occupied_room_is_left_alone(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        hass.states.async_set("binary_sensor.kitchen_presence", "on")
+        await hass.async_block_till_done()
+
+        await self._sleep(hass)
+
+        assert hass.states.get("light.one").state == "on"
+
+    async def test_it_goes_dark_once_they_leave(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        hass.states.async_set("binary_sensor.kitchen_presence", "on")
+        await hass.async_block_till_done()
+        await self._sleep(hass)
+        assert hass.states.get("light.one").state == "on"
+
+        hass.states.async_set("binary_sensor.kitchen_presence", "off")
+        await hass.async_block_till_done()
+
+        assert hass.states.get("light.one").state == "off"
+
+    async def test_a_press_cancels_the_waiting_turn_off(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Reaching for the switch says you want the light."""
+        await self._setup(hass)
+        hass.states.async_set("binary_sensor.kitchen_presence", "on")
+        await hass.async_block_till_done()
+        await self._sleep(hass)
+
+        await hass.services.async_call(
+            "light", "turn_on", {"entity_id": ZONE}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        hass.states.async_set("binary_sensor.kitchen_presence", "off")
+        await hass.async_block_till_done()
+
+        assert hass.states.get("light.one").state == "on"
+
+    async def test_the_zones_own_switch_dims_rather_than_darkens(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The helper is the house going to bed; the switch is a person."""
+        await self._setup(hass)
+
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": NIGHT}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        assert hass.states.get("light.one").state == "on"
+        assert hass.states.get("light.one").attributes["brightness"] < 150
+
+    async def test_night_ending_leaves_the_room_off(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        await self._sleep(hass)
+        assert hass.states.get("light.one").state == "off"
+
+        await self._sleep(hass, False)
+        # Morning does not switch the house on.
+        assert hass.states.get("light.one").state == "off"

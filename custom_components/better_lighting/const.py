@@ -138,8 +138,12 @@ class NightBehavior(StrEnum):
 
     # Clamp to the configured night brightness and a warm colour temperature.
     MIN_SETTINGS = "min_settings"
-    # Apply a designated night scene instead. Wired up in milestone 3.
+    # Apply a designated night scene instead.
     SCENE = "scene"
+    # Switch the room off entirely -- but only once it is empty. Driven by the
+    # source entity only: reaching for the zone's own night switch is a
+    # deliberate act and dims the room rather than darkening it.
+    TURN_OFF = "turn_off"
     # Night mode is configured but does nothing to this zone.
     OFF = "off"
 
@@ -364,7 +368,8 @@ ZONE_SPECS: tuple[FieldSpec, ...] = (
 # --- zone adaptive overrides -------------------------------------------------
 
 CONF_ADAPTIVE_OVERRIDE = "adaptive_override_enabled"
-CONF_ADAPTIVE_DEFAULT_ON = "adaptive_default_on"
+CONF_ADAPTIVE_BRIGHTNESS_ON = "adaptive_brightness_default_on"
+CONF_ADAPTIVE_COLOR_ON = "adaptive_color_default_on"
 
 # --- zone night mode ---------------------------------------------------------
 
@@ -422,7 +427,8 @@ ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
         section=Section.ADAPTIVE,
     ),
     FieldSpec(CONF_INTERVAL, 90, _seconds(10, 3600), section=Section.ADAPTIVE),
-    FieldSpec(CONF_ADAPTIVE_DEFAULT_ON, True, _boolean(), section=Section.ADAPTIVE),
+    FieldSpec(CONF_ADAPTIVE_BRIGHTNESS_ON, True, _boolean(), section=Section.ADAPTIVE),
+    FieldSpec(CONF_ADAPTIVE_COLOR_ON, True, _boolean(), section=Section.ADAPTIVE),
 )
 
 ZONE_NIGHT_SPECS: tuple[FieldSpec, ...] = (

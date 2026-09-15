@@ -76,7 +76,13 @@ DE: dict[str, str] = {
     # --- zone adaptive ----------------------------------------------------
     "Adaptive lighting": "Adaptives Licht",
     "Override the global defaults": "Globale Standardwerte überschreiben",
-    "Start with adaptive lighting on": "Mit eingeschaltetem adaptivem Licht starten",
+    "Start following the sun's brightness": "Helligkeit der Sonne folgen",
+    "Start following the sun's colour": "Farbe der Sonne folgen",
+    "Brightness and colour are separate switches, so a room can keep warming through the evening while its brightness stays where you put it.": "Helligkeit und Farbe sind getrennte Schalter — ein Raum kann also abends weiter wärmer werden, während seine Helligkeit dort bleibt, wo sie eingestellt wurde.",
+    "Adaptive brightness": "Adaptive Helligkeit",
+    "Adaptive colour": "Adaptive Farbe",
+    "Switch the room off once it is empty": "Den Raum ausschalten, sobald er leer ist",
+    "'Switch the room off' waits until the room is empty before darkening it, and only when the helper above turns on \u2014 the zone's own night switch always dims rather than darkens.": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht \u2014 der Nachtschalter des Raums dimmt immer, statt zu verdunkeln.",
     "Leave off to follow the global defaults. Everything below is ignored until you turn this on.": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist.",
     # --- zone night -------------------------------------------------------
     "Night mode": "Nachtmodus",

@@ -158,7 +158,19 @@ class ControllerRuntime:
             self.async_press(kind)
 
     def _kind_for(self, value: str) -> str | None:
+        """Which of the six things this word means, if any.
+
+        The lower half is checked first: a rocker that publishes "off" for its
+        down button would otherwise be read as an ordinary press, since "off"
+        is also in the default single-press vocabulary.
+        """
         config = self.config
+        if value in config.down_long_press_states:
+            return "down_long_press"
+        if value in config.down_double_press_states:
+            return "down_double_press"
+        if value in config.down_press_states:
+            return "down_press"
         if value in config.long_press_states:
             return "long_press"
         if value in config.double_press_states:

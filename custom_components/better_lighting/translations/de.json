@@ -598,6 +598,19 @@
                 "press_attribute": "Event-Entitäten führen den relevanten Wert in einem Attribut statt im Zustand. Auf event_type belassen, sofern das Gerät nichts anderes verwendet.",
                 "coalesce_window_ms": "Drei schnelle Tastendrücke springen drei Schritte auf einmal, statt durch die beiden dazwischen zu blitzen."
               }
+            },
+            "down": {
+              "name": "Untere Hälfte (Schalter mit zwei Tasten)",
+              "description": "Für Wippschalter, die für die untere Taste eigene Begriffe senden. Die Listen leer lassen, wenn der Schalter nur eine Taste hat.",
+              "data": {
+                "down_press_action": "Druck",
+                "down_double_press_action": "Doppeldruck",
+                "down_long_press_action": "Halten",
+                "down_press_states": "Begriffe für einen Druck",
+                "down_double_press_states": "Begriffe für einen Doppeldruck",
+                "down_long_press_states": "Begriffe für ein Halten",
+                "dim_step_pct": "Dimmschritt"
+              }
             }
           }
         },
@@ -638,6 +651,19 @@
                 "press_states": "Die Vorgaben decken die meisten Zigbee- und Z-Wave-Taster ab. Eigene Begriffe ergänzen, falls das Gerät andere verwendet.",
                 "press_attribute": "Event-Entitäten führen den relevanten Wert in einem Attribut statt im Zustand. Auf event_type belassen, sofern das Gerät nichts anderes verwendet.",
                 "coalesce_window_ms": "Drei schnelle Tastendrücke springen drei Schritte auf einmal, statt durch die beiden dazwischen zu blitzen."
+              }
+            },
+            "down": {
+              "name": "Untere Hälfte (Schalter mit zwei Tasten)",
+              "description": "Für Wippschalter, die für die untere Taste eigene Begriffe senden. Die Listen leer lassen, wenn der Schalter nur eine Taste hat.",
+              "data": {
+                "down_press_action": "Druck",
+                "down_double_press_action": "Doppeldruck",
+                "down_long_press_action": "Halten",
+                "down_press_states": "Begriffe für einen Druck",
+                "down_double_press_states": "Begriffe für einen Doppeldruck",
+                "down_long_press_states": "Begriffe für ein Halten",
+                "dim_step_pct": "Dimmschritt"
               }
             }
           }
@@ -759,7 +785,7 @@
           "description": "Aktuelle Regeln:\n\n{rules}",
           "data": {
             "mode_states": "In diesen Zuständen",
-            "zones": "Diese Räume",
+            "zones": "Dieser Raum",
             "action": "Das tun",
             "scene_id": "Szene"
           },
@@ -799,7 +825,7 @@
           "description": "Aktuelle Regeln:\n\n{rules}",
           "data": {
             "mode_states": "In diesen Zuständen",
-            "zones": "Diese Räume",
+            "zones": "Dieser Raum",
             "action": "Das tun",
             "scene_id": "Szene"
           },
@@ -824,7 +850,8 @@
       "error": {
         "invalid_value": "Dieser Wert ist ungültig.",
         "no_states": "Ein Modus braucht mindestens einen Zustand.",
-        "scene_required": "Die anzuwendende Szene auswählen."
+        "scene_required": "Die anzuwendende Szene auswählen.",
+        "scene_in_other_zone": "Diese Szene gehört zu einem anderen Raum."
       },
       "abort": {
         "reconfigure_successful": "Modus aktualisiert."

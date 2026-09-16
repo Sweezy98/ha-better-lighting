@@ -52,6 +52,8 @@ class Section(StrEnum):
     PRESENCE = "presence"
     INSECT = "insect"
     GROUP = "group"
+    # The lower half of a two-button switch.
+    DOWN = "down"
     ADVANCED = "advanced"
 
 
@@ -124,6 +126,11 @@ class PressAction(StrEnum):
     RESET_ADAPTIVE = "reset_adaptive"
     ZONE_OFF = "zone_off"
     TOGGLE_NIGHT = "toggle_night"
+    # Relative dimming, for the hold on a rocker's up and down halves. A bias
+    # rather than an absolute level, so the room keeps tracking the sun while
+    # sitting a few points below (or above) where the curve would put it.
+    BRIGHTEN = "brighten"
+    DIM = "dim"
 
 
 class RestoreOnPowerCycle(StrEnum):
@@ -814,6 +821,22 @@ CONF_MIN_PRESS_INTERVAL_MS = "min_press_interval_ms"
 CONF_COALESCE_WINDOW_MS = "coalesce_window_ms"
 CONF_SCENE_ORDER = "scene_order"
 
+# A rocker publishes a second vocabulary for its lower half. Configured as its
+# own set of words rather than a second controller, so one switch stays one
+# object: up lights the room and cycles it, down switches it off, and holding
+# either end takes the brightness with it.
+CONF_DOWN_PRESS_STATES = "down_press_states"
+CONF_DOWN_DOUBLE_PRESS_STATES = "down_double_press_states"
+CONF_DOWN_LONG_PRESS_STATES = "down_long_press_states"
+CONF_DOWN_PRESS_ACTION = "down_press_action"
+CONF_DOWN_DOUBLE_PRESS_ACTION = "down_double_press_action"
+CONF_DOWN_LONG_PRESS_ACTION = "down_long_press_action"
+CONF_DIM_STEP_PCT = "dim_step_pct"
+
+DEFAULT_DOWN_PRESS_STATES = ["off", "down", "down_single", "down_press"]
+DEFAULT_DOWN_DOUBLE_PRESS_STATES = ["down_double", "down_double_press"]
+DEFAULT_DOWN_LONG_PRESS_STATES = ["down_hold", "down_long_press"]
+
 ADAPTIVE_POSITIONS = ["first", "last", "none"]
 FOREIGN_POLICIES = ["restart", "remember_position"]
 PRESS_ACTIONS = [a.value for a in PressAction]
@@ -875,7 +898,7 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
     ),
     FieldSpec(
         CONF_LONG_PRESS_ACTION,
-        PressAction.RESET_ADAPTIVE.value,
+        PressAction.BRIGHTEN.value,
         _select(PRESS_ACTIONS, "press_action"),
         section=Section.ADVANCED,
     ),
@@ -898,6 +921,64 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         DEFAULT_LONG_PRESS_STATES,
         _select(DEFAULT_LONG_PRESS_STATES, "press_states", multiple=True, custom=True),
         section=Section.ADVANCED,
+    ),
+    # --- the lower half of a rocker ---
+    FieldSpec(
+        CONF_DOWN_PRESS_ACTION,
+        PressAction.ZONE_OFF.value,
+        _select(PRESS_ACTIONS, "press_action"),
+        section=Section.DOWN,
+    ),
+    FieldSpec(
+        CONF_DOWN_DOUBLE_PRESS_ACTION,
+        PressAction.NONE.value,
+        _select(PRESS_ACTIONS, "press_action"),
+        section=Section.DOWN,
+    ),
+    FieldSpec(
+        CONF_DOWN_LONG_PRESS_ACTION,
+        PressAction.DIM.value,
+        _select(PRESS_ACTIONS, "press_action"),
+        section=Section.DOWN,
+    ),
+    FieldSpec(
+        CONF_DOWN_PRESS_STATES,
+        [],
+        _select(DEFAULT_DOWN_PRESS_STATES, "press_states", multiple=True, custom=True),
+        section=Section.DOWN,
+    ),
+    FieldSpec(
+        CONF_DOWN_DOUBLE_PRESS_STATES,
+        [],
+        _select(
+            DEFAULT_DOWN_DOUBLE_PRESS_STATES,
+            "press_states",
+            multiple=True,
+            custom=True,
+        ),
+        section=Section.DOWN,
+    ),
+    FieldSpec(
+        CONF_DOWN_LONG_PRESS_STATES,
+        [],
+        _select(
+            DEFAULT_DOWN_LONG_PRESS_STATES, "press_states", multiple=True, custom=True
+        ),
+        section=Section.DOWN,
+    ),
+    FieldSpec(
+        CONF_DIM_STEP_PCT,
+        10,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1,
+                max=50,
+                step=1,
+                unit_of_measurement="%",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.DOWN,
     ),
     FieldSpec(
         CONF_PRESS_ATTRIBUTE,
@@ -1148,10 +1229,15 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
             _select(states, "mode_state", multiple=True),
             required=True,
         ),
+        # One room per rule. A living room wants a different scene for
+        # playing, paused and credits while the kitchen is simply off for all
+        # three, and expressing that as one rule per room reads far better
+        # than a grid -- as well as making the scene picker unambiguous, now
+        # that a scene belongs to exactly one room.
         FieldSpec(
             CONF_RULE_ZONES,
             None,
-            _select([], "zone", multiple=True),
+            _select([], "zone"),
             required=True,
             options_key="zones",
         ),

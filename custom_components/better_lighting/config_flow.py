@@ -1184,6 +1184,15 @@ class ModeSubentryFlow(ConfigSubentryFlow):
                 CONF_RULE_ENTRY_SCENE
             ):
                 errors[CONF_RULE_ENTRY_SCENE] = "scene_required"
+            # A scene belongs to one room, so a rule cannot borrow another
+            # room's. Checked here rather than by narrowing the picker,
+            # because the room is chosen on the same form as the scene.
+            zone = cleaned.get(CONF_RULE_ZONES)
+            if zone:
+                theirs = {s["value"] for s in scene_options(entry, zone)}
+                for key in (CONF_RULE_SCENE, CONF_RULE_ENTRY_SCENE):
+                    if cleaned.get(key) and cleaned[key] not in theirs:
+                        errors[key] = "scene_in_other_zone"
             if not errors:
                 if index is None:
                     self._rules.append(cleaned)

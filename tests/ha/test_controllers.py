@@ -628,3 +628,84 @@ class TestFollowingTheRoom:
         await hass.async_block_till_done()
 
         assert controller.mode is not ZoneMode.OFF
+
+
+class TestTwoButtonSwitches:
+    """A rocker: up lights and cycles, down switches off, holds dim."""
+
+    async def _setup(self, hass: HomeAssistant, **overrides):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        hass.states.async_set("sensor.rocker", "idle")
+        entry = hub_entry(subentries_data=[zone_subentry()])
+        await setup_hub(hass, entry)
+        ids = subentry_ids(entry)
+        hass.config_entries.async_add_subentry(
+            entry,
+            _make(
+                controller_subentry(
+                    "Rocker",
+                    zone_id=ids["Kitchen"],
+                    scene_order=[],
+                    binding_entity="sensor.rocker",
+                    press_attribute="",
+                    press_states=["up"],
+                    long_press_states=["up_hold"],
+                    long_press_action="brighten",
+                    dim_step_pct=10,
+                    **{
+                        "down_press_states": ["down"],
+                        "down_long_press_states": ["down_hold"],
+                        **overrides,
+                    },
+                )
+            ),
+        )
+        await hass.async_block_till_done()
+        return entry.runtime_data.controllers[ids["Kitchen"]]
+
+    async def _push(self, hass: HomeAssistant, value: str) -> None:
+        hass.states.async_set("sensor.rocker", value)
+        await hass.async_block_till_done()
+
+    async def test_the_lower_half_switches_the_room_off(
+        self, hass: HomeAssistant
+    ) -> None:
+        controller = await self._setup(hass)
+        await self._push(hass, "up")
+        assert controller.mode is ZoneMode.ADAPTIVE
+
+        await self._push(hass, "down")
+
+        assert controller.mode is ZoneMode.OFF
+
+    async def test_holding_down_dims_without_leaving_the_curve(
+        self, hass: HomeAssistant
+    ) -> None:
+        controller = await self._setup(hass)
+        await self._push(hass, "up")
+        assert controller.bias_pct == 0
+
+        await self._push(hass, "down_hold")
+
+        assert controller.bias_pct == -10
+        # Still adaptive: the room keeps tracking the sun, ten points below.
+        assert controller.mode is ZoneMode.ADAPTIVE
+
+    async def test_holding_up_brightens(self, hass: HomeAssistant) -> None:
+        controller = await self._setup(hass)
+        await self._push(hass, "up")
+
+        await self._push(hass, "up_hold")
+
+        assert controller.bias_pct == 10
+
+    async def test_down_is_not_mistaken_for_an_ordinary_press(
+        self, hass: HomeAssistant
+    ) -> None:
+        """"off" is in both vocabularies, so the lower half is matched first."""
+        controller = await self._setup(hass, down_press_states=["off"])
+        await self._push(hass, "up")
+
+        await self._push(hass, "off")
+
+        assert controller.mode is ZoneMode.OFF

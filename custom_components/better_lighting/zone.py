@@ -94,6 +94,7 @@ from .render import (
     render_zone,
 )
 from .scenes import Scene
+from .util import clamp
 
 if TYPE_CHECKING:
     from .light import ZoneLight
@@ -576,6 +577,9 @@ class ZoneController:
             "press": PressAction.CYCLE_NEXT,
             "double_press": controller.double_press_action,
             "long_press": controller.long_press_action,
+            "down_press": controller.down_press_action,
+            "down_double_press": controller.down_double_press_action,
+            "down_long_press": controller.down_long_press_action,
         }.get(kind, PressAction.CYCLE_NEXT)
 
         _LOGGER.debug(
@@ -596,6 +600,28 @@ class ZoneController:
                 await self.async_set_mode(ZoneMode.OFF)
             case PressAction.TOGGLE_NIGHT:
                 await self.async_set_night(not self.night_active)
+            case PressAction.BRIGHTEN:
+                await self._async_adjust_bias(controller.dim_step_pct * steps)
+            case PressAction.DIM:
+                await self._async_adjust_bias(-controller.dim_step_pct * steps)
+
+    async def _async_adjust_bias(self, delta: float) -> None:
+        """Shift the whole room up or down, without leaving the curve.
+
+        A bias rather than an absolute brightness, so a room held down two
+        steps keeps following the sun all evening -- two steps below where it
+        would otherwise be -- instead of freezing at whatever value the hold
+        happened to land on.
+        """
+        self.bias_pct = clamp(self.bias_pct + delta, -100.0, 100.0)
+        _LOGGER.debug("%s: brightness bias now %+.0f%%", self.zone.name, self.bias_pct)
+        if self.mode is ZoneMode.OFF:
+            # Holding the dimmer in a dark room sets where it will come back
+            # on, rather than lighting it.
+            self.async_notify()
+            return
+        await self.async_render(Trigger.DIM, only_lit=True)
+        self.async_notify()
 
     async def async_cycle(
         self, controller: ControllerConfig, *, direction: int = 1, steps: int = 1

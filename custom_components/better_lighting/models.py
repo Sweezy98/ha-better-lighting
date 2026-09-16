@@ -53,8 +53,15 @@ from .const import (
     CONF_COVER_CONDITION,
     CONF_COVER_UNKNOWN_BLOCKS,
     CONF_DEFERRED_TTL_MIN,
+    CONF_DIM_STEP_PCT,
     CONF_DOUBLE_PRESS_ACTION,
     CONF_DOUBLE_PRESS_STATES,
+    CONF_DOWN_DOUBLE_PRESS_ACTION,
+    CONF_DOWN_DOUBLE_PRESS_STATES,
+    CONF_DOWN_LONG_PRESS_ACTION,
+    CONF_DOWN_LONG_PRESS_STATES,
+    CONF_DOWN_PRESS_ACTION,
+    CONF_DOWN_PRESS_STATES,
     CONF_ENABLED,
     CONF_EXPAND_LIGHT_GROUPS,
     CONF_HIDE_MEMBERS,
@@ -539,8 +546,17 @@ class ControllerConfig:
     press_attribute: str
     double_press_action: PressAction
     long_press_action: PressAction
-    min_press_interval_ms: int
-    coalesce_window_ms: int
+    # The lower half of a rocker. Empty state sets mean the switch has only
+    # one button, which is the common case and stays the default.
+    down_press_states: frozenset[str] = frozenset()
+    down_double_press_states: frozenset[str] = frozenset()
+    down_long_press_states: frozenset[str] = frozenset()
+    down_press_action: PressAction = PressAction.ZONE_OFF
+    down_double_press_action: PressAction = PressAction.NONE
+    down_long_press_action: PressAction = PressAction.DIM
+    dim_step_pct: float = 10.0
+    min_press_interval_ms: int = 150
+    coalesce_window_ms: int = 0
 
     @property
     def slug(self) -> str:
@@ -587,6 +603,23 @@ class ControllerConfig:
             press_attribute=raw[CONF_PRESS_ATTRIBUTE],
             double_press_action=PressAction(raw[CONF_DOUBLE_PRESS_ACTION]),
             long_press_action=PressAction(raw[CONF_LONG_PRESS_ACTION]),
+            down_press_states=frozenset(raw.get(CONF_DOWN_PRESS_STATES) or ()),
+            down_double_press_states=frozenset(
+                raw.get(CONF_DOWN_DOUBLE_PRESS_STATES) or ()
+            ),
+            down_long_press_states=frozenset(
+                raw.get(CONF_DOWN_LONG_PRESS_STATES) or ()
+            ),
+            down_press_action=PressAction(
+                raw.get(CONF_DOWN_PRESS_ACTION, PressAction.ZONE_OFF.value)
+            ),
+            down_double_press_action=PressAction(
+                raw.get(CONF_DOWN_DOUBLE_PRESS_ACTION, PressAction.NONE.value)
+            ),
+            down_long_press_action=PressAction(
+                raw.get(CONF_DOWN_LONG_PRESS_ACTION, PressAction.DIM.value)
+            ),
+            dim_step_pct=float(raw.get(CONF_DIM_STEP_PCT, 10)),
             min_press_interval_ms=int(raw[CONF_MIN_PRESS_INTERVAL_MS]),
             coalesce_window_ms=int(raw[CONF_COALESCE_WINDOW_MS]),
         )
@@ -624,6 +657,19 @@ def synthetic_controller(
     )
 
 
+def _rule_zones(stored: Any) -> frozenset[str]:
+    """The rooms a rule governs.
+
+    Stored as a single room now, but rules written when one rule could span
+    several are still read as they were meant.
+    """
+    if not stored:
+        return frozenset()
+    if isinstance(stored, str):
+        return frozenset({stored})
+    return frozenset(stored)
+
+
 def _entry_action(raw: dict[str, Any]) -> ZoneAction:
     """What a room does when somebody walks back into it mid-session.
 
@@ -656,7 +702,7 @@ class ModeRule:
     def from_dict(cls, raw: dict[str, Any]) -> ModeRule:
         return cls(
             states=frozenset(raw.get(CONF_RULE_STATES) or ()),
-            zones=frozenset(raw.get(CONF_RULE_ZONES) or ()),
+            zones=_rule_zones(raw.get(CONF_RULE_ZONES)),
             action=ZoneAction(raw.get(CONF_RULE_ACTION, ZoneAction.KEEP.value)),
             scene_id=raw.get(CONF_RULE_SCENE) or None,
             respect_presence=bool(raw.get(CONF_RULE_RESPECT_PRESENCE, True)),

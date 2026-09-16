@@ -598,6 +598,19 @@
                 "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
                 "coalesce_window_ms": "Three quick taps move three places in one go, rather than flashing through the two in between."
               }
+            },
+            "down": {
+              "name": "Lower half (two-button switches)",
+              "description": "For a rocker that publishes its own words for the bottom button. Leave the state lists empty if the switch has only one button.",
+              "data": {
+                "down_press_action": "Press",
+                "down_double_press_action": "Double press",
+                "down_long_press_action": "Hold",
+                "down_press_states": "Words for a press",
+                "down_double_press_states": "Words for a double press",
+                "down_long_press_states": "Words for a hold",
+                "dim_step_pct": "Dim step"
+              }
             }
           }
         },
@@ -638,6 +651,19 @@
                 "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
                 "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
                 "coalesce_window_ms": "Three quick taps move three places in one go, rather than flashing through the two in between."
+              }
+            },
+            "down": {
+              "name": "Lower half (two-button switches)",
+              "description": "For a rocker that publishes its own words for the bottom button. Leave the state lists empty if the switch has only one button.",
+              "data": {
+                "down_press_action": "Press",
+                "down_double_press_action": "Double press",
+                "down_long_press_action": "Hold",
+                "down_press_states": "Words for a press",
+                "down_double_press_states": "Words for a double press",
+                "down_long_press_states": "Words for a hold",
+                "dim_step_pct": "Dim step"
               }
             }
           }
@@ -759,7 +785,7 @@
           "description": "Current rules:\n\n{rules}",
           "data": {
             "mode_states": "In these states",
-            "zones": "These rooms",
+            "zones": "This room",
             "action": "Do this",
             "scene_id": "Scene"
           },
@@ -799,7 +825,7 @@
           "description": "Current rules:\n\n{rules}",
           "data": {
             "mode_states": "In these states",
-            "zones": "These rooms",
+            "zones": "This room",
             "action": "Do this",
             "scene_id": "Scene"
           },
@@ -824,7 +850,8 @@
       "error": {
         "invalid_value": "This value is not valid.",
         "no_states": "A mode needs at least one state.",
-        "scene_required": "Choose the scene to apply."
+        "scene_required": "Choose the scene to apply.",
+        "scene_in_other_zone": "That scene belongs to a different room."
       },
       "abort": {
         "reconfigure_successful": "Mode updated."

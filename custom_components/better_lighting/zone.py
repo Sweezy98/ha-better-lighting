@@ -212,7 +212,7 @@ class ZoneController:
                 )
             )
 
-        if self.hub.take_over_control and self.zone.lights:
+        if self.zone.lights:
             self._unsubscribers.append(
                 async_track_state_change_event(
                     self.hass, list(self.zone.lights), self._handle_member_change
@@ -764,12 +764,18 @@ class ZoneController:
         """
         entity_id = event.data["entity_id"]
         new_state = event.data["new_state"]
+        ours = self.contexts.is_ours(event.context)
         if new_state is None or new_state.state != STATE_ON:
             if new_state is not None and new_state.state == "off":
                 # Switching a light off is the universal reset.
                 self.clear_manual(entity_id)
+                if not ours:
+                    self._reconcile_power(on=False)
             return
-        if self.contexts.is_ours(event.context):
+        if ours:
+            return
+        self._reconcile_power(on=True)
+        if not self.hub.take_over_control:
             return
 
         commanded = self._last_commanded.get(entity_id)
@@ -808,6 +814,29 @@ class ZoneController:
 
         if axes is not Axis.NONE:
             self.note_manual(entity_id, axes)
+
+    @callback
+    def _reconcile_power(self, *, on: bool) -> None:
+        """Follow the room when somebody bypasses us.
+
+        Switching every bulb off individually -- at the wall, from the bulb's
+        own card, from another automation -- leaves the room dark while we
+        still believe it is in adaptive mode. The next press then resumes the
+        cycle instead of starting it, and the Scenes selector reads as though
+        the room were lit. Watching the members keeps our idea of the room and
+        the room itself in step.
+        """
+        if on:
+            if self.mode is ZoneMode.OFF:
+                # Somebody lit one by hand. Recorded, but not re-rendered:
+                # touching the room now would undo what they just set. The
+                # next tick adapts it, as it would any light we own.
+                self.mode = ZoneMode.ADAPTIVE
+                self.async_notify()
+            return
+        if self.mode is ZoneMode.OFF or self._any_member_on():
+            return
+        self.hass.async_create_task(self.async_set_mode(ZoneMode.OFF))
 
     @callback
     def note_manual(self, entity_id: str, axes: Axis) -> None:

@@ -10,6 +10,7 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.better_lighting.const import DOMAIN, SubentryType
+from custom_components.better_lighting.render import ZoneMode
 from tests.conftest import (
     MemberLight,
     hub_entry,
@@ -555,3 +556,74 @@ class TestManualOverride:
 
         assert not controller.manual
         assert hass.states.get(SELECT).state == "Adaptive"
+
+
+class TestFollowingTheRoom:
+    """The room can be changed without us. We should notice."""
+
+    async def _setup(self, hass: HomeAssistant):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry(subentries_data=[zone_subentry()]))
+        await press_zone(hass)
+        return entry.runtime_data.controllers[next(iter(entry.runtime_data.zones))]
+
+    async def _switch_off(self, hass: HomeAssistant, *entity_ids: str) -> None:
+        for entity_id in entity_ids:
+            await hass.services.async_call(
+                "light",
+                "turn_off",
+                {"entity_id": entity_id},
+                blocking=True,
+                context=Context(),
+            )
+            await hass.async_block_till_done()
+
+    async def test_switching_every_light_off_by_hand_switches_the_room_off(
+        self, hass: HomeAssistant
+    ) -> None:
+        controller = await self._setup(hass)
+        assert controller.mode is ZoneMode.ADAPTIVE
+
+        await self._switch_off(hass, "light.one", "light.two")
+
+        assert hass.states.get(ZONE).state == "off"
+        assert controller.mode is ZoneMode.OFF
+
+    async def test_one_light_left_on_is_not_the_room_going_off(
+        self, hass: HomeAssistant
+    ) -> None:
+        controller = await self._setup(hass)
+
+        await self._switch_off(hass, "light.one")
+
+        assert controller.mode is ZoneMode.ADAPTIVE
+
+    async def test_the_next_press_starts_the_cycle_again(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The point of noticing: a press after a hand switch-off starts over."""
+        controller = await self._setup(hass)
+        await self._switch_off(hass, "light.one", "light.two")
+
+        await press_zone(hass)
+
+        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.active_scene_id is None
+
+    async def test_lighting_one_by_hand_marks_the_room_on(
+        self, hass: HomeAssistant
+    ) -> None:
+        controller = await self._setup(hass)
+        await self._switch_off(hass, "light.one", "light.two")
+        assert controller.mode is ZoneMode.OFF
+
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"entity_id": "light.one"},
+            blocking=True,
+            context=Context(),
+        )
+        await hass.async_block_till_done()
+
+        assert controller.mode is not ZoneMode.OFF

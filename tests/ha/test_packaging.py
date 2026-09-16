@@ -436,3 +436,37 @@ def test_the_trail_knows_every_screen_the_panel_can_open() -> None:
     assert kinds - handled == {"room"}, (
         f"the trail has no case for: {sorted(kinds - handled - {'room'})}"
     )
+
+
+def test_every_select_option_has_a_name() -> None:
+    """A value with no label renders as its own slug.
+
+    Checking that the selector block exists was not enough: `brighten` and
+    `dim` were added to an enum whose block was already there, so both showed
+    as raw words in every language including English.
+    """
+    from custom_components.better_lighting import const
+
+    tables = (
+        const.HUB_SPECS,
+        const.ZONE_SPECS,
+        const.MODE_SPECS,
+        const.CONTROLLER_SPECS,
+        const.LIGHT_PROFILE_SPECS,
+        const.ZONE_SCENE_SPECS,
+        const.COLOR_PRESET_SPECS,
+        const.mode_rule_specs([]),
+    )
+    missing = []
+    for table in tables:
+        for spec in table:
+            config = getattr(spec.selector, "config", {}) or {}
+            # A free-text select publishes the device's vocabulary, not ours.
+            if not (key := config.get("translation_key")) or config.get("custom_value"):
+                continue
+            named = STRINGS["selector"].get(key, {}).get("options", {})
+            for option in config.get("options") or ():
+                value = option if isinstance(option, str) else option["value"]
+                if value not in named:
+                    missing.append(f"{key}.{value}")
+    assert not missing, f"unnamed select options: {sorted(set(missing))}"

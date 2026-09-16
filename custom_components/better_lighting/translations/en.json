@@ -439,6 +439,8 @@
                 "off_at_end": "End the cycle by switching off",
                 "wrap_around": "Wrap back to the start",
                 "on_foreign_state": "If the room is in something not on this list",
+                "double_from_two_presses": "My button has no double press",
+                "double_press_window_ms": "Two presses count as a double within",
                 "double_press_action": "Double press",
                 "long_press_action": "Long press",
                 "press_states": "Values that count as a press",
@@ -450,6 +452,8 @@
               },
               "data_description": {
                 "on_foreign_state": "'Restart' begins this switch's own list from the top, which lands on adaptive and is usually what you want.",
+                "double_from_two_presses": "Some buttons send the same single press twice instead of a double press. Turn this on and two quick taps do whatever the double press below does, rather than moving two places down the cycle.",
+                "double_press_window_ms": "Longer if the second tap is being missed; shorter if two deliberate single presses keep being read as one double.",
                 "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
                 "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
                 "coalesce_window_ms": "Three quick taps move three places in one go, rather than flashing through the two in between."
@@ -492,6 +496,8 @@
                 "off_at_end": "End the cycle by switching off",
                 "wrap_around": "Wrap back to the start",
                 "on_foreign_state": "If the room is in something not on this list",
+                "double_from_two_presses": "My button has no double press",
+                "double_press_window_ms": "Two presses count as a double within",
                 "double_press_action": "Double press",
                 "long_press_action": "Long press",
                 "press_states": "Values that count as a press",
@@ -503,6 +509,8 @@
               },
               "data_description": {
                 "on_foreign_state": "'Restart' begins this switch's own list from the top, which lands on adaptive and is usually what you want.",
+                "double_from_two_presses": "Some buttons send the same single press twice instead of a double press. Turn this on and two quick taps do whatever the double press below does, rather than moving two places down the cycle.",
+                "double_press_window_ms": "Longer if the second tap is being missed; shorter if two deliberate single presses keep being read as one double.",
                 "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
                 "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
                 "coalesce_window_ms": "Three quick taps move three places in one go, rather than flashing through the two in between."
@@ -949,7 +957,9 @@
         "cycle_previous": "Previous in the cycle",
         "reset_adaptive": "Back to adaptive",
         "zone_off": "Switch the room off",
-        "toggle_night": "Toggle night mode"
+        "toggle_night": "Toggle night mode",
+        "brighten": "Brighten while held",
+        "dim": "Dim while held"
       }
     },
     "adaptive_position": {

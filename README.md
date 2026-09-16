@@ -258,6 +258,11 @@ the usual arrangement works out of the box:
 | Hold down | dim |
 | Double press, either half | configurable |
 
+Not every button has a double press. Plenty publish the same single press twice and leave the
+pairing to whoever is listening, so a switch can be told to read **two quick taps as a double
+press** instead — with the window that decides how quick is quick enough. Left off, a run of
+taps means what it says and moves that many places down the cycle.
+
 Holding to dim shifts the whole room by a **bias** rather than fixing a brightness, so a room
 held down two steps keeps tracking the sun all evening — two steps below where it would
 otherwise be. Holding the dimmer in a dark room sets where it will come back on rather than

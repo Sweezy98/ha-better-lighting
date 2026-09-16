@@ -62,6 +62,11 @@ MAX_EVENT_AGE = 30.0
 # replayed history, not fingers on switches.
 STARTUP_GRACE = 15.0
 
+# What a second quick press means, for a button that has no double press of
+# its own. Only these two: a long press is already a gesture of its own, and
+# a double that the button *did* report needs no help.
+DOUBLE_OF = {"press": "double_press", "down_press": "down_double_press"}
+
 
 @dataclass(slots=True)
 class PressBurst:
@@ -235,7 +240,15 @@ class ControllerRuntime:
 
     @callback
     def async_press(self, kind: str = "press") -> None:
-        """Accept a press, debounce it, and coalesce a burst of them."""
+        """Accept a press, debounce it, and work out what the gesture was.
+
+        Two shapes, and which one applies is the switch's business. Most
+        buttons report a double press themselves, and then a run of quick taps
+        is exactly that -- a run -- and moves as many places down the cycle.
+        Plenty of others have no double press at all and simply publish the
+        same single press twice; for those, ``double_from_two_presses`` reads
+        two taps inside the window as the double press the button cannot send.
+        """
         now = time.monotonic()
         interval = self.config.min_press_interval_ms / 1000
         if interval and (now - self._last_press) < interval:
@@ -243,18 +256,18 @@ class ControllerRuntime:
             return
         self._last_press = now
 
-        self.hass.bus.async_fire(
-            EVENT_PRESS,
-            {
-                "controller_id": self.config.subentry_id,
-                "controller": self.config.name,
-                "zone_id": self.config.zone_id,
-                "kind": kind,
-            },
-        )
+        pairing = self.config.double_from_two_presses and kind in DOUBLE_OF
+        if not pairing:
+            # Otherwise the bus hears about the gesture instead, once the
+            # window has closed and there is something true to say.
+            self._fire(kind)
 
-        window = self.config.coalesce_window_ms / 1000
-        if not window or kind != "press":
+        window = (
+            self.config.double_press_window_ms
+            if pairing
+            else self.config.coalesce_window_ms
+        ) / 1000
+        if not window or (kind != "press" and not pairing):
             # Only plain presses accumulate. A long press means one thing and
             # should happen at once.
             self._flush_now(kind, 1)
@@ -269,9 +282,30 @@ class ControllerRuntime:
         def _flush(_now) -> None:
             self._burst.cancel = None
             count, self._burst.count = self._burst.count, 0
+            if pairing:
+                # Anything past the second tap is part of the same gesture:
+                # a finger that lands three times in 400 ms meant one thing,
+                # and guessing which is worse than doing the plain thing.
+                gesture = DOUBLE_OF[kind] if count >= 2 else kind
+                self._fire(gesture)
+                self._flush_now(gesture, 1)
+                return
             self._flush_now(kind, count)
 
         self._burst.cancel = async_call_later(self.hass, window, _flush)
+
+    @callback
+    def _fire(self, kind: str) -> None:
+        """Tell the bus, so an automation can hear the press too."""
+        self.hass.bus.async_fire(
+            EVENT_PRESS,
+            {
+                "controller_id": self.config.subentry_id,
+                "controller": self.config.name,
+                "zone_id": self.config.zone_id,
+                "kind": kind,
+            },
+        )
 
     @callback
     def _flush_now(self, kind: str, steps: int) -> None:

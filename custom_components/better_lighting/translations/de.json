@@ -439,6 +439,8 @@
                 "off_at_end": "Abfolge mit Ausschalten beenden",
                 "wrap_around": "Am Ende zum Anfang zurückspringen",
                 "on_foreign_state": "Wenn der Raum in etwas ist, das nicht auf dieser Liste steht",
+                "double_from_two_presses": "Mein Taster kennt keinen Doppeldruck",
+                "double_press_window_ms": "Zwei Drücke gelten als Doppeldruck innerhalb von",
                 "double_press_action": "Doppeldruck",
                 "long_press_action": "Langer Druck",
                 "press_states": "Werte, die als Druck gelten",
@@ -450,6 +452,8 @@
               },
               "data_description": {
                 "on_foreign_state": "„Neu beginnen“ startet die eigene Liste dieses Schalters von vorn, landet also auf „Adaptiv“ — meist das gewünschte Verhalten.",
+                "double_from_two_presses": "Manche Taster senden denselben Einzeldruck zweimal statt eines Doppeldrucks. Ist das aktiv, lösen zwei schnelle Drücke das aus, was unten für den Doppeldruck eingestellt ist, statt zwei Schritte weiterzuschalten.",
+                "double_press_window_ms": "Länger, wenn der zweite Druck verschluckt wird; kürzer, wenn zwei bewusste Einzeldrücke als Doppeldruck gelesen werden.",
                 "press_states": "Die Vorgaben decken die meisten Zigbee- und Z-Wave-Taster ab. Eigene Begriffe ergänzen, falls das Gerät andere verwendet.",
                 "press_attribute": "Event-Entitäten führen den relevanten Wert in einem Attribut statt im Zustand. Auf event_type belassen, sofern das Gerät nichts anderes verwendet.",
                 "coalesce_window_ms": "Drei schnelle Tastendrücke springen drei Schritte auf einmal, statt durch die beiden dazwischen zu blitzen."
@@ -492,6 +496,8 @@
                 "off_at_end": "Abfolge mit Ausschalten beenden",
                 "wrap_around": "Am Ende zum Anfang zurückspringen",
                 "on_foreign_state": "Wenn der Raum in etwas ist, das nicht auf dieser Liste steht",
+                "double_from_two_presses": "Mein Taster kennt keinen Doppeldruck",
+                "double_press_window_ms": "Zwei Drücke gelten als Doppeldruck innerhalb von",
                 "double_press_action": "Doppeldruck",
                 "long_press_action": "Langer Druck",
                 "press_states": "Werte, die als Druck gelten",
@@ -503,6 +509,8 @@
               },
               "data_description": {
                 "on_foreign_state": "„Neu beginnen“ startet die eigene Liste dieses Schalters von vorn, landet also auf „Adaptiv“ — meist das gewünschte Verhalten.",
+                "double_from_two_presses": "Manche Taster senden denselben Einzeldruck zweimal statt eines Doppeldrucks. Ist das aktiv, lösen zwei schnelle Drücke das aus, was unten für den Doppeldruck eingestellt ist, statt zwei Schritte weiterzuschalten.",
+                "double_press_window_ms": "Länger, wenn der zweite Druck verschluckt wird; kürzer, wenn zwei bewusste Einzeldrücke als Doppeldruck gelesen werden.",
                 "press_states": "Die Vorgaben decken die meisten Zigbee- und Z-Wave-Taster ab. Eigene Begriffe ergänzen, falls das Gerät andere verwendet.",
                 "press_attribute": "Event-Entitäten führen den relevanten Wert in einem Attribut statt im Zustand. Auf event_type belassen, sofern das Gerät nichts anderes verwendet.",
                 "coalesce_window_ms": "Drei schnelle Tastendrücke springen drei Schritte auf einmal, statt durch die beiden dazwischen zu blitzen."
@@ -949,7 +957,9 @@
         "cycle_previous": "Vorheriges in der Abfolge",
         "reset_adaptive": "Zurück zu adaptiv",
         "zone_off": "Den Raum ausschalten",
-        "toggle_night": "Nachtmodus umschalten"
+        "toggle_night": "Nachtmodus umschalten",
+        "brighten": "Beim Halten heller",
+        "dim": "Beim Halten dunkler"
       }
     },
     "adaptive_position": {

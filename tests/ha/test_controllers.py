@@ -356,6 +356,106 @@ class TestEntityBinding:
         # Two taps, two places: adaptive -> Cosy -> Bright, rendered once.
         assert hass.states.get(SELECT).state == "Bright"
 
+    async def test_two_taps_stand_in_for_a_double_press(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """Plenty of buttons have no double press and send the single twice."""
+        await self._setup(
+            hass,
+            scenes=("Cosy", "Bright"),
+            double_from_two_presses=True,
+            double_press_window_ms=400,
+        )
+        self._fire(hass)  # light the room
+        await hass.async_block_till_done()
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        for _ in range(2):
+            self._fire(hass)
+            await hass.async_block_till_done()
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+        # Backwards from adaptive, rather than two places forwards.
+        assert hass.states.get(SELECT).state == "Bright"
+
+    async def test_one_tap_is_still_one_tap_when_pairing(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        await self._setup(
+            hass,
+            scenes=("Cosy", "Bright"),
+            double_from_two_presses=True,
+            double_press_window_ms=400,
+        )
+        self._fire(hass)
+        await hass.async_block_till_done()
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        self._fire(hass)
+        await hass.async_block_till_done()
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Cosy"
+
+    async def test_taps_further_apart_than_the_window_are_two_presses(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """The window is the whole point of the setting: it has to bite."""
+        await self._setup(
+            hass,
+            scenes=("Cosy", "Bright"),
+            double_from_two_presses=True,
+            double_press_window_ms=200,
+        )
+        for _ in range(3):
+            self._fire(hass)
+            await hass.async_block_till_done()
+            freezer.tick(dt.timedelta(seconds=1))
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+
+        # On, then one place, then another: nothing was read as a double.
+        assert hass.states.get(SELECT).state == "Bright"
+
+    async def test_the_bus_hears_the_gesture_rather_than_the_taps(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """An automation listening for a double press must hear one.
+
+        With pairing on, what the button published is not what happened, and
+        nobody can know which it was until the window closes -- so the event
+        waits for the answer instead of reporting two presses that were not.
+        """
+        await self._setup(
+            hass,
+            scenes=("Cosy", "Bright"),
+            double_from_two_presses=True,
+            double_press_window_ms=400,
+        )
+        heard: list[str] = []
+        hass.bus.async_listen(
+            "better_lighting_press", lambda event: heard.append(event.data["kind"])
+        )
+
+        for _ in range(2):
+            self._fire(hass)
+            await hass.async_block_till_done()
+        assert heard == []
+
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert heard == ["double_press"]
+
     async def test_a_single_tap_moves_one_place(
         self, hass: HomeAssistant, freezer
     ) -> None:

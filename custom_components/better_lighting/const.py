@@ -881,6 +881,10 @@ CONF_DOUBLE_PRESS_ACTION = "double_press_action"
 CONF_LONG_PRESS_ACTION = "long_press_action"
 CONF_MIN_PRESS_INTERVAL_MS = "min_press_interval_ms"
 CONF_COALESCE_WINDOW_MS = "coalesce_window_ms"
+# Plenty of buttons have no double-press event at all: they publish the same
+# single press twice and leave the pairing to whoever is listening.
+CONF_DOUBLE_FROM_PRESSES = "double_from_two_presses"
+CONF_DOUBLE_PRESS_WINDOW_MS = "double_press_window_ms"
 CONF_SCENE_ORDER = "scene_order"
 
 # A rocker publishes a second vocabulary for its lower half. Configured as its
@@ -953,6 +957,22 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         section=Section.ADVANCED,
     ),
     # --- multi-press ---
+    FieldSpec(CONF_DOUBLE_FROM_PRESSES, False, _boolean(), section=Section.ADVANCED),
+    FieldSpec(
+        CONF_DOUBLE_PRESS_WINDOW_MS,
+        400,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=100,
+                max=2000,
+                step=10,
+                unit_of_measurement="ms",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.ADVANCED,
+        depends_on=(CONF_DOUBLE_FROM_PRESSES, (True,)),
+    ),
     FieldSpec(
         CONF_DOUBLE_PRESS_ACTION,
         PressAction.CYCLE_PREVIOUS.value,

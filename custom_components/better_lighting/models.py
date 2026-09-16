@@ -55,8 +55,10 @@ from .const import (
     CONF_COVER_UNKNOWN_BLOCKS,
     CONF_DEFERRED_TTL_MIN,
     CONF_DIM_STEP_PCT,
+    CONF_DOUBLE_FROM_PRESSES,
     CONF_DOUBLE_PRESS_ACTION,
     CONF_DOUBLE_PRESS_STATES,
+    CONF_DOUBLE_PRESS_WINDOW_MS,
     CONF_DOWN_DOUBLE_PRESS_ACTION,
     CONF_DOWN_DOUBLE_PRESS_STATES,
     CONF_DOWN_LONG_PRESS_ACTION,
@@ -624,6 +626,10 @@ class ControllerConfig:
     dim_step_pct: float = 10.0
     min_press_interval_ms: int = 150
     coalesce_window_ms: int = 0
+    # For buttons that have no double press of their own and simply publish
+    # the same single press twice.
+    double_from_two_presses: bool = False
+    double_press_window_ms: int = 400
 
     @property
     def slug(self) -> str:
@@ -705,6 +711,8 @@ class ControllerConfig:
             dim_step_pct=float(raw.get(CONF_DIM_STEP_PCT, 10)),
             min_press_interval_ms=int(raw[CONF_MIN_PRESS_INTERVAL_MS]),
             coalesce_window_ms=int(raw[CONF_COALESCE_WINDOW_MS]),
+            double_from_two_presses=bool(raw.get(CONF_DOUBLE_FROM_PRESSES, False)),
+            double_press_window_ms=int(raw.get(CONF_DOUBLE_PRESS_WINDOW_MS, 400)),
         )
 
 

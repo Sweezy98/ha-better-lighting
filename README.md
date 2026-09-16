@@ -131,6 +131,18 @@ The panel renders its forms from the same field tables the settings screens
 render, so the two cannot disagree about what a setting is, and a new setting
 appears in both at once.
 
+### Importing Home Assistant's scenes
+
+Already have scenes in Home Assistant? The panel can bring them across.
+**Import from Home Assistant** on a room's Scenes screen lists them, showing
+how each one falls across your rooms.
+
+A scene there can cover the whole house; here a scene belongs to exactly one
+room. So one that touches the lounge and the kitchen becomes **two scenes, one
+in each**, holding only that room's lights — tick the rooms you want. Lights in
+no room of yours, and anything that is not a light, are named rather than
+dropped quietly.
+
 ### The scene editor
 
 Built in the shape of Home Assistant's own scene editor, with two modes:
@@ -359,6 +371,19 @@ A ready-made automation ships with the integration:
 Point it at your media player and your mode's *State* entity. Playback starts the mode,
 pausing moves it to *paused*, and stopping ends the session after a short delay — so switching
 episodes does not relight the whole house.
+
+---
+
+## Diagnostics
+
+The panel has a **Diagnostics** page: what every room and mode currently
+believes — its mode, its scene, which lights are under manual control, whether
+night or insect mode is showing, which cross-zone session owns it — beside a
+live log of the events that got it there. A room's state tells you where it
+ended up; the log tells you which press or which film put it there.
+
+It is the same dump the diagnostics download produces, so what you read on the
+page and what you attach to a bug report cannot disagree.
 
 ---
 

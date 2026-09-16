@@ -17,6 +17,11 @@
 // the Python side.
 const ALL = "*";
 
+// The fingerprint this copy was served under, taken from its own URL. The
+// backend stamps the URL with a hash of the file, so comparing the two is how
+// an open page learns it has been superseded.
+const OWN_VERSION = new URL(import.meta.url).searchParams.get("v");
+
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 /** Kelvin to an approximate sRGB triplet, for painting the temperature slider. */
@@ -294,6 +299,44 @@ customElements.define("bl-color-wheel", BlColorWheel);
 customElements.define("bl-slider", BlSlider);
 
 
+
+/**
+ * Coax Home Assistant's own form controls into being defined.
+ *
+ * Its entity picker and its toggle are registered lazily, with the config
+ * editors, so a custom panel loaded on its own never has them. Asking the
+ * card helpers to build an entities-card editor pulls them in -- the
+ * long-standing recipe custom cards use, and the only one available from out
+ * here.
+ *
+ * Progressive: if any of it fails the caller keeps a plain dropdown and a
+ * plain checkbox, which work and are merely plainer. Nothing depends on this
+ * succeeding, which is the point -- it leans on an arrangement Home Assistant
+ * never promised to keep.
+ */
+let controlsReady;
+function ensureHaControls() {
+  if (controlsReady) return controlsReady;
+  controlsReady = (async () => {
+    if (customElements.get("ha-entity-picker") && customElements.get("ha-switch")) {
+      return true;
+    }
+    try {
+      const helpers = await window.loadCardHelpers?.();
+      if (!helpers) return false;
+      const card = await helpers.createCardElement({
+        type: "entities",
+        entities: [],
+      });
+      await card.constructor.getConfigElement();
+      return Boolean(customElements.get("ha-entity-picker"));
+    } catch {
+      return false;
+    }
+  })();
+  return controlsReady;
+}
+
 /* ------------------------------------------------------------------ */
 /* A form, rendered from the same field tables the settings screens use.*/
 /* ------------------------------------------------------------------ */
@@ -316,12 +359,21 @@ class BlForm extends HTMLElement {
     this._choices = {};
   }
 
-  configure({ fields, values, labels, choices, states }) {
+  configure({ fields, values, labels, choices, states, hass }) {
     this._fields = fields || [];
     this._values = values || {};
     this._labels = labels || this._labels;
     this._choices = choices || {};
     this._states = states || {};
+    this._hass = hass;
+    // Re-render once Home Assistant's picker is available, so the first paint
+    // is not held up waiting for something that may never arrive.
+    ensureHaControls().then((ready) => {
+      if (ready && !this._picker) {
+        this._picker = true;
+        this._render();
+      }
+    });
     this._render();
   }
 
@@ -403,6 +455,18 @@ class BlForm extends HTMLElement {
                 padding:3px 10px; font-size:13px; display:flex; gap:6px; align-items:center; }
         .chip button { border:none; background:none; cursor:pointer; color:inherit;
                        font:inherit; padding:0; }
+        .import { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+                  padding:12px 0; border-top:1px solid var(--divider-color,#e0e0e0); }
+        .import .chip { gap:6px; }
+        details.diag { border-top:1px solid var(--divider-color,#e0e0e0); }
+        details.diag table { width:100%; border-collapse:collapse; margin:4px 0 12px; }
+        details.diag th { text-align:left; font-weight:400; padding:4px 12px 4px 4px;
+                          color:var(--secondary-text-color); white-space:nowrap;
+                          vertical-align:top; width:1%; }
+        details.diag td { padding:4px; font-variant-numeric:tabular-nums; }
+        .log { max-height:340px; overflow:auto; font-size:13px; }
+        .log .entry { padding:6px 4px; border-top:1px solid var(--divider-color,#e0e0e0);
+                      display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
       </style>
       <div id="fields"></div>`;
     const holder = this.shadowRoot.getElementById("fields");
@@ -430,6 +494,15 @@ class BlForm extends HTMLElement {
       case "boolean": {
         const box = document.createElement("div");
         box.className = "switch";
+        if (customElements.get("ha-switch")) {
+          const toggle = document.createElement("ha-switch");
+          toggle.checked = Boolean(value);
+          toggle.addEventListener("change", () =>
+            this._set(field.key, toggle.checked)
+          );
+          box.appendChild(toggle);
+          return box;
+        }
         const input = document.createElement("input");
         input.type = "checkbox";
         input.checked = Boolean(value);
@@ -472,26 +545,28 @@ class BlForm extends HTMLElement {
         }
         return row;
       }
-      case "select":
       case "entity": {
-        const options =
-          field.kind === "entity" ? this._entities(field) : this._choicesFor(field);
-        if (field.multiple) return this._multi(field, value, options);
-        const select = document.createElement("select");
-        select.innerHTML =
-          `<option value="">—</option>` +
-          options
-            .map(
-              (option) =>
-                `<option value="${option.value}" ${
-                  option.value === value ? "selected" : ""
-                }>${option.label}</option>`
-            )
-            .join("");
-        select.addEventListener("change", () =>
-          this._set(field.key, select.value || null)
-        );
-        return select;
+        // Home Assistant's own picker when it can be had: it searches, shows
+        // areas and icons, and is the control people already know.
+        const tag = field.multiple ? "ha-entities-picker" : "ha-entity-picker";
+        if (this._hass && customElements.get(tag)) {
+          const picker = document.createElement(tag);
+          picker.hass = this._hass;
+          picker.allowCustomEntity = false;
+          if (field.domains) picker.includeDomains = field.domains;
+          if (field.multiple) picker.value = Array.isArray(value) ? value : [];
+          else picker.value = value ?? "";
+          picker.addEventListener("value-changed", (event) => {
+            event.stopPropagation();
+            this._set(field.key, event.detail.value);
+          });
+          return picker;
+        }
+        return this._plainSelect(field, value, this._entities(field));
+      }
+      case "select": {
+        const options = this._choicesFor(field);
+        return this._plainSelect(field, value, options);
       }
       case "color": {
         const wheel = document.createElement("bl-color-wheel");
@@ -511,6 +586,26 @@ class BlForm extends HTMLElement {
         return input;
       }
     }
+  }
+
+  /** The fallback control: a dropdown, or a chip list when several. */
+  _plainSelect(field, value, options) {
+    if (field.multiple) return this._multi(field, value, options);
+    const select = document.createElement("select");
+    select.innerHTML =
+      `<option value="">—</option>` +
+      options
+        .map(
+          (option) =>
+            `<option value="${option.value}" ${
+              option.value === value ? "selected" : ""
+            }>${option.label}</option>`
+        )
+        .join("");
+    select.addEventListener("change", () =>
+      this._set(field.key, select.value || null)
+    );
+    return select;
   }
 
   /** A multi-select that keeps click order, which HA's own cannot. */
@@ -586,6 +681,7 @@ class BetterLightingPanel extends HTMLElement {
       this._rendered = true;
       this._shell();
       this._load();
+      this._checkVersion();
     } else if (this._scene) {
       this._paintLightList();
     }
@@ -600,10 +696,29 @@ class BetterLightingPanel extends HTMLElement {
     // there -- must show the room that was added, whether or not the frontend
     // kept this element alive while we were away.
     if (this._rendered) this._load();
+
+    this._visibility = () => {
+      if (document.visibilityState === "visible") this._checkVersion();
+    };
+    document.addEventListener("visibilitychange", this._visibility);
+    // Slow: this is a courtesy, not a heartbeat.
+    this._versionTimer = setInterval(() => this._checkVersion(), 120000);
   }
 
   disconnectedCallback() {
     window.removeEventListener("beforeunload", this._unload);
+    document.removeEventListener("visibilitychange", this._visibility);
+    clearInterval(this._versionTimer);
+    clearInterval(this._countdown);
+    for (const off of this._unsubscribers || []) {
+      try {
+        off();
+      } catch {
+        // Already gone with the connection.
+      }
+    }
+    this._unsubscribers = [];
+    this._watching = false;
     this._stopPreview();
   }
 
@@ -612,6 +727,55 @@ class BetterLightingPanel extends HTMLElement {
       type: `better_lighting/${type}`,
       ...payload,
     });
+  }
+
+  /**
+   * Notice when the script on disk is no longer the one running here.
+   *
+   * The same problem Home Assistant has with its own frontend, and the same
+   * answer: an open tab cannot be updated in place, so it is told, and offered
+   * the reload rather than left to wonder why the new settings are missing.
+   */
+  async _checkVersion() {
+    if (!OWN_VERSION || this._stale) return;
+    try {
+      const { panel } = await this._call("version");
+      if (panel && panel !== OWN_VERSION) {
+        this._stale = true;
+        this._showUpdateBanner();
+      }
+    } catch {
+      // Offline, restarting, or an older backend. Nothing worth saying.
+    }
+  }
+
+  _showUpdateBanner() {
+    if (this.shadowRoot.getElementById("update")) return;
+    const bar = document.createElement("div");
+    bar.id = "update";
+    bar.className = "update";
+    bar.innerHTML = `<span class="grow">${this._t("update_available")}</span>
+      <span id="countdown" class="muted"></span>
+      <button id="reload">${this._t("reload_now")}</button>`;
+    this.shadowRoot.insertBefore(bar, this.shadowRoot.querySelector(".body"));
+
+    bar.querySelector("#reload").addEventListener("click", () =>
+      location.reload()
+    );
+    // A countdown rather than a reload out of nowhere: somebody halfway
+    // through a scene should get the chance to press Save first.
+    let left = 30;
+    const tick = () => {
+      bar.querySelector("#countdown").textContent = this._t(
+        "reloading_in"
+      ).replace("{seconds}", String(left));
+      if (left-- <= 0) {
+        clearInterval(this._countdown);
+        location.reload();
+      }
+    };
+    tick();
+    this._countdown = setInterval(tick, 1000);
   }
 
   async _load() {
@@ -639,6 +803,144 @@ class BetterLightingPanel extends HTMLElement {
 
   get _labels() {
     return this._schema?.labels || { data: {}, descriptions: {}, options: {}, sections: {} };
+  }
+
+  /**
+   * What every room and mode currently believes, and how it got there.
+   *
+   * The state comes from the same dump the diagnostics download produces --
+   * a page that disagreed with the file attached to a bug report would be
+   * worse than no page. What it adds is the events beside it: a room's mode
+   * tells you where it ended up, and the log tells you which press or which
+   * film put it there.
+   */
+  async _paintDiagnostics() {
+    const main = this.shadowRoot.getElementById("main");
+    const data = await this._call("diagnostics");
+    const roomName = Object.fromEntries(
+      this._rooms.map((room) => [room.id, room.name])
+    );
+
+    const rows = (entries) =>
+      entries
+        .filter(([, value]) => value !== undefined)
+        .map(
+          ([label, value]) =>
+            `<tr><th>${label}</th><td>${
+              value === null || value === "" ? "—" : value
+            }</td></tr>`
+        )
+        .join("");
+
+    const rooms = Object.entries(data.zones || {})
+      .map(([id, zone]) => {
+        const manual = Object.entries(zone.manual || {});
+        return `<details class="diag">
+          <summary>${zone.name || roomName[id] || id}</summary>
+          <table>${rows([
+            [this._t("diag_mode"), zone.mode],
+            [this._t("diag_effective"), zone.effective_mode],
+            [this._t("diag_scene"), zone.active_scene_id],
+            [this._t("diag_adaptive"), zone.adaptive_enabled],
+            [this._t("diag_night"), zone.night_active],
+            [this._t("diag_insect"), zone.insect_active],
+            [this._t("diag_bias"), zone.bias_pct],
+            [this._t("diag_owner"), zone.session_owner],
+            [
+              this._t("diag_manual"),
+              manual.length
+                ? manual.map(([light, axes]) => `${light}: ${axes}`).join("<br>")
+                : this._t("no_manual"),
+            ],
+            [this._t("diag_presence"), zone.presence ? JSON.stringify(zone.presence) : undefined],
+            [this._t("diag_window"), zone.window_open],
+          ])}</table>
+        </details>`;
+      })
+      .join("");
+
+    const modes = Object.entries(data.modes || {})
+      .map(
+        ([, mode]) => `<details class="diag">
+          <summary>${mode.name}</summary>
+          <table>${rows([
+            [this._t("diag_state"), mode.state],
+            [this._t("diag_enabled"), mode.enabled],
+            [this._t("diag_session"), mode.session_id],
+            [this._t("diag_opted_out"), (mode.opted_out || []).join(", ")],
+            [this._t("diag_deferred"), (mode.deferred || []).length],
+          ])}</table>
+        </details>`
+      )
+      .join("");
+
+    main.innerHTML = `
+      <div class="card">
+        <h2>${this._t("diagnostics")}</h2>
+        <div class="bar"><button class="flat" id="refresh">${this._t(
+          "refresh"
+        )}</button></div>
+        ${rooms}
+        ${modes}
+      </div>
+      <div class="card">
+        <h2>${this._t("live_events")}</h2>
+        <div id="events" class="log"><p class="muted">${this._t(
+          "waiting_for_events"
+        )}</p></div>
+      </div>`;
+
+    main.querySelector("#refresh").addEventListener("click", () =>
+      this._paintDiagnostics()
+    );
+    this._watchEvents();
+  }
+
+  /** Subscribe to the events the integration fires, and keep the last few. */
+  async _watchEvents() {
+    this._events = this._events || [];
+    this._renderEvents();
+    if (this._watching) return;
+    this._watching = true;
+
+    const kinds = [
+      "better_lighting_press",
+      "better_lighting_zone_mode_changed",
+      "better_lighting_mode_changed",
+      "better_lighting_deferred_action",
+      "better_lighting_zone_opted_out",
+    ];
+    for (const kind of kinds) {
+      try {
+        const off = await this._hass.connection.subscribeEvents((event) => {
+          this._events.unshift({
+            at: new Date().toLocaleTimeString(),
+            kind: kind.replace("better_lighting_", ""),
+            data: event.data,
+          });
+          // A log that grows forever is a memory leak with a nice name.
+          this._events = this._events.slice(0, 50);
+          this._renderEvents();
+        }, kind);
+        (this._unsubscribers = this._unsubscribers || []).push(off);
+      } catch {
+        // An event nobody has fired yet is not an error.
+      }
+    }
+  }
+
+  _renderEvents() {
+    const log = this.shadowRoot.getElementById("events");
+    if (!log) return;
+    if (!this._events.length) return;
+    log.innerHTML = this._events
+      .map(
+        (event) =>
+          `<div class="entry"><span class="muted">${event.at}</span>
+             <strong>${event.kind}</strong>
+             <span class="muted">${JSON.stringify(event.data)}</span></div>`
+      )
+      .join("");
   }
 
   /** Home Assistant's own page for this integration, where its flows live. */
@@ -722,6 +1024,10 @@ class BetterLightingPanel extends HTMLElement {
         @media (max-width:1000px) { .editor { grid-template-columns:1fr; } }
         .pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px;
                 background:var(--secondary-background-color); }
+        .update { display:flex; align-items:center; gap:12px; padding:12px 16px;
+                  background:var(--info-color,#3f9bd4); color:#fff; }
+        .update button { background:#fff; color:var(--primary-text-color,#111); }
+        .update .muted { color:rgba(255,255,255,.85); }
         .banner { display:flex; align-items:center; gap:16px; margin-bottom:16px;
                   border-left:4px solid var(--info-color,#3f9bd4); }
         .banner.live { border-left-color:var(--success-color,#43a047); }
@@ -742,6 +1048,10 @@ class BetterLightingPanel extends HTMLElement {
     const labels = this._labels;
     const sections = (this._schema?.forms.zone || []).map((group) => group.section);
 
+    // No section chosen means the first one, which is what the content pane
+    // falls back to -- so the highlight has to agree with it, or a room opens
+    // showing Group behaviour with nothing in the list marked.
+    const current = this._view.section || sections[0];
     const roomRows = this._rooms
       .map((room) => {
         const open = room.id === this._roomId && this._view.kind !== "hub" &&
@@ -751,7 +1061,7 @@ class BetterLightingPanel extends HTMLElement {
               ...sections.map(
                 (section) =>
                   `<li data-section="${section}" aria-selected="${
-                    this._view.kind === "room" && this._view.section === section
+                    this._view.kind === "room" && current === section
                   }">${labels.sections[section] || section}</li>`
               ),
               `<li data-section="scenes" aria-selected="${
@@ -826,6 +1136,10 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "presets" };
       this._paint();
     });
+    nav.querySelector("li[data-diagnostics]").addEventListener("click", () => {
+      this._view = { kind: "diagnostics" };
+      this._paint();
+    });
     // Adding one is Home Assistant's own flow, not an imitation of it: its
     // dialog validates, names and creates the subentry, and it is the screen
     // people already meet everywhere else. A custom panel cannot open that
@@ -845,10 +1159,10 @@ class BetterLightingPanel extends HTMLElement {
   _paintMain() {
     if (this._scene) return this._paintEditor();
     switch (this._view.kind) {
+      case "diagnostics":
+        return this._paintDiagnostics();
       case "presets":
         return this._paintPresets();
-      case "rules":
-        return this._paintRules();
       case "hub":
         return this._paintSettings({
           title: this._t("global_settings"),
@@ -859,6 +1173,7 @@ class BetterLightingPanel extends HTMLElement {
       case "mode":
         return this._paintMode();
       case "scenes":
+        if (this._view.sub === "import") return this._paintImport();
         return this._paintScenes();
       case "switches":
         if (this._view.sub === "order") return this._paintSwitchOrder();
@@ -912,8 +1227,13 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   _paintMode() {
-    const creating = this._view.creating || !this._mode;
     const mode = this._mode;
+    // A rule being edited is still the mode's screen: sending it somewhere
+    // else left the sidebar with nothing selected and no way back but the
+    // browser's.
+    if (mode && this._view.rule !== undefined) return this._paintRules();
+
+    const creating = this._view.creating || !mode;
     this._paintSettings({
       title: creating ? this._t("add_mode") : mode.name,
       form: this._schema?.forms.mode || [],
@@ -934,17 +1254,45 @@ class BetterLightingPanel extends HTMLElement {
             await this._call("delete_mode", { mode_id: mode.id });
             this._modeId = null;
           },
-      extra: creating
-        ? null
-        : {
-            label: `${this._labels.sections.rules || this._t("rules")} (${
-              (mode.data.rules || []).length
-            })`,
-            go: () => {
-              this._view = { kind: "rules" };
-              this._paint();
-            },
-          },
+    });
+
+    if (!creating) this._appendRules();
+  }
+
+  /** The mode's rules, listed under its settings on the same screen. */
+  _appendRules() {
+    const mode = this._mode;
+    const main = this.shadowRoot.getElementById("main");
+    const rules = mode.data.rules || [];
+    const roomName = Object.fromEntries(
+      this._rooms.map((room) => [room.id, room.name])
+    );
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <h2>${this._labels.sections.rules || this._t("rules")}</h2>
+      <ul>${rules
+        .map(
+          (rule, index) =>
+            `<li data-rule="${index}">${
+              roomName[rule.zones] || rule.zones || "—"
+            }: ${rule.action || "keep"} (${(rule.mode_states || []).join(", ") || "—"})</li>`
+        )
+        .join("")}</ul>
+      ${rules.length ? "" : `<p class="muted">${this._t("none")}</p>`}
+      <div class="bar"><button id="add-rule">${this._t("add")}</button></div>`;
+    main.appendChild(card);
+
+    card.querySelectorAll("li[data-rule]").forEach((row) =>
+      row.addEventListener("click", () => {
+        this._view = { ...this._view, rule: Number(row.dataset.rule) };
+        this._paint();
+      })
+    );
+    card.querySelector("#add-rule").addEventListener("click", () => {
+      this._view = { ...this._view, rule: rules.length };
+      this._paint();
     });
   }
 
@@ -1111,6 +1459,110 @@ class BetterLightingPanel extends HTMLElement {
     });
   }
 
+  /**
+   * Bringing Home Assistant's own scenes across.
+   *
+   * A scene there can cover the whole house; here one belongs to exactly one
+   * room. So a scene is offered per room it touches, and importing it makes
+   * one scene in each, holding only that room's lights. Anything in no room
+   * is named rather than dropped quietly.
+   */
+  async _paintImport() {
+    const main = this.shadowRoot.getElementById("main");
+    const { scenes } = await this._call("importable_scenes");
+    const roomName = Object.fromEntries(
+      this._rooms.map((room) => [room.id, room.name])
+    );
+
+    if (!scenes.length) {
+      main.innerHTML = `<div class="card"><p class="muted">${this._t(
+        "nothing_to_import"
+      )}</p><div class="bar"><button class="flat" id="back">⬅️ ${this._t(
+        "back"
+      )}</button></div></div>`;
+      main.querySelector("#back").addEventListener("click", () => {
+        this._view = { kind: "scenes" };
+        this._paint();
+      });
+      return;
+    }
+
+    main.innerHTML = `
+      <div class="card">
+        <h2>${this._t("import_scenes")}</h2>
+        <p class="muted">${this._t("import_hint")}</p>
+        <div id="list"></div>
+        <div class="bar"><button class="flat" id="back">⬅️ ${this._t(
+          "back"
+        )}</button></div>
+      </div>`;
+
+    const list = main.querySelector("#list");
+    for (const item of scenes) {
+      const rooms = Object.keys(item.rooms);
+      const card = document.createElement("div");
+      card.className = "import";
+      card.innerHTML = `
+        <div class="grow"><strong>${item.name}</strong>
+          <div class="muted">${
+            rooms.length
+              ? rooms
+                  .map(
+                    (id) => `${roomName[id] || id} (${item.rooms[id].length})`
+                  )
+                  .join(" · ")
+              : this._t("in_no_room")
+          }</div>
+          ${
+            item.skipped.length
+              ? `<div class="muted">${this._t("skipped_note")} ${item.skipped.join(
+                  ", "
+                )}</div>`
+              : ""
+          }
+        </div>`;
+
+      if (rooms.length) {
+        const picks = document.createElement("div");
+        picks.className = "chips";
+        const chosen = new Set(rooms);
+        for (const id of rooms) {
+          const label = document.createElement("label");
+          label.className = "chip";
+          const box = document.createElement("input");
+          box.type = "checkbox";
+          box.checked = true;
+          box.addEventListener("change", () =>
+            box.checked ? chosen.add(id) : chosen.delete(id)
+          );
+          label.appendChild(box);
+          label.append(roomName[id] || id);
+          picks.appendChild(label);
+        }
+        card.appendChild(picks);
+
+        const go = document.createElement("button");
+        go.textContent = this._t("import");
+        go.addEventListener("click", async () => {
+          go.disabled = true;
+          await this._call("import_scene", {
+            entity_id: item.entity_id,
+            zone_ids: [...chosen],
+          });
+          go.textContent = this._t("imported");
+          await this._load();
+        });
+        card.appendChild(go);
+      }
+      list.appendChild(card);
+    }
+
+    main.querySelector("#back").addEventListener("click", () => {
+      this._view = { kind: "scenes" };
+      this._paint();
+    });
+  }
+
   /** The house's named colours, stored with the global settings. */
   _paintPresets() {
     const presets = this._hub.color_presets || [];
@@ -1133,39 +1585,52 @@ class BetterLightingPanel extends HTMLElement {
     });
   }
 
-  /** What a mode does to each room, in each of its states. */
+  /** One rule of the current mode, edited in place. */
   _paintRules() {
     const mode = this._mode;
-    if (!mode) return;
     const rules = mode.data.rules || [];
-    const roomNames = Object.fromEntries(
-      this._rooms.map((room) => [room.id, room.name])
-    );
-    // A rule names one room, so its scene picker offers that room's scenes.
-    const ruleRoom = (rule) =>
-      this._rooms.find((room) => room.id === rule?.zones) || null;
+    const index = this._view.rule;
+    const current = rules[index] || {};
+    const ruleRoom = this._rooms.find((room) => room.id === current.zones) || null;
 
-    this._paintListEditor({
+    this._paintSettings({
       title: `${mode.name} — ${this._labels.sections.rules || this._t("rules")}`,
-      items: rules,
-      formKey: "rule",
+      form: this._schema?.forms.rule || [],
+      values: { ...current },
       choices: {
-        ...this._choices(ruleRoom(rules[this._view.index])),
+        ...this._choices(ruleRoom),
         mode_states: (mode.data.states || []).map((state) => ({
           value: state,
           label: state,
         })),
       },
-      describe: (rule) => {
-        const states = (rule.mode_states || []).join(", ") || "—";
-        const room = roomNames[rule.zones] || rule.zones || "—";
-        return `${room}: ${rule.action || "keep"} (${states})`;
-      },
-      onSave: (next) =>
-        this._call("save_mode", {
+      save: async (changed) => {
+        const next = [...rules];
+        next[index] = { ...current, ...changed };
+        const result = await this._call("save_mode", {
           mode_id: mode.id,
           data: { ...mode.data, rules: next },
-        }),
+        });
+        this._view = { kind: "mode" };
+        return result;
+      },
+      remove:
+        index < rules.length
+          ? async () => {
+              await this._call("save_mode", {
+                mode_id: mode.id,
+                data: {
+                  ...mode.data,
+                  rules: rules.filter((_, i) => i !== index),
+                },
+              });
+              this._view = { kind: "mode" };
+            }
+          : null,
+      back: () => {
+        this._view = { kind: "mode" };
+        this._paint();
+      },
     });
   }
 
@@ -1256,7 +1721,7 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /** The one settings screen: a form, a Save, and sometimes a Delete. */
-  _paintSettings({ title, form, values, choices, save, remove, extra }) {
+  _paintSettings({ title, form, values, choices, save, remove, back }) {
     const main = this.shadowRoot.getElementById("main");
     main.innerHTML = `
       <div class="card">
@@ -1265,7 +1730,7 @@ class BetterLightingPanel extends HTMLElement {
         <div id="form"></div>
         <div class="bar">
           <button id="save">${this._t("save")}</button>
-          ${extra ? `<button class="flat" id="extra">${extra.label}</button>` : ""}
+          ${back ? `<button class="flat" id="back">⬅️ ${this._t("back")}</button>` : ""}
           ${remove ? `<button class="danger" id="remove">${this._t("delete")}</button>` : ""}
         </div>
       </div>`;
@@ -1294,6 +1759,7 @@ class BetterLightingPanel extends HTMLElement {
         labels: this._labels,
         choices,
         states: this._hass.states,
+        hass: this._hass,
       });
       element.addEventListener("value-changed", (event) => {
         pending = { ...pending, [event.detail.key]: event.detail.value };
@@ -1309,7 +1775,7 @@ class BetterLightingPanel extends HTMLElement {
           err?.message || this._t("save_failed");
       }
     });
-    main.querySelector("#extra")?.addEventListener("click", () => extra.go());
+    main.querySelector("#back")?.addEventListener("click", () => back());
     main.querySelector("#remove")?.addEventListener("click", async () => {
       await remove();
       await this._load();
@@ -1337,6 +1803,7 @@ class BetterLightingPanel extends HTMLElement {
         <div class="bar">
           <button id="new">${this._t("new_scene")}</button>
           <button class="flat" id="capture">${this._t("capture_room")}</button>
+          <button class="flat" id="import">${this._t("import_scenes")}</button>
         </div>
       </div>`;
 
@@ -1351,6 +1818,10 @@ class BetterLightingPanel extends HTMLElement {
       this._scene = { name: this._t("new_scene"), lights: {} };
       this._selectedLight = room.lights[0] || null;
       this._paintEditor();
+    });
+    main.querySelector("#import").addEventListener("click", () => {
+      this._view = { kind: "scenes", sub: "import" };
+      this._paint();
     });
     main.querySelector("#capture").addEventListener("click", () => {
       this._scene = { name: this._t("captured"), lights: this._captureRoom() };

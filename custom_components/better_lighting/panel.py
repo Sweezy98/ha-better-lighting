@@ -23,6 +23,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components import frontend, panel_custom, websocket_api
+from homeassistant.components import scene as scene_component
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import HomeAssistant, callback
@@ -32,13 +33,25 @@ from homeassistant.util import ulid as ulid_util
 from . import panel_schema
 from .config_flow import validate_zone_lights
 from .const import (
+    COLOR_FORMAT_NONE,
+    CONF_BRIGHTNESS_PCT,
+    CONF_COLOR_FORMAT,
+    CONF_COLOR_TEMP_KELVIN,
+    CONF_ICON,
+    CONF_IGNORE_PRESENCE,
+    CONF_LIGHT_ACTION,
     CONF_LIGHTS,
     CONF_NAME,
+    CONF_ON_LIGHTS_ONLY,
+    CONF_ON_UNSUPPORTED_COLOR,
+    CONF_OTHERS,
+    CONF_RGB_COLOR,
     CONF_RULES,
     CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
     CONF_STATES,
     CONF_SWITCH_ID,
+    CONF_TRANSITION,
     CONF_ZONE_PROFILES,
     CONF_ZONE_SCENES,
     CONF_ZONE_SWITCHES,
@@ -158,6 +171,10 @@ def async_register_commands(hass: HomeAssistant) -> None:
         websocket_save_mode,
         websocket_delete_mode,
         websocket_save_collection,
+        websocket_importable_scenes,
+        websocket_import_scene,
+        websocket_version,
+        websocket_diagnostics,
     ):
         websocket_api.async_register_command(hass, handler)
 
@@ -588,3 +605,216 @@ def async_remove_panel(hass: HomeAssistant) -> None:
     """
     if DOMAIN in hass.data.get("frontend_panels", {}):
         frontend.async_remove_panel(hass, DOMAIN)
+
+
+def _scene_entry(state: Any) -> dict[str, Any] | None:
+    """One light's target state in a Home Assistant scene, as a scene entry.
+
+    The same shape the panel's capture produces, because it is the same
+    question asked of a stored state rather than a live one.
+    """
+    if state is None:
+        return None
+    if state.state != "on":
+        return {CONF_LIGHT_ACTION: "off"}
+
+    entry: dict[str, Any] = {CONF_LIGHT_ACTION: "apply"}
+    if (brightness := state.attributes.get("brightness")) is not None:
+        entry[CONF_BRIGHTNESS_PCT] = round(int(brightness) / 255 * 100, 1)
+    # A light stored in colour-temp mode carries a derived rgb_color too, and
+    # keeping that would freeze a warm white into a slightly-wrong orange.
+    if state.attributes.get("color_mode") == "color_temp" and (
+        kelvin := state.attributes.get("color_temp_kelvin")
+    ):
+        entry[CONF_COLOR_FORMAT] = CONF_COLOR_TEMP_KELVIN
+        entry[CONF_COLOR_TEMP_KELVIN] = int(kelvin)
+    elif (rgb := state.attributes.get("rgb_color")) is not None:
+        entry[CONF_COLOR_FORMAT] = CONF_RGB_COLOR
+        entry[CONF_RGB_COLOR] = list(rgb)
+    else:
+        entry[CONF_COLOR_FORMAT] = COLOR_FORMAT_NONE
+    return entry
+
+
+def _ha_scenes(hass: HomeAssistant) -> dict[str, Any]:
+    """Home Assistant's own scenes, by entity id, with their stored states.
+
+    Only the ones defined in Home Assistant itself: a scene from another
+    integration has no stored target states to read, so there is nothing to
+    import from it.
+    """
+    component = hass.data.get(scene_component.DATA_COMPONENT)
+    if component is None:
+        return {}
+    return {
+        entity.entity_id: entity
+        for entity in component.entities
+        if getattr(entity, "scene_config", None) is not None
+    }
+
+
+def _split_by_room(
+    hass: HomeAssistant, entry: Any, states: dict[str, Any]
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Which of a scene's lights belong to which room, and which to none."""
+    owner: dict[str, str] = {}
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SubentryType.ZONE.value:
+            continue
+        for light in subentry.data.get(CONF_LIGHTS) or ():
+            owner[light] = subentry.subentry_id
+
+    by_room: dict[str, list[str]] = {}
+    homeless: list[str] = []
+    for entity_id in states:
+        if not entity_id.startswith("light."):
+            # Scenes can set anything; we only know what to do with lights.
+            homeless.append(entity_id)
+        elif (zone_id := owner.get(entity_id)) is not None:
+            by_room.setdefault(zone_id, []).append(entity_id)
+        else:
+            homeless.append(entity_id)
+    return by_room, homeless
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/importable_scenes"})
+@callback
+def websocket_importable_scenes(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Home Assistant's scenes, and how each one falls across the rooms."""
+    entry = _entry(hass)
+    if entry is None:
+        connection.send_result(msg["id"], {"scenes": []})
+        return
+
+    scenes = []
+    for entity_id, entity in _ha_scenes(hass).items():
+        states = entity.scene_config.states
+        by_room, homeless = _split_by_room(hass, entry, states)
+        scenes.append(
+            {
+                "entity_id": entity_id,
+                "name": entity.scene_config.name,
+                # Keyed by room so the panel can offer one tick per room: a
+                # scene covering the lounge and the kitchen becomes a scene in
+                # each, since a scene belongs to exactly one room here.
+                "rooms": {
+                    zone_id: sorted(lights) for zone_id, lights in by_room.items()
+                },
+                "skipped": sorted(homeless),
+            }
+        )
+    connection.send_result(
+        msg["id"], {"scenes": sorted(scenes, key=lambda s: s["name"].lower())}
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/import_scene",
+        vol.Required("entity_id"): str,
+        vol.Required("zone_ids"): [str],
+        vol.Optional("name"): str,
+    }
+)
+@websocket_api.async_response
+async def websocket_import_scene(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Copy a Home Assistant scene into one room, or into several.
+
+    Split rather than shared: a scene belongs to exactly one room here, so a
+    Home Assistant scene covering three rooms becomes three scenes, each
+    holding only the lights that room actually has.
+    """
+    entry = _entry(hass)
+    entity = _ha_scenes(hass).get(msg["entity_id"]) if entry else None
+    if entry is None or entity is None:
+        connection.send_error(msg["id"], "not_found", "No such scene")
+        return
+
+    states = entity.scene_config.states
+    by_room, _ = _split_by_room(hass, entry, states)
+    created: dict[str, str] = {}
+
+    for zone_id in msg["zone_ids"]:
+        lights = by_room.get(zone_id)
+        subentry = _zone_subentry(entry, zone_id)
+        if not lights or subentry is None:
+            continue
+        entries = {
+            entity_id: spec
+            for entity_id in lights
+            if (spec := _scene_entry(states.get(entity_id))) is not None
+        }
+        scene = {
+            CONF_SCENE_ID: ulid_util.ulid_now(),
+            CONF_NAME: msg.get("name") or entity.scene_config.name,
+            CONF_ICON: entity.scene_config.icon or "mdi:palette",
+            CONF_TRANSITION: 1.5,
+            CONF_ON_LIGHTS_ONLY: False,
+            CONF_IGNORE_PRESENCE: False,
+            CONF_OTHERS: "adaptive",
+            CONF_ON_UNSUPPORTED_COLOR: "adaptive",
+            CONF_SCENE_LIGHTS: entries,
+        }
+        hass.config_entries.async_update_subentry(
+            entry,
+            subentry,
+            data={
+                **subentry.data,
+                CONF_ZONE_SCENES: [
+                    *(subentry.data.get(CONF_ZONE_SCENES) or ()),
+                    scene,
+                ],
+            },
+        )
+        created[zone_id] = scene[CONF_SCENE_ID]
+
+    connection.send_result(msg["id"], {"created": created})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/version"})
+@callback
+def websocket_version(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The fingerprint of the script currently on disk.
+
+    A page already open is running whatever it was served, and an upgrade
+    cannot reach it: the module is cached under its old URL and nothing tells
+    the browser otherwise. Comparing this with the fingerprint the page was
+    loaded under is how it finds out, so it can offer the reload rather than
+    leaving somebody to wonder why their new settings are missing.
+    """
+    connection.send_result(msg["id"], {"panel": _fingerprint()})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/diagnostics"})
+@websocket_api.async_response
+async def websocket_diagnostics(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """What every room and mode currently believes.
+
+    The same dump the diagnostics download produces, rather than a second one
+    written for the page: a diagnostic that disagrees with the one attached to
+    a bug report is worse than none. What the page adds is that you can watch
+    it, next to the events that explain how it got there.
+    """
+    # Imported here rather than at the top: diagnostics reaches back into the
+    # package for its entry type, and this module is loaded while that package
+    # is still being defined.
+    from .diagnostics import async_get_config_entry_diagnostics
+
+    entry = _entry(hass)
+    if entry is None:
+        connection.send_result(msg["id"], {})
+        return
+    connection.send_result(
+        msg["id"], await async_get_config_entry_diagnostics(hass, entry)
+    )

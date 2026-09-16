@@ -698,3 +698,46 @@ class TestThePanelScriptIsNotCachedForever:
         for key in ("scenes", "switches", "calibrations", "rules", "presets"):
             assert sections.get(key), f"{key} has no heading"
             assert sections[key] != key
+
+    async def test_the_page_can_tell_it_has_been_superseded(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """An open tab cannot be updated in place, so it is told instead."""
+        from custom_components.better_lighting.panel import _fingerprint
+
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/version"})
+        result = await client.receive_json()
+
+        assert result["success"]
+        assert result["result"]["panel"] == _fingerprint()
+
+    async def test_diagnostics_reports_what_each_room_believes(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/diagnostics"})
+        result = (await client.receive_json())["result"]
+
+        zone = result["zones"][zone_id]
+        assert zone["name"] == "Kitchen"
+        assert "mode" in zone and "manual" in zone
+
+    async def test_diagnostics_is_the_same_dump_as_the_download(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """A page that disagrees with the bug report is worse than none."""
+        from custom_components.better_lighting.diagnostics import (
+            async_get_config_entry_diagnostics,
+        )
+
+        entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/diagnostics"})
+        panel = (await client.receive_json())["result"]
+        download = await async_get_config_entry_diagnostics(hass, entry)
+
+        assert panel == download

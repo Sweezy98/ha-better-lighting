@@ -266,6 +266,10 @@ def test_the_panel_covers_every_settings_surface() -> None:
         "light calibration": '"calibration"',
         "modes": "_paintMode",
         "mode rules": "_paintRules",
+        "importing a Home Assistant scene": "_paintImport",
+        "noticing a new version": "_checkVersion",
+        "diagnostics": "_paintDiagnostics",
+        "a mode's rules, on the mode's own screen": "_appendRules",
     }
     missing = sorted(
         name for name, marker in surfaces.items() if marker not in panel_js
@@ -312,3 +316,30 @@ def test_the_panel_strings_are_translated_as_completely_as_the_forms() -> None:
         if value == english[key] and len(value) > 6 and value != "—"
     )
     assert not untranslated, f"still English in German: {untranslated}"
+
+
+def test_home_assistants_controls_are_used_but_not_relied_on() -> None:
+    """They are lazily registered and were never promised to a custom panel.
+
+    So every borrowed control must have a plain fallback beside it: if the
+    recipe that loads them stops working, the page gets plainer rather than
+    breaking.
+    """
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    for tag in ("ha-entity-picker", "ha-switch"):
+        assert tag in panel_js, f"{tag} is not used"
+        assert f'customElements.get("{tag}")' in panel_js, (
+            f"{tag} is used without checking it exists"
+        )
+    # And the fallbacks are still there.
+    assert "_plainSelect" in panel_js
+    assert 'input.type = "checkbox"' in panel_js
+
+
+def test_the_panel_string_table_has_no_unread_entries() -> None:
+    """A table with entries nobody asks for is one people stop trusting."""
+    from custom_components.better_lighting import panel_schema
+
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    used = set(re.findall(r'_t\(\s*"([a-z_]+)"', panel_js))
+    assert set(panel_schema.ui_strings("en")) == used

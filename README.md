@@ -66,13 +66,28 @@ walks through adaptive and then every scene, so a dumb wall switch works with no
 
 ## What you configure
 
+There are only two things to add to the hub — a **room** and a **mode** — because everything
+else belongs to a room and is configured inside it.
+
 | Object | What it is |
 |---|---|
-| **Zone** | One room's lights, controlled together. Creates a `light`, a mode `select`, switches for adaptive and night, and buttons. |
-| **Scene** | A named look — a brightness, one colour, and which of those it takes over. Applied to one room at a time; define it once and reuse it in as many rooms as you like. |
-| **Light switch** | A physical switch, with its own ordered list of scenes. |
-| **Light calibration** | Per-light minimum, maximum and offsets, to match a mismatched bulb to its neighbours. |
+| **Zone** (room) | One room's lights, controlled together. Creates a `light`, a scene `select`, switches for adaptive and night, and buttons. Holds this room's scenes, switches and light calibration. |
 | **Mode** | A cross-zone mode such as Home Cinema: named states, and what each room does in each. |
+
+Inside a room:
+
+| Inside a room | What it is |
+|---|---|
+| **Scene** | A list of this room's lights and what each should look like — brightness, colour, off, or left alone. Nothing is house-wide: a reading scene for the living room and one for the bedroom are different lists of different lights. Build one by hand, or **capture the room as it is now**. |
+| **Light switch** | A switch on this room's wall, with its own ordered list of this room's scenes. Understands rockers: the lower half gets its own actions, and holding either end dims or brightens. |
+| **Light calibration** | Per-light minimum, maximum and offsets, to match a mismatched bulb to its neighbours. |
+
+In the global config:
+
+| Global | What it is |
+|---|---|
+| **Colour presets** | The house's named colours — "TV orange", "candle" — so a colour used in several scenes is described once and picked by name. |
+| **Night mode helper** | The one helper that says the house is asleep. Each room decides for itself whether that dims it, darkens it, applies a scene, or does nothing. |
 
 ### One light, one room
 
@@ -106,34 +121,21 @@ without flashing through the two in between.
 
 ## Scenes
 
-**A scene only ever affects the room you apply it to.** Selecting *Reading* in the living room
-changes the living room and nothing else.
+Scenes belong to a room. You will find them under that room in **Settings → Devices &
+services → Better Lighting**, alongside its switches and its light calibration — so the hub
+page lists your rooms rather than one long list of everything.
 
-What a scene does *not* do is name particular lights. It says "35% brightness, warm white" —
-so you can define *Reading* once and use it in the living room, the study and the bedroom,
-instead of writing it out three times. That reuse is optional, not a consequence: most scenes
-belong to one room, and the **Offer this scene in** field keeps them out of the other rooms'
-lists. Leave it empty for the handful that genuinely are house-wide, such as a night scene.
+**A scene only ever affects the room it belongs to.** Selecting *Reading* in the living room
+changes the living room and nothing else. Two rooms can each have a *Reading* scene; they are
+different lists of different lights and there is no need to name them apart.
 
-If you want a scene that spans rooms *at the same time* — everything dimming when the film
-starts — that is what a [cross-zone mode](#cross-zone-modes-home-cinema) is for.
+If you want several rooms to change *at the same time* — everything dimming when a film starts
+— that is what a [cross-zone mode](#cross-zone-modes-home-cinema) is for.
 
-Each scene chooses what it overrides, and **whatever it leaves alone keeps following the sun**:
+### What a scene is made of
 
-| This scene sets | Brightness | Colour |
-|---|---|---|
-| Both | scene | scene |
-| Brightness only | scene | **keeps adapting** |
-| Colour only | **keeps adapting** | scene |
-| Neither | keeps adapting | keeps adapting |
-
-The two partial modes are the useful ones. A *Cooking* scene can pin the brightness at 100%
-while the colour still warms through the evening.
-
-### Naming individual lights
-
-A scene's brightness and colour are its defaults. You can then **name individual lights**
-inside it and give each one different treatment — which is what a film scene usually needs:
+A scene is a list of lights and what each one should look like. There is no house-wide
+brightness or colour, which is what makes a film scene expressible at all:
 
 | Light | What you set |
 |---|---|
@@ -141,15 +143,28 @@ inside it and give each one different treatment — which is what a film scene u
 | Strip on the floor | 16%, a slightly warmer orange to sit against the wood |
 | Ceiling light | *Switch it off* |
 | Desk lamp | 20%, **leave the colour to the sun** |
+| All lights in this room | a fallback for anything not named above |
 
-Three things make that work:
+Four things make that work:
 
-- **Leave the colour to the sun** lets a light take the scene's brightness while its colour
-  keeps adapting through the evening. Leave the brightness empty instead and it takes the
-  scene's colour while its brightness keeps adapting.
-- **Switch it off** darkens one light while the rest of the room stays lit. Distinct from
+- **Whatever a light does not name keeps following the sun.** Give a light a brightness and no
+  colour and its colour goes on adapting through the evening; give it a colour and no
+  brightness and the reverse. This is per light, so one scene can pin the ceiling while the
+  desk lamp keeps warming.
+- **All lights in this room** is a single entry covering everything you have not named, so the
+  simple case stays one row rather than one per bulb.
+- **Switch it off** darkens one light while the rest of the room stays lit — distinct from
   **Leave it exactly as it is**, which does not touch it at all.
-- Any light you do not name simply takes the scene's own brightness and colour.
+- **Capture the room as it is now** builds the whole list from what the room is doing this
+  second. Set the room up with Home Assistant's normal light controls, then name it.
+
+### Capturing beats typing
+
+Home Assistant gives configuration forms a colour picker and a colour-temperature slider, but
+not the colour wheel from the light dialog — that is frontend code and out of reach. So the
+quickest way to build a scene is to light the room the way you want it, using the controls you
+already know, and then capture it. For colours you use repeatedly, define a **colour preset**
+in the global config and pick it by name.
 
 #### RGBWW strips
 
@@ -164,11 +179,34 @@ projection of saturated orange onto white is nobody's idea of the scene.
 
 Other options worth knowing:
 
-- **Offer this scene in** — which rooms list it. Empty means all of them.
 - **Only affect lights that are already on** — adjust a room without lighting it up.
-- **Lights this scene does not mention** — keep adapting (the default), switch off, or leave
+- **Lights this scene says nothing about** — keep adapting (the default), switch off, or leave
   alone.
 - **Ignore presence sensors while active** — for a film in the living room.
+
+---
+
+## Light switches
+
+A switch belongs to the room it drives, and cycles that room's scenes. Adaptive is always the
+first step, so a press on a dark room lights it adaptively and each further press moves one
+place down the list before wrapping back.
+
+Two-button switches are understood. The lower half gets its own words and its own actions, so
+the usual arrangement works out of the box:
+
+| Gesture | Default |
+|---|---|
+| Up | on, then cycle |
+| Down | switch the room off |
+| Hold up | brighten |
+| Hold down | dim |
+| Double press, either half | configurable |
+
+Holding to dim shifts the whole room by a **bias** rather than fixing a brightness, so a room
+held down two steps keeps tracking the sun all evening — two steps below where it would
+otherwise be. Holding the dimmer in a dark room sets where it will come back on rather than
+lighting it.
 
 ---
 
@@ -203,8 +241,15 @@ following the sun" — a scene can still set that axis.
 
 Night mode follows an **existing helper** — an `input_boolean`, a schedule, a sleep sensor —
 rather than owning a schedule of its own, so the house keeps one source of truth for "we are
-asleep". Each room can then dim and warm, apply a designated night scene, **switch off once
-the room is empty**, or ignore night entirely.
+asleep". The helper is named **once, in the global config**: whether everyone is asleep is a
+fact about the household, not about a room.
+
+What each room does about it is per room, because a bedroom and a hallway should not react the
+same way: dim and warm, apply a designated night scene, **switch off once the room is empty**,
+or ignore night entirely.
+
+Switching night mode on never lights a room that is dark. It adjusts the lights that are
+already on and leaves the rest alone.
 
 That last one waits: if somebody is still in the room when the house goes to bed, the light
 stays exactly as it is and only goes out once they leave. Reaching for the switch meanwhile

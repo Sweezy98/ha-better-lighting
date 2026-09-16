@@ -847,7 +847,8 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
                 resolved = {
                     key: value
                     for key, value in chosen.items()
-                    if key in (CONF_COLOR_FORMAT, CONF_RGB_COLOR, CONF_COLOR_TEMP_KELVIN)
+                    if key
+                    in (CONF_COLOR_FORMAT, CONF_RGB_COLOR, CONF_COLOR_TEMP_KELVIN)
                 }
                 self._scene.setdefault(CONF_SCENE_LIGHTS, {})[entity_id] = {
                     **pending,
@@ -1363,76 +1364,6 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         return self.async_update_and_abort(
             self._get_entry(), self._subentry, data=data, title=title
         )
-
-
-def validate_light_profile(
-    entry: ConfigEntry, light_entity: str, *, exclude_subentry_id: str | None = None
-) -> dict[str, str]:
-    """One calibration per light.
-
-    A light belongs to one zone, so a second profile for it could only ever be
-    a contradiction. HA's subentry unique_id would reject it anyway, but doing
-    it here produces an error on the right field instead of an opaque abort.
-    """
-    for subentry in entry.subentries.values():
-        if subentry.subentry_type != SubentryType.LIGHT_PROFILE.value:
-            continue
-        if subentry.subentry_id == exclude_subentry_id:
-            continue
-        if subentry.data.get(CONF_LIGHT_ENTITY) == light_entity:
-            return {CONF_LIGHT_ENTITY: "profile_exists"}
-    return {}
-
-
-def _profile_title(hass, light_entity: str | None) -> str:
-    """Name the subentry after the light, so the list is readable."""
-    if not light_entity:
-        return "Light profile"
-    state = hass.states.get(light_entity)
-    if state is not None and (name := state.attributes.get("friendly_name")):
-        return str(name)
-    return light_entity.removeprefix("light.").replace("_", " ").title()
-
-
-def scene_title(entry: ConfigEntry, name: str, zone_ids: list[str] | None) -> str:
-    """The name a scene is listed under.
-
-    Home Assistant lists every scene flat under the integration, with no way to
-    nest them under a room, so the title is the only lever. Putting the room
-    first for a single-room scene means all of a room's scenes sort together,
-    and two rooms can each have a Reading scene without either being renamed.
-    """
-    titles = {
-        sub.subentry_id: sub.title
-        for sub in entry.subentries.values()
-        if sub.subentry_type == SubentryType.ZONE.value
-    }
-    rooms = [titles[z] for z in (zone_ids or []) if z in titles]
-    if not rooms:
-        return name
-    if len(rooms) == 1:
-        return f"{rooms[0]} \u00b7 {name}"
-    return f"{name} \u00b7 {', '.join(sorted(rooms))}"
-
-
-def scene_light_options(
-    entry: ConfigEntry, scene_zones: list[str] | None
-) -> list[dict[str, str]]:
-    """The lights a scene may name.
-
-    Restricted to the rooms the scene is offered in, so the picker is not a
-    list of every bulb in the house.
-    """
-    wanted = set(scene_zones or ())
-    options: list[dict[str, str]] = []
-    for sub in entry.subentries.values():
-        if sub.subentry_type != SubentryType.ZONE.value:
-            continue
-        if wanted and sub.subentry_id not in wanted:
-            continue
-        for entity_id in sub.data.get(CONF_LIGHTS) or ():
-            options.append({"value": entity_id, "label": f"{sub.title}: {entity_id}"})
-    return options
 
 
 def zone_options(entry: ConfigEntry) -> list[dict[str, str]]:

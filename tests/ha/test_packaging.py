@@ -186,3 +186,43 @@ def test_every_menu_option_has_a_step_behind_it() -> None:
                     assert option in defined, (
                         f"{area}.{step_id} offers {option!r}, which has no step"
                     )
+
+
+def test_every_panel_field_has_a_label() -> None:
+    """A field the panel cannot name shows a raw slug like `down_press_action`."""
+    from custom_components.better_lighting import panel_schema
+
+    schema = panel_schema.schema("en")
+    labels = schema["labels"]["data"]
+    unlabelled = sorted(
+        {
+            field["key"]
+            for form in schema["forms"].values()
+            for group in form
+            for field in group["fields"]
+            if field["key"] not in labels
+        }
+    )
+    assert not unlabelled, f"panel fields with no label: {unlabelled}"
+
+
+def test_the_panel_translates_as_completely_as_the_forms() -> None:
+    """German is generated from the same files, so it must be as complete."""
+    from custom_components.better_lighting import panel_schema
+
+    english = panel_schema.schema("en")["labels"]
+    german = panel_schema.schema("de")["labels"]
+    assert set(german["data"]) == set(english["data"])
+    assert set(german["options"]) == set(english["options"])
+
+
+def test_the_panel_only_calls_commands_that_exist() -> None:
+    """A typo in either half is a button that silently does nothing."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    backend = (COMPONENT / "panel.py").read_text()
+
+    called = set(re.findall(r'_call\("([a-z_]+)"', panel_js))
+    registered = set(re.findall(r'f"\{DOMAIN\}/([a-z_]+)"', backend))
+    assert called <= registered, (
+        f"panel calls unknown commands: {sorted(called - registered)}"
+    )

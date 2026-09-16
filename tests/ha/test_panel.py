@@ -206,3 +206,266 @@ async def test_without_a_frontend_everything_else_still_works(
 
     assert entry.state is ConfigEntryState.LOADED
     assert hass.states.get("light.kitchen") is not None
+
+
+class TestEverySettingIsReachable:
+    """The panel edits the same tables the config flow renders."""
+
+    async def test_the_schema_describes_every_form(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
+        result = (await client.receive_json())["result"]
+
+        assert set(result["forms"]) == {
+            "hub",
+            "zone",
+            "mode",
+            "switch",
+            "calibration",
+            "scene",
+            "preset",
+            "rule",
+        }
+        # Every field the config flow has, the panel can draw.
+        described = {
+            field["key"]
+            for form in result["forms"].values()
+            for group in form
+            for field in group["fields"]
+        }
+        from custom_components.better_lighting.const import ZONE_SPECS
+
+        assert {spec.key for spec in ZONE_SPECS} <= described
+
+    async def test_labels_follow_the_requested_language(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema", "language": "de"})
+        result = (await client.receive_json())["result"]
+
+        assert result["labels"]["data"]["night_behavior"] == "Was der Nachtmodus tut"
+        assert result["labels"]["options"]["night_behavior"]["scene"].startswith("Eine")
+
+    async def test_the_config_carries_rooms_modes_and_the_hub(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/config"})
+        result = (await client.receive_json())["result"]
+
+        assert "hub" in result and "modes" in result
+        assert result["rooms"][0]["data"]["lights"] == ["light.one"]
+
+    async def test_saving_a_room_keeps_its_scenes(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """Settings and collections are edited separately; one must not eat
+        the other."""
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+        before = entry.subentries[zone_id].data["scenes"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_zone",
+                "zone_id": zone_id,
+                "data": {"name": "Kitchen", "lights": ["light.one"], "interval": 120},
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        assert entry.subentries[zone_id].data["scenes"] == before
+        assert entry.subentries[zone_id].data["interval"] == 120
+
+    async def test_a_room_claiming_another_rooms_light_is_refused(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_zone",
+                "data": {"name": "Hall", "lights": ["light.one"]},
+            }
+        )
+        result = await client.receive_json()
+
+        assert not result["success"]
+        assert "light_in_other_zone" in result["error"]["message"]
+
+    async def test_the_hub_saves(self, hass: HomeAssistant, hass_ws_client) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_hub",
+                "options": {"min_brightness_pct": 7},
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        assert entry.options["min_brightness_pct"] == 7
+
+    async def test_a_mode_can_be_added_and_removed(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_mode",
+                "data": {"name": "Cinema", "states": ["playing"], "rules": []},
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        mode_id = next(
+            sub.subentry_id
+            for sub in entry.subentries.values()
+            if sub.title == "Cinema"
+        )
+        await client.send_json(
+            {"id": 2, "type": f"{DOMAIN}/delete_mode", "mode_id": mode_id}
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        assert mode_id not in entry.subentries
+
+    async def test_a_mode_with_no_states_is_refused(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_mode",
+                "data": {"name": "Empty", "states": []},
+            }
+        )
+        result = await client.receive_json()
+
+        assert not result["success"]
+        assert "no_states" in result["error"]["message"]
+
+    async def test_a_rooms_switches_can_be_saved_as_a_list(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_zone_collection",
+                "zone_id": zone_id,
+                "key": "switches",
+                "items": [
+                    {"name": "Door", "binding_type": "service_only"},
+                    {"name": "Oven", "binding_type": "service_only"},
+                ],
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        stored = entry.subentries[zone_id].data["switches"]
+        assert [s["name"] for s in stored] == ["Door", "Oven"]
+        # Each gets an id so a later edit can find it again.
+        assert all(s["switch_id"] for s in stored)
+
+    async def test_saving_a_scene_list_keeps_its_per_light_entries(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """The form describes a scene's name; its lights are not form fields."""
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+        scenes = [dict(s) for s in entry.subentries[zone_id].data["scenes"]]
+        scenes[0]["name"] = "Renamed"
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_zone_collection",
+                "zone_id": zone_id,
+                "key": "scenes",
+                "items": scenes,
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        stored = entry.subentries[zone_id].data["scenes"][0]
+        assert stored["name"] == "Renamed"
+        assert stored["lights"], "per-light entries were dropped"
+
+    async def test_a_light_calibration_list_saves(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_zone_collection",
+                "zone_id": zone_id,
+                "key": "light_profiles",
+                "items": [{"light_entity": "light.one", "brightness_offset_pct": -12}],
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        stored = entry.subentries[zone_id].data["light_profiles"]
+        assert stored[0]["brightness_offset_pct"] == -12
+
+    async def test_a_hub_with_nothing_in_it_still_answers(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """A fresh install opens the panel before it has any rooms."""
+        await async_setup_component(hass, "websocket_api", {})
+        await setup_members(hass, [MemberLight("One")])
+        entry = hub_entry(subentries_data=[])
+        await setup_hub(hass, entry)
+        client = await hass_ws_client(hass)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/config"})
+        result = (await client.receive_json())["result"]
+
+        assert result == {"rooms": [], "modes": [], "hub": {}}
+
+    async def test_a_room_can_be_created_from_the_panel(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        await async_setup_component(hass, "websocket_api", {})
+        await setup_members(hass, [MemberLight("One")])
+        entry = hub_entry(subentries_data=[])
+        await setup_hub(hass, entry)
+        client = await hass_ws_client(hass)
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_zone",
+                "data": {"name": "Hall", "lights": ["light.one"]},
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        assert hass.states.get("light.hall") is not None

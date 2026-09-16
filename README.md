@@ -119,11 +119,20 @@ without flashing through the two in between.
 
 ---
 
-## The scene editor
+## The panel
 
-Better Lighting adds a **Better Lighting** page to the sidebar. It is where
-scenes are worth building, because it does the two things a configuration form
-cannot:
+Better Lighting adds a **Better Lighting** page to the sidebar, and **everything
+is configurable from it** — rooms and all their settings, scenes, switches,
+light calibration, cross-zone modes and the global defaults. The settings
+screens under *Devices & services* still work and do the same things; use
+whichever you prefer.
+
+The panel renders its forms from the same field tables the settings screens
+render, so the two cannot disagree about what a setting is, and a new setting
+appears in both at once.
+
+It is also the only place scenes are really worth building, because it does the
+two things a configuration form cannot:
 
 - **A real colour wheel**, a brightness slider and a temperature slider with the
   gradient on it — plus a number box beside each, since a slider cannot hit
@@ -132,13 +141,15 @@ cannot:
   puts the room back when you stop. Nothing is saved until you press Save, so a
   draft you dislike costs you nothing.
 
-Pick a room, pick a scene or start a new one, and set each light: a brightness,
+In the scene editor, pick a room, pick a scene or start a new one, and set each light: a brightness,
 a colour, *leave the colour to the sun*, off, or left alone entirely. **Capture
 from the room** fills the whole scene in from what the room is doing right now,
 which is usually faster than setting anything by hand.
 
-The settings screens still do everything they did — the panel is an easier way
-to do the part that benefits from seeing it.
+Navigation is a room at a time: pick a room and its sections appear beneath it
+— lights, group behaviour, adaptive, night, power cycle, presence, open
+windows — followed by its scenes, switches and calibration. Modes and the
+global settings sit below the rooms.
 
 ---
 
@@ -183,7 +194,7 @@ Four things make that work:
 
 ### Building one
 
-Use [the scene editor](#the-scene-editor) in the sidebar: it has the colour wheel and shows
+Use [the scene editor](#the-panel) in the sidebar: it has the colour wheel and shows
 the room changing as you work. The settings screens can do the same job without the wheel —
 there, capture the room as it stands, or define a **colour preset** in the global config and
 pick it by name.

@@ -15,6 +15,7 @@ integration -- no build step, because HACS copies files and does not run one.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -22,20 +23,36 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components import panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.setup import async_setup_component
 from homeassistant.util import ulid as ulid_util
 
+from . import panel_schema
+from .config_flow import validate_zone_lights
 from .const import (
+    CONF_LIGHTS,
     CONF_NAME,
+    CONF_RULES,
     CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
+    CONF_STATES,
+    CONF_SWITCH_ID,
+    CONF_ZONE_PROFILES,
     CONF_ZONE_SCENES,
+    CONF_ZONE_SWITCHES,
+    CONTROLLER_SPECS,
     DOMAIN,
+    HUB_SPECS,
+    LIGHT_PROFILE_SPECS,
+    MODE_SPECS,
+    ZONE_SCENE_SPECS,
+    ZONE_SPECS,
     SubentryType,
 )
 from .models import zone_scene
 from .render import ZoneMode
+from .schemas import post_validate
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -96,10 +113,17 @@ def async_register_commands(hass: HomeAssistant) -> None:
     """Register the panel's websocket API."""
     for handler in (
         websocket_config,
+        websocket_schema,
         websocket_preview,
         websocket_stop_preview,
         websocket_save_scene,
         websocket_delete_scene,
+        websocket_save_hub,
+        websocket_save_zone,
+        websocket_delete_zone,
+        websocket_save_mode,
+        websocket_delete_mode,
+        websocket_save_collection,
     ):
         websocket_api.async_register_command(hass, handler)
 
@@ -129,20 +153,34 @@ def websocket_config(
         return
 
     rooms = []
+    modes = []
     for subentry in entry.subentries.values():
-        if subentry.subentry_type != SubentryType.ZONE.value:
-            continue
-        rooms.append(
-            {
-                "id": subentry.subentry_id,
-                "name": subentry.data.get(CONF_NAME) or subentry.title,
-                "lights": list(subentry.data.get("lights") or ()),
-                "scenes": [
-                    dict(s) for s in (subentry.data.get(CONF_ZONE_SCENES) or ())
-                ],
-            }
-        )
-    connection.send_result(msg["id"], {"rooms": rooms})
+        if subentry.subentry_type == SubentryType.ZONE.value:
+            rooms.append(
+                {
+                    "id": subentry.subentry_id,
+                    "name": subentry.data.get(CONF_NAME) or subentry.title,
+                    "lights": list(subentry.data.get("lights") or ()),
+                    "scenes": [
+                        dict(s) for s in (subentry.data.get(CONF_ZONE_SCENES) or ())
+                    ],
+                    # Everything else the room stores, so the panel can edit
+                    # any of it without a round trip per screen.
+                    "data": dict(subentry.data),
+                }
+            )
+        elif subentry.subentry_type == SubentryType.MODE.value:
+            modes.append(
+                {
+                    "id": subentry.subentry_id,
+                    "name": subentry.data.get(CONF_NAME) or subentry.title,
+                    "data": dict(subentry.data),
+                }
+            )
+    connection.send_result(
+        msg["id"],
+        {"rooms": rooms, "modes": modes, "hub": dict(entry.options)},
+    )
 
 
 async def _async_apply_draft(
@@ -270,3 +308,237 @@ async def websocket_delete_scene(
         entry, subentry, data={**subentry.data, CONF_ZONE_SCENES: scenes}
     )
     connection.send_result(msg["id"], {"deleted": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/schema",
+        vol.Optional("language", default="en"): str,
+    }
+)
+@callback
+def websocket_schema(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Every form the panel can draw, described from the same tables the
+    config flow renders."""
+    connection.send_result(msg["id"], panel_schema.schema(msg["language"]))
+
+
+def _clean(specs: Any, data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Run a payload through the same validation the forms use."""
+    return post_validate(specs, data)
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/save_hub", vol.Required("options"): dict}
+)
+@websocket_api.async_response
+async def websocket_save_hub(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    entry = _entry(hass)
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Not set up")
+        return
+    cleaned, errors = _clean(HUB_SPECS, msg["options"])
+    if errors:
+        connection.send_error(msg["id"], "invalid", json.dumps(errors))
+        return
+    hass.config_entries.async_update_entry(entry, options={**entry.options, **cleaned})
+    connection.send_result(msg["id"], {"saved": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/save_zone",
+        vol.Optional("zone_id"): vol.Any(str, None),
+        vol.Required("data"): dict,
+    }
+)
+@websocket_api.async_response
+async def websocket_save_zone(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Add a room, or replace one room's settings wholesale."""
+    entry = _entry(hass)
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Not set up")
+        return
+
+    zone_id = msg.get("zone_id")
+    cleaned, errors = _clean(ZONE_SPECS, msg["data"])
+    errors |= validate_zone_lights(
+        entry, cleaned.get(CONF_LIGHTS) or [], exclude_subentry_id=zone_id
+    )
+    if errors:
+        connection.send_error(msg["id"], "invalid", json.dumps(errors))
+        return
+
+    title = cleaned.get(CONF_NAME) or "Room"
+    if zone_id:
+        subentry = _zone_subentry(entry, zone_id)
+        if subentry is None:
+            connection.send_error(msg["id"], "not_found", "No such room")
+            return
+        # The collections a room owns are edited by their own commands, so a
+        # settings save must not drop them.
+        keep = {
+            key: subentry.data[key]
+            for key in (CONF_ZONE_SCENES, CONF_ZONE_SWITCHES, CONF_ZONE_PROFILES)
+            if key in subentry.data
+        }
+        hass.config_entries.async_update_subentry(
+            entry, subentry, data={**keep, **cleaned}, title=title
+        )
+    else:
+        hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data=cleaned,
+                subentry_type=SubentryType.ZONE.value,
+                title=title,
+                unique_id=None,
+            ),
+        )
+    connection.send_result(msg["id"], {"saved": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/delete_zone", vol.Required("zone_id"): str}
+)
+@websocket_api.async_response
+async def websocket_delete_zone(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    entry = _entry(hass)
+    if entry is None or msg["zone_id"] not in entry.subentries:
+        connection.send_error(msg["id"], "not_found", "No such room")
+        return
+    hass.config_entries.async_remove_subentry(entry, msg["zone_id"])
+    connection.send_result(msg["id"], {"deleted": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/save_mode",
+        vol.Optional("mode_id"): vol.Any(str, None),
+        vol.Required("data"): dict,
+    }
+)
+@websocket_api.async_response
+async def websocket_save_mode(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    entry = _entry(hass)
+    if entry is None:
+        connection.send_error(msg["id"], "not_found", "Not set up")
+        return
+
+    cleaned, errors = _clean(MODE_SPECS, msg["data"])
+    if not cleaned.get(CONF_STATES):
+        errors[CONF_STATES] = "no_states"
+    if errors:
+        connection.send_error(msg["id"], "invalid", json.dumps(errors))
+        return
+    # Rules travel with the mode: they are edited on the same screen.
+    cleaned[CONF_RULES] = list(msg["data"].get(CONF_RULES) or ())
+
+    title = cleaned.get(CONF_NAME) or "Mode"
+    mode_id = msg.get("mode_id")
+    if mode_id:
+        subentry = entry.subentries.get(mode_id)
+        if subentry is None or subentry.subentry_type != SubentryType.MODE.value:
+            connection.send_error(msg["id"], "not_found", "No such mode")
+            return
+        hass.config_entries.async_update_subentry(
+            entry, subentry, data=cleaned, title=title
+        )
+    else:
+        hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data=cleaned,
+                subentry_type=SubentryType.MODE.value,
+                title=title,
+                unique_id=None,
+            ),
+        )
+    connection.send_result(msg["id"], {"saved": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/delete_mode", vol.Required("mode_id"): str}
+)
+@websocket_api.async_response
+async def websocket_delete_mode(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    entry = _entry(hass)
+    if entry is None or msg["mode_id"] not in entry.subentries:
+        connection.send_error(msg["id"], "not_found", "No such mode")
+        return
+    hass.config_entries.async_remove_subentry(entry, msg["mode_id"])
+    connection.send_result(msg["id"], {"deleted": True})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/save_zone_collection",
+        vol.Required("zone_id"): str,
+        vol.Required("key"): vol.In(
+            [CONF_ZONE_SCENES, CONF_ZONE_SWITCHES, CONF_ZONE_PROFILES]
+        ),
+        vol.Required("items"): list,
+    }
+)
+@websocket_api.async_response
+async def websocket_save_collection(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Replace one of a room's lists: its scenes, switches or calibrations.
+
+    Wholesale rather than per item, because the panel edits the list it was
+    given and the order within it is meaningful -- a switch cycles its scenes
+    in the order they are stored.
+    """
+    entry = _entry(hass)
+    subentry = _zone_subentry(entry, msg["zone_id"]) if entry else None
+    if subentry is None:
+        connection.send_error(msg["id"], "not_found", "No such room")
+        return
+
+    specs = {
+        CONF_ZONE_SCENES: ZONE_SCENE_SPECS,
+        CONF_ZONE_SWITCHES: CONTROLLER_SPECS,
+        CONF_ZONE_PROFILES: LIGHT_PROFILE_SPECS,
+    }[msg["key"]]
+    id_key = {
+        CONF_ZONE_SCENES: CONF_SCENE_ID,
+        CONF_ZONE_SWITCHES: CONF_SWITCH_ID,
+    }.get(msg["key"])
+
+    items = []
+    for raw in msg["items"]:
+        cleaned, errors = post_validate(specs, raw)
+        if errors:
+            connection.send_error(msg["id"], "invalid", json.dumps(errors))
+            return
+        # Anything the form does not describe -- a scene's per-light entries,
+        # a switch's running order -- is carried across untouched.
+        merged = {**raw, **cleaned}
+        if id_key and not merged.get(id_key):
+            merged[id_key] = ulid_util.ulid_now()
+        items.append(merged)
+
+    hass.config_entries.async_update_subentry(
+        entry, subentry, data={**subentry.data, msg["key"]: items}
+    )
+    connection.send_result(msg["id"], {"saved": len(items)})

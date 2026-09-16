@@ -301,6 +301,13 @@ One of the states a rule can name is **off**, which is the mode ending. Its scri
 including when the mode is switched off part-way through a film, which is also when the rooms
 go back to how they were.
 
+Night mode can also be **asked again**. The house goes to bed, the rooms that should go dark go
+dark, and then somebody gets up for a glass of water and leaves a light on. Reaching for the
+night switch does nothing, because night mode never stopped being on — so there is a button
+(`Night: lights off`) and a service (`better_lighting.night_lights_off`) that repeat what
+happened when the house went to bed. Only while night mode is on, and down the same path as the
+original, so a room somebody is standing in is still left alone.
+
 ---
 
 ## Adaptive lighting

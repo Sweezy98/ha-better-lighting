@@ -1141,6 +1141,9 @@
       },
       "mode_clear": {
         "name": "Clear"
+      },
+      "night_lights_off": {
+        "name": "Night: lights off"
       }
     },
     "event": {
@@ -1263,6 +1266,20 @@
         "zone": {
           "name": "Room",
           "description": "Room name or id."
+        }
+      }
+    },
+    "night_lights_off": {
+      "name": "Ask again for lights out",
+      "description": "Repeats what night mode did when it came on, for the rooms where it is still on. For the light somebody put on in the night and left on: the night switch is no help, because night mode never stopped being on. Does nothing where night mode is off.",
+      "fields": {
+        "zone": {
+          "name": "Rooms",
+          "description": "Which rooms to ask. Left out, every room in the house."
+        },
+        "entity_id": {
+          "name": "Target",
+          "description": "Any entity of the rooms to ask, instead of naming them."
         }
       }
     }

@@ -386,6 +386,25 @@ class ZoneController:
         self.async_notify()
         await self._async_night_changed(from_source=False)
 
+    async def async_request_night_off(self) -> bool:
+        """Ask again for what night mode asked for when it came on.
+
+        The house goes to bed and the rooms that should go dark go dark. Then
+        somebody gets up for a glass of water, puts a light on, and goes back
+        to bed -- and the night switch is no help, because night mode never
+        stopped being on. Nothing had changed, so nothing happened.
+
+        This is the way to ask a second time. Only while night mode is on:
+        it is not a way to switch the lights off, it is a way to repeat
+        something that already happened, and outside the night it would mean
+        nothing. Down the same path as the original, so a room somebody is
+        standing in is left alone exactly as it was the first time.
+        """
+        if not self.night_active:
+            return False
+        await self._async_night_changed(from_source=True)
+        return True
+
     async def _async_night_changed(self, *, from_source: bool) -> None:
         """Apply a change of night mode."""
         if not self.night_active:

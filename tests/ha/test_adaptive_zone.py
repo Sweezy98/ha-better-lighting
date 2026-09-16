@@ -462,6 +462,91 @@ class TestNightTurnOff:
 
         assert hass.states.get("light.one").state == "off"
 
+    async def test_asking_again_darkens_a_light_put_on_in_the_night(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The scenario this exists for.
+
+        The house goes to bed and the room goes dark. Somebody gets up for a
+        glass of water, puts the light on, and goes back to bed. The night
+        switch is no help -- night mode never stopped being on, so nothing
+        changed and nothing happened.
+        """
+        await self._setup(hass)
+        await self._sleep(hass)
+        assert hass.states.get("light.one").state == "off"
+
+        await hass.services.async_call(
+            "light", "turn_on", {"entity_id": "light.one"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get("light.one").state == "on"
+
+        await hass.services.async_call(DOMAIN, "night_lights_off", {}, blocking=True)
+        await hass.async_block_till_done()
+        assert hass.states.get("light.one").state == "off"
+
+    async def test_asking_again_does_nothing_outside_the_night(
+        self, hass: HomeAssistant
+    ) -> None:
+        """It repeats something that already happened. Outside the night
+        nothing has, and a house-wide lights-out is not what it is for."""
+        await self._setup(hass)
+        assert hass.states.get("light.one").state == "on"
+
+        await hass.services.async_call(DOMAIN, "night_lights_off", {}, blocking=True)
+        await hass.async_block_till_done()
+        assert hass.states.get("light.one").state == "on"
+
+    async def test_asking_again_leaves_an_occupied_room_alone(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Down the same path as the original, so the same room is spared."""
+        await self._setup(hass)
+        await self._sleep(hass)
+        hass.states.async_set("binary_sensor.kitchen_presence", "on")
+        await hass.async_block_till_done()
+        await hass.services.async_call(
+            "light", "turn_on", {"entity_id": "light.one"}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        await hass.services.async_call(DOMAIN, "night_lights_off", {}, blocking=True)
+        await hass.async_block_till_done()
+        assert hass.states.get("light.one").state == "on"
+
+        # And it goes off when they leave, like any other waiting turn-off.
+        hass.states.async_set("binary_sensor.kitchen_presence", "off")
+        await hass.async_block_till_done()
+        assert hass.states.get("light.one").state == "off"
+
+    async def test_the_button_does_the_same(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        await self._sleep(hass)
+        await hass.services.async_call(
+            "light", "turn_on", {"entity_id": "light.one"}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        await hass.services.async_call(
+            "button",
+            "press",
+            {"entity_id": "button.better_lighting_night_lights_off"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get("light.one").state == "off"
+
+    async def test_the_button_survives_a_reload(self, hass: HomeAssistant) -> None:
+        """It is named after the entry rather than after a room, which is
+        exactly the shape the tidy-up sweep removes."""
+        await self._setup(hass)
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert hass.states.get("button.better_lighting_night_lights_off") is not None
+
     async def test_a_press_cancels_the_waiting_turn_off(
         self, hass: HomeAssistant
     ) -> None:

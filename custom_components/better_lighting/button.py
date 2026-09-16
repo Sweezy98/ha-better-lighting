@@ -69,6 +69,10 @@ async def async_setup_entry(
             [ModeClearButton(mode_runtime)], config_subentry_id=subentry_id
         )
 
+    # House-wide, and so on the hub rather than in any one room: the room that
+    # needs switching off is by definition not the one being stood in.
+    async_add_entities([NightLightsOffButton(entry)])
+
 
 def _reset_adaptive(controller: ZoneController) -> Callable[[], Awaitable[None]]:
     async def _run() -> None:
@@ -86,6 +90,35 @@ def _clear_manual(controller: ZoneController) -> Callable[[], Awaitable[None]]:
         await controller.async_render(only_lit=True)
 
     return _run
+
+
+class NightLightsOffButton(ButtonEntity):
+    """Ask again for the lights night mode would have switched off.
+
+    Does nothing at all outside night mode, deliberately. It is not a way to
+    switch the house off; it is a way to repeat what happened when the house
+    went to bed, for the light somebody put on in between.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "night_lights_off"
+    _attr_icon = "mdi:weather-night"
+
+    def __init__(self, entry: BetterLightingConfigEntry) -> None:
+        self._entry = entry
+        self._attr_unique_id = f"{entry.entry_id}_night_lights_off"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Better Lighting",
+            manufacturer="Better Lighting",
+            model="Hub",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    async def async_press(self) -> None:
+        for controller in self._entry.runtime_data.controllers.values():
+            await controller.async_request_night_off()
 
 
 class ZoneButton(ButtonEntity):

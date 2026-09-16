@@ -201,7 +201,10 @@ def _async_prune_entities(
     deleting one does not delete a subentry and nothing else would ever
     clear its press entity.
     """
-    known = {*runtime.zones, *runtime.modes, *runtime.switches}
+    # The house-wide button is named after the entry rather than after any
+    # room, mode or switch -- without this it is swept away and recreated on
+    # every reload, losing whatever the user renamed or hid.
+    known = {*runtime.zones, *runtime.modes, *runtime.switches, entry.entry_id}
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
         unique_id = entity.unique_id or ""
@@ -220,7 +223,9 @@ def _async_prune_devices(
     switch deleted under the old arrangement left its device and a dead entity
     behind -- so anything of ours not matching a room or a mode is swept up.
     """
-    known = {*runtime.zones, *runtime.modes}
+    # The hub's own device carries the house-wide button, and belongs to no
+    # room or mode -- so it has to be named here or the sweep takes it.
+    known = {*runtime.zones, *runtime.modes, entry.entry_id}
     registry = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
         ours = {

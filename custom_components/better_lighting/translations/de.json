@@ -1141,6 +1141,9 @@
       },
       "mode_clear": {
         "name": "Beenden"
+      },
+      "night_lights_off": {
+        "name": "Nacht: Licht aus"
       }
     },
     "event": {
@@ -1263,6 +1266,20 @@
         "zone": {
           "name": "Raum",
           "description": "Raumname oder -ID."
+        }
+      }
+    },
+    "night_lights_off": {
+      "name": "Erneut um Licht aus bitten",
+      "description": "Wiederholt das, was der Nachtmodus beim Einschalten getan hat — für die Räume, in denen er noch aktiv ist. Gedacht für das Licht, das nachts jemand eingeschaltet und angelassen hat: der Nachtschalter hilft dann nicht, weil der Nachtmodus nie aufgehört hat. Wo der Nachtmodus aus ist, passiert nichts.",
+      "fields": {
+        "zone": {
+          "name": "Räume",
+          "description": "Welche Räume gefragt werden. Ohne Angabe das ganze Haus."
+        },
+        "entity_id": {
+          "name": "Ziel",
+          "description": "Eine beliebige Entität der Räume, statt sie zu benennen."
         }
       }
     }

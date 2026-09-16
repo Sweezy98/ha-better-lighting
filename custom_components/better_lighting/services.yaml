@@ -125,3 +125,15 @@ rejoin_mode:
     zone:
       selector:
         text:
+
+night_lights_off:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    zone:
+      selector:
+        text:

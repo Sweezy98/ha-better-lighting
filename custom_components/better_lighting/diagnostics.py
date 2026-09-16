@@ -13,7 +13,21 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from . import BetterLightingConfigEntry
+from .cycle import StepKind
 from .profiles import describe_saturation
+
+
+def _step_name(step: Any, runtime: Any) -> str:
+    """One position in a cycle, in words.
+
+    The ids were unreadable, which made the one question anybody actually
+    asks of this list -- "why does my switch do that at the end?" --
+    impossible to answer by looking at it.
+    """
+    if step.kind is StepKind.SCENE:
+        scene = runtime.scenes.get(step.scene_id)
+        return scene.name if scene is not None else f"{step.scene_id} (missing)"
+    return step.kind.value
 
 
 async def async_get_config_entry_diagnostics(
@@ -46,7 +60,9 @@ async def async_get_config_entry_diagnostics(
                 "binding": controller.binding_type.value,
                 "binding_entity": controller.binding_entity,
                 "is_default": controller.is_default,
-                "cycle": [str(step) for step in controller.cycle().steps],
+                "cycle": [
+                    _step_name(step, runtime) for step in controller.cycle().steps
+                ],
                 # What the switch has actually published lately, and what each
                 # value was read as. A value the vocabulary has no word for
                 # produces no press and so leaves no other trace, which is

@@ -446,9 +446,13 @@ class TestNothingIsLeftBehind:
 
         assert not hass.services.async_services().get(DOMAIN)
 
-    async def test_every_declared_service_is_removed(self) -> None:
-        """A service added later must be added to the teardown too."""
+    async def test_every_registered_service_is_in_the_teardown_list(self) -> None:
+        """The list used to be written out twice and went out of step the
+        first time a service was added. It is derived now, and this checks
+        that what is derived covers what is actually registered."""
         import re
+
+        from custom_components.better_lighting import services
 
         source = (
             pathlib.Path(__file__).parents[2]
@@ -456,12 +460,15 @@ class TestNothingIsLeftBehind:
             / "better_lighting"
             / "services.py"
         ).read_text()
-        registered = set(
-            re.findall(r"async_register\(\s*DOMAIN,\s*(SERVICE_\w+)", source, re.S)
-        )
-        teardown = source.split("def async_remove_services")[1]
-        removed = set(re.findall(r"(SERVICE_\w+)", teardown))
-        assert registered <= removed, f"never removed: {sorted(registered - removed)}"
+        registered = {
+            getattr(services, name)
+            for name in re.findall(
+                r"async_register\(\s*DOMAIN,\s*(SERVICE_\w+)", source, re.S
+            )
+        }
+        assert registered, "no services found at all; the pattern has rotted"
+        missing = registered - set(services.SERVICES)
+        assert not missing, f"never removed: {sorted(missing)}"
 
     async def test_leftovers_from_an_older_version_are_offered_for_removal(
         self, hass: HomeAssistant

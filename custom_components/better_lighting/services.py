@@ -32,6 +32,16 @@ SERVICE_CLEAR_MANUAL = "clear_manual_override"
 SERVICE_SET_MODE = "set_mode"
 SERVICE_END_MODE = "end_mode"
 SERVICE_REJOIN_MODE = "rejoin_mode"
+SERVICE_NIGHT_LIGHTS_OFF = "night_lights_off"
+
+# Every service this module defines, taken from the constants above rather
+# than written out a second time: the removal list was hand-kept and went out
+# of step the first time a service was added to it.
+SERVICES: tuple[str, ...] = tuple(
+    value
+    for name, value in sorted(vars().items())
+    if name.startswith("SERVICE_") and isinstance(value, str)
+)
 
 ATTR_ZONE = "zone"
 ATTR_CONTROLLER = "controller"
@@ -76,6 +86,10 @@ END_MODE_SCHEMA = vol.Schema(
 )
 REJOIN_MODE_SCHEMA = vol.Schema({**_TARGET, vol.Required(ATTR_MODE): cv.string})
 
+# The whole house unless a room is named, which is the shape the scenario
+# wants: somebody in bed asking for whatever is still on to go off.
+NIGHT_LIGHTS_OFF_SCHEMA = vol.Schema(_TARGET)
+
 CLEAR_MANUAL_SCHEMA = vol.Schema(
     {**_TARGET, vol.Optional("lights"): vol.All(cv.ensure_list, [cv.entity_id])}
 )
@@ -99,6 +113,15 @@ def _zone_ids_from_entities(hass: HomeAssistant, entity_ids: list[str]) -> set[s
         if entry is not None and entry.platform == DOMAIN and entry.config_subentry_id:
             zone_ids.add(entry.config_subentry_id)
     return zone_ids
+
+
+def all_controllers(hass: HomeAssistant) -> list[ZoneController]:
+    """Every zone of every loaded entry."""
+    return [
+        controller
+        for runtime in _runtimes(hass)
+        for controller in runtime.controllers.values()
+    ]
 
 
 def resolve_controllers(hass: HomeAssistant, call: ServiceCall) -> list[ZoneController]:
@@ -164,6 +187,17 @@ def async_register_services(hass: HomeAssistant) -> None:
             if switch is None:
                 continue
             await controller.async_cycle(switch, direction=direction)
+
+    async def _night_lights_off(call: ServiceCall) -> None:
+        # No target means the whole house, which is the point of it: the
+        # room that needs switching off is by definition not the one being
+        # stood in.
+        targeted = call.data.get(ATTR_ZONE) or call.data.get(ATTR_ENTITY_ID)
+        controllers = (
+            resolve_controllers(hass, call) if targeted else all_controllers(hass)
+        )
+        for controller in controllers:
+            await controller.async_request_night_off()
 
     async def _set_adaptive(call: ServiceCall) -> None:
         for controller in resolve_controllers(hass, call):
@@ -232,6 +266,12 @@ def async_register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_REJOIN_MODE, _rejoin_mode, REJOIN_MODE_SCHEMA
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_NIGHT_LIGHTS_OFF,
+        _night_lights_off,
+        NIGHT_LIGHTS_OFF_SCHEMA,
+    )
     hass.services.async_register(DOMAIN, SERVICE_PRESS, _press, PRESS_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_CYCLE, _cycle, CYCLE_SCHEMA)
     hass.services.async_register(
@@ -253,14 +293,5 @@ def async_remove_services(hass: HomeAssistant) -> None:
     removes them for us: after an uninstall without a restart they would
     still be listed, and calling one would fail somewhere unhelpful.
     """
-    for name in (
-        SERVICE_SET_MODE,
-        SERVICE_END_MODE,
-        SERVICE_REJOIN_MODE,
-        SERVICE_PRESS,
-        SERVICE_CYCLE,
-        SERVICE_SET_ADAPTIVE,
-        SERVICE_ACTIVATE_SCENE,
-        SERVICE_CLEAR_MANUAL,
-    ):
+    for name in SERVICES:
         hass.services.async_remove(DOMAIN, name)

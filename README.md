@@ -258,10 +258,23 @@ the usual arrangement works out of the box:
 | Hold down | dim |
 | Double press, either half | configurable |
 
-Not every button has a double press. Plenty publish the same single press twice and leave the
-pairing to whoever is listening, so a switch can be told to read **two quick taps as a double
-press** instead — with the window that decides how quick is quick enough. Left off, a run of
-taps means what it says and moves that many places down the cycle.
+A press is acted on the moment it arrives, so three quick taps move three places, one at a
+time.
+
+Not every button reports what it did, though, and two settings cover the ones that do not.
+**Two presses count as a double** is for a button with no double press of its own, which sends
+the same single press twice and leaves the pairing to whoever is listening; the window decides
+how quick is quick enough, and each half of a rocker answers for itself. Those taps are the one
+thing that cannot be acted on at once, since until the window closes nobody knows what the
+gesture was.
+
+**Any change counts as a press** is for a switch whose words this integration has none of — a
+toggle alternating on and off, most often, which could otherwise only light the room and darken
+it again rather than cycle. Everything it sends then cycles the room, so switching off needs a
+place in the cycle or another switch.
+
+When a switch does nothing, the panel's diagnostics page shows what it published and what each
+value was read as; anything read as *nothing* is a word it has not been told about.
 
 Holding to dim shifts the whole room by a **bias** rather than fixing a brightness, so a room
 held down two steps keeps tracking the sun all evening — two steps below where it would

@@ -57,7 +57,7 @@ from .brightness import (
     relative_brightness_map,
     representative_brightness,
 )
-from .const import DOMAIN
+from .const import DOMAIN, BindingType
 from .context import ContextRegistry
 from .group_entity import GroupEntity
 from .models import ControllerConfig, HubConfig, ZoneConfig
@@ -544,6 +544,20 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Remember which members were on, then turn the whole zone off."""
+        if (
+            self.is_on
+            and (switch := self.default_switch) is not None
+            and switch.binding_type is BindingType.ZONE_LIGHT
+            and switch.any_change_is_a_press
+        ):
+            # A toggle wired straight to this entity: its second press arrives
+            # as a turn-off, and reading that literally is why such a switch
+            # could only alternate on and off instead of cycling. Which does
+            # mean nothing can turn this room off except a step in the cycle
+            # -- the trade the setting is there to make.
+            await self.controller.async_press(switch)
+            return
+
         states = self._member_states()
         valid = self._valid(states)
         on_states = self._on(valid)

@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import (
@@ -67,14 +67,17 @@ STARTUP_GRACE = 15.0
 # a double that the button *did* report needs no help.
 DOUBLE_OF = {"press": "double_press", "down_press": "down_double_press"}
 
+# How many of a switch's recent publications to keep for the diagnostics page.
+# Enough to see a press and the value the device clears itself to afterwards.
+SEEN_HISTORY = 8
+
 
 @dataclass(slots=True)
 class PressBurst:
-    """A run of quick taps, collapsed into one move.
+    """Taps being held back to see whether a second one arrives.
 
-    Queueing each tap would strobe the room through every intermediate scene;
-    dropping them would make the third tap do nothing. Counting them and
-    resolving once does what the user meant.
+    Only ever used by a switch whose button cannot report a double press of
+    its own: every other press is acted on the moment it arrives.
     """
 
     count: int = 0
@@ -93,8 +96,11 @@ class ControllerRuntime:
 
     _unsubscribers: list[CALLBACK_TYPE] = field(default_factory=list)
     _burst: PressBurst = field(default_factory=PressBurst)
-    _last_press: float = 0.0
     _started_at: float = 0.0
+    # What this switch has published lately and what each value was read as.
+    # The one question the logs could never answer: a value nobody recognises
+    # produces no press, and therefore no trace of itself.
+    seen: list[dict[str, Any]] = field(default_factory=list)
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -139,13 +145,44 @@ class ControllerRuntime:
     # -- press detection ---------------------------------------------------
 
     @callback
-    def _handle_state(self, event: Event[EventStateChangedData]) -> None:
-        kind = self.classify(event.data.get("old_state"), event.data["new_state"])
-        if kind is None:
+    def _note(self, value: str | None, kind: str | None) -> None:
+        """Remember what the switch said, and what we made of it."""
+        if value is None:
             return
+        self.seen.insert(
+            0,
+            {
+                "at": dt_util.utcnow().isoformat(),
+                "value": value,
+                "read_as": kind or "nothing",
+            },
+        )
+        del self.seen[SEEN_HISTORY:]
+
+    @callback
+    def _handle_state(self, event: Event[EventStateChangedData]) -> None:
         if self.contexts.is_ours(event.context):
             return
+        kind = self.classify(event.data.get("old_state"), event.data["new_state"])
+        self._note(self._seen_value(event.data["new_state"]), kind)
+        if kind is None:
+            return
         self.async_press(kind)
+
+    @callback
+    def _seen_value(self, state: State | None) -> str | None:
+        """The word a state published, for the record.
+
+        Deliberately not ``_press_value``: that one withholds a stale
+        timestamp, and a value withheld is exactly what somebody staring at
+        an unresponsive switch needs to be told about.
+        """
+        if state is None:
+            return None
+        attribute = self.config.press_attribute
+        if attribute and (value := state.attributes.get(attribute)) is not None:
+            return str(value)
+        return state.state
 
     @callback
     def _handle_report(self, event: Event[EventStateReportedData]) -> None:
@@ -156,9 +193,10 @@ class ControllerRuntime:
         # There is no "old" here by definition, so the transition guards do not
         # apply; freshness is what separates a real repeat press from noise.
         value = self._press_value(new)
-        if value is None:
-            return
-        kind = self._kind_for(value)
+        kind = self._kind_for(value) if value is not None else None
+        if kind is None and value is not None and self.config.any_change_is_a_press:
+            kind = "press"
+        self._note(self._seen_value(new), kind)
         if kind is not None:
             self.async_press(kind)
 
@@ -212,6 +250,12 @@ class ControllerRuntime:
         # ever-increasing number rather than a word; any change is one press.
         if _is_number(value) and _is_number(old.state) and value != old.state:
             return "press"
+        if self.config.any_change_is_a_press:
+            # A toggle alternating on and off, or any button whose vocabulary
+            # we have none of: getting here means something changed, it was
+            # not us, and the entity is neither unavailable nor stale. For
+            # this switch, that is the whole definition of a press.
+            return "press"
         return None
 
     def _press_value(self, state: State) -> str | None:
@@ -238,38 +282,47 @@ class ControllerRuntime:
 
     # -- dispatch ----------------------------------------------------------
 
+    def _pairing(self, kind: str) -> tuple[bool, float]:
+        """Whether two taps of this kind mean a double, and how long to wait.
+
+        Each half of a rocker answers for itself: a switch can perfectly well
+        report a double on its upper button and not on its lower one.
+        """
+        if kind not in DOUBLE_OF:
+            return False, 0.0
+        if kind == "down_press":
+            return (
+                self.config.down_double_from_two_presses,
+                self.config.down_double_press_window_ms / 1000,
+            )
+        return (
+            self.config.double_from_two_presses,
+            self.config.double_press_window_ms / 1000,
+        )
+
     @callback
     def async_press(self, kind: str = "press") -> None:
-        """Accept a press, debounce it, and work out what the gesture was.
+        """Accept a press and act on it.
 
-        Two shapes, and which one applies is the switch's business. Most
-        buttons report a double press themselves, and then a run of quick taps
-        is exactly that -- a run -- and moves as many places down the cycle.
-        Plenty of others have no double press at all and simply publish the
-        same single press twice; for those, ``double_from_two_presses`` reads
-        two taps inside the window as the double press the button cannot send.
+        At once, in the ordinary case: a switch that reports its own gestures
+        has told us everything already, and waiting to see whether more taps
+        arrive bought nothing but a lag on every single press. Three quick
+        taps move three places, one at a time.
+
+        Nothing is dropped for arriving too soon after the last one, either.
+        A guard against a device delivering the same press twice also ate the
+        second half of a deliberate double tap, and the honest reading of two
+        presses that close together is two presses -- or, for a switch that
+        says so, the double press its button cannot send.
+
+        The exception is a button that cannot report a double press and sends
+        the same single press twice instead. There the gesture genuinely is
+        not known until the window closes, so those taps -- and only those --
+        are held back.
         """
-        now = time.monotonic()
-        interval = self.config.min_press_interval_ms / 1000
-        if interval and (now - self._last_press) < interval:
-            _LOGGER.debug("%s: press ignored as a bounce", self.config.name)
-            return
-        self._last_press = now
-
-        pairing = self.config.double_from_two_presses and kind in DOUBLE_OF
-        if not pairing:
-            # Otherwise the bus hears about the gesture instead, once the
-            # window has closed and there is something true to say.
+        pairing, window = self._pairing(kind)
+        if not pairing or not window:
             self._fire(kind)
-
-        window = (
-            self.config.double_press_window_ms
-            if pairing
-            else self.config.coalesce_window_ms
-        ) / 1000
-        if not window or (kind != "press" and not pairing):
-            # Only plain presses accumulate. A long press means one thing and
-            # should happen at once.
             self._flush_now(kind, 1)
             return
 
@@ -282,15 +335,12 @@ class ControllerRuntime:
         def _flush(_now) -> None:
             self._burst.cancel = None
             count, self._burst.count = self._burst.count, 0
-            if pairing:
-                # Anything past the second tap is part of the same gesture:
-                # a finger that lands three times in 400 ms meant one thing,
-                # and guessing which is worse than doing the plain thing.
-                gesture = DOUBLE_OF[kind] if count >= 2 else kind
-                self._fire(gesture)
-                self._flush_now(gesture, 1)
-                return
-            self._flush_now(kind, count)
+            # Anything past the second tap is part of the same gesture: a
+            # finger that lands three times inside the window meant one
+            # thing, and guessing which is worse than doing the plain thing.
+            gesture = DOUBLE_OF[kind] if count >= 2 else kind
+            self._fire(gesture)
+            self._flush_now(gesture, 1)
 
         self._burst.cancel = async_call_later(self.hass, window, _flush)
 

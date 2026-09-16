@@ -88,5 +88,9 @@
   "n_rules": "{count} rules",
   "brightness": "Brightness",
   "colour_temperature": "Colour temperature",
-  "more": "More"
+  "more": "More",
+  "diag_binding": "Watching",
+  "diag_cycle": "Cycle",
+  "nothing_seen": "Nothing yet. Press the switch.",
+  "seen_hint": "What each switch has published, and what it was read as. A value read as nothing is one this switch has no word for: add it to the matching list of values, or have the switch treat any change as a press."
 }

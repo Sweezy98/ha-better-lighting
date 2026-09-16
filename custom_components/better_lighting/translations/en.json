@@ -447,8 +447,7 @@
                 "double_press_states": "Values that count as a double press",
                 "long_press_states": "Values that count as a long press",
                 "press_attribute": "Attribute carrying the press",
-                "min_press_interval_ms": "Ignore repeats faster than",
-                "coalesce_window_ms": "Collapse taps within"
+                "any_change_is_a_press": "Any change counts as a press"
               },
               "data_description": {
                 "on_foreign_state": "'Restart' begins this switch's own list from the top, which lands on adaptive and is usually what you want.",
@@ -456,7 +455,7 @@
                 "double_press_window_ms": "Longer if the second tap is being missed; shorter if two deliberate single presses keep being read as one double.",
                 "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
                 "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
-                "coalesce_window_ms": "Three quick taps move three places in one go, rather than flashing through the two in between."
+                "any_change_is_a_press": "For a switch that alternates on and off, or publishes words this integration has none of. Everything it sends cycles the room, so switching the room off needs a place in the cycle or another switch. Wired straight to the room's light entity, that includes a dashboard or a voice command turning the room off."
               }
             },
             "down": {
@@ -469,7 +468,12 @@
                 "down_press_states": "Words for a press",
                 "down_double_press_states": "Words for a double press",
                 "down_long_press_states": "Words for a hold",
-                "dim_step_pct": "Dim step"
+                "dim_step_pct": "Dim step",
+                "down_double_from_two_presses": "This button has no double press",
+                "down_double_press_window_ms": "Two presses count as a double within"
+              },
+              "data_description": {
+                "down_double_from_two_presses": "The lower half decides for itself: a switch can report a double press on one button and not on the other."
               }
             }
           }
@@ -504,8 +508,7 @@
                 "double_press_states": "Values that count as a double press",
                 "long_press_states": "Values that count as a long press",
                 "press_attribute": "Attribute carrying the press",
-                "min_press_interval_ms": "Ignore repeats faster than",
-                "coalesce_window_ms": "Collapse taps within"
+                "any_change_is_a_press": "Any change counts as a press"
               },
               "data_description": {
                 "on_foreign_state": "'Restart' begins this switch's own list from the top, which lands on adaptive and is usually what you want.",
@@ -513,7 +516,7 @@
                 "double_press_window_ms": "Longer if the second tap is being missed; shorter if two deliberate single presses keep being read as one double.",
                 "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
                 "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
-                "coalesce_window_ms": "Three quick taps move three places in one go, rather than flashing through the two in between."
+                "any_change_is_a_press": "For a switch that alternates on and off, or publishes words this integration has none of. Everything it sends cycles the room, so switching the room off needs a place in the cycle or another switch. Wired straight to the room's light entity, that includes a dashboard or a voice command turning the room off."
               }
             },
             "down": {
@@ -526,7 +529,12 @@
                 "down_press_states": "Words for a press",
                 "down_double_press_states": "Words for a double press",
                 "down_long_press_states": "Words for a hold",
-                "dim_step_pct": "Dim step"
+                "dim_step_pct": "Dim step",
+                "down_double_from_two_presses": "This button has no double press",
+                "down_double_press_window_ms": "Two presses count as a double within"
+              },
+              "data_description": {
+                "down_double_from_two_presses": "The lower half decides for itself: a switch can report a double press on one button and not on the other."
               }
             }
           }

@@ -1098,6 +1098,35 @@ class BetterLightingPanel extends HTMLElement {
       )
       .join("");
 
+    // What each switch has published lately, and what we made of it. The
+    // question a log cannot answer on its own: a value the switch's
+    // vocabulary has no word for produces no press, and so no trace.
+    const switches = Object.values(data.controllers || {})
+      .map(
+        (item) => `<details class="diag">
+          <summary>${item.name}</summary>
+          <table>${rows([
+            [this._t("diag_binding"), item.binding_entity || item.binding],
+            [this._t("diag_cycle"), (item.cycle || []).join(" \u2192 ")],
+          ])}</table>
+          ${
+            (item.seen || []).length
+              ? `<table>${item.seen
+                  .map(
+                    (seen) =>
+                      `<tr><th>${new Date(
+                        seen.at
+                      ).toLocaleTimeString()}</th><td>${
+                        seen.value || "\u2014"
+                      }</td><td>${seen.read_as}</td></tr>`
+                  )
+                  .join("")}</table>`
+              : `<p class="muted fold-body">${this._t("nothing_seen")}</p>`
+          }
+        </details>`
+      )
+      .join("");
+
     main.innerHTML = `
       <div class="card">
         <div class="bar" style="margin-top:0"><button class="flat" id="refresh">${this._t(
@@ -1106,6 +1135,15 @@ class BetterLightingPanel extends HTMLElement {
         ${rooms}
         ${modes}
       </div>
+      ${
+        switches
+          ? `<div class="card">
+               <h2>${this._labels.sections.switches || this._t("switches")}</h2>
+               <p class="muted">${this._t("seen_hint")}</p>
+               ${switches}
+             </div>`
+          : ""
+      }
       <div class="card">
         <details open>
           <summary>${this._t("the_curve")}</summary>

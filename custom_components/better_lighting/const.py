@@ -879,12 +879,14 @@ CONF_WRAP_AROUND = "wrap_around"
 CONF_ON_FOREIGN = "on_foreign_state"
 CONF_DOUBLE_PRESS_ACTION = "double_press_action"
 CONF_LONG_PRESS_ACTION = "long_press_action"
-CONF_MIN_PRESS_INTERVAL_MS = "min_press_interval_ms"
-CONF_COALESCE_WINDOW_MS = "coalesce_window_ms"
 # Plenty of buttons have no double-press event at all: they publish the same
 # single press twice and leave the pairing to whoever is listening.
 CONF_DOUBLE_FROM_PRESSES = "double_from_two_presses"
 CONF_DOUBLE_PRESS_WINDOW_MS = "double_press_window_ms"
+# For a switch that publishes something we have no word for -- a toggle that
+# alternates on and off, most often -- where the only thing a press has in
+# common with the last one is that something changed.
+CONF_ANY_CHANGE_IS_PRESS = "any_change_is_a_press"
 CONF_SCENE_ORDER = "scene_order"
 
 # A rocker publishes a second vocabulary for its lower half. Configured as its
@@ -896,6 +898,8 @@ CONF_DOWN_DOUBLE_PRESS_STATES = "down_double_press_states"
 CONF_DOWN_LONG_PRESS_STATES = "down_long_press_states"
 CONF_DOWN_PRESS_ACTION = "down_press_action"
 CONF_DOWN_DOUBLE_PRESS_ACTION = "down_double_press_action"
+CONF_DOWN_DOUBLE_FROM_PRESSES = "down_double_from_two_presses"
+CONF_DOWN_DOUBLE_PRESS_WINDOW_MS = "down_double_press_window_ms"
 CONF_DOWN_LONG_PRESS_ACTION = "down_long_press_action"
 CONF_DIM_STEP_PCT = "dim_step_pct"
 
@@ -957,6 +961,7 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         section=Section.ADVANCED,
     ),
     # --- multi-press ---
+    FieldSpec(CONF_ANY_CHANGE_IS_PRESS, False, _boolean(), section=Section.ADVANCED),
     FieldSpec(CONF_DOUBLE_FROM_PRESSES, False, _boolean(), section=Section.ADVANCED),
     FieldSpec(
         CONF_DOUBLE_PRESS_WINDOW_MS,
@@ -1018,6 +1023,25 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         _select(PRESS_ACTIONS, "press_action"),
         section=Section.DOWN,
     ),
+    # The lower half gets its own pair of these: a two-button switch can
+    # perfectly well report a double on one half and not the other, and one
+    # flag governing both would be a setting that does something unasked.
+    FieldSpec(CONF_DOWN_DOUBLE_FROM_PRESSES, False, _boolean(), section=Section.DOWN),
+    FieldSpec(
+        CONF_DOWN_DOUBLE_PRESS_WINDOW_MS,
+        400,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=100,
+                max=2000,
+                step=10,
+                unit_of_measurement="ms",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.DOWN,
+        depends_on=(CONF_DOWN_DOUBLE_FROM_PRESSES, (True,)),
+    ),
     FieldSpec(
         CONF_DOWN_LONG_PRESS_ACTION,
         PressAction.DIM.value,
@@ -1067,35 +1091,6 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         CONF_PRESS_ATTRIBUTE,
         "event_type",
         selector.TextSelector(selector.TextSelectorConfig()),
-        section=Section.ADVANCED,
-    ),
-    # --- debounce ---
-    FieldSpec(
-        CONF_MIN_PRESS_INTERVAL_MS,
-        150,
-        selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0,
-                max=2000,
-                step=10,
-                unit_of_measurement="ms",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        ),
-        section=Section.ADVANCED,
-    ),
-    FieldSpec(
-        CONF_COALESCE_WINDOW_MS,
-        350,
-        selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0,
-                max=2000,
-                step=10,
-                unit_of_measurement="ms",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        ),
         section=Section.ADVANCED,
     ),
 )

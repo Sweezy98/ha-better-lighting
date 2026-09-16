@@ -88,5 +88,9 @@
   "n_rules": "{count} Regeln",
   "brightness": "Helligkeit",
   "colour_temperature": "Farbtemperatur",
-  "more": "Mehr"
+  "more": "Mehr",
+  "diag_binding": "Beobachtet",
+  "diag_cycle": "Abfolge",
+  "nothing_seen": "Noch nichts. Den Schalter drücken.",
+  "seen_hint": "Was jeder Schalter gemeldet hat und wie es gelesen wurde. Wurde ein Wert als „nichts“ gelesen, kennt dieser Schalter ihn nicht: entweder zur passenden Werteliste hinzufügen oder den Schalter jede Änderung als Tastendruck werten lassen."
 }

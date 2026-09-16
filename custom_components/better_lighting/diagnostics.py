@@ -47,6 +47,13 @@ async def async_get_config_entry_diagnostics(
                 "binding_entity": controller.binding_entity,
                 "is_default": controller.is_default,
                 "cycle": [str(step) for step in controller.cycle().steps],
+                # What the switch has actually published lately, and what each
+                # value was read as. A value the vocabulary has no word for
+                # produces no press and so leaves no other trace, which is
+                # what makes a half-configured switch so hard to diagnose.
+                "seen": list(
+                    getattr(runtime.switch_runtimes.get(controller_id), "seen", ())
+                ),
             }
             for controller_id, controller in runtime.switches.items()
         },

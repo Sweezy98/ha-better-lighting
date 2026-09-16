@@ -34,6 +34,7 @@ from .const import (
     CONF_ADAPTIVE_OVERRIDE,
     CONF_ADAPTIVE_POSITION,
     CONF_ALL,
+    CONF_ANY_CHANGE_IS_PRESS,
     CONF_AREA_ID,
     CONF_AUTORESET_MANUAL_S,
     CONF_BINDING_ENTITY,
@@ -44,7 +45,6 @@ from .const import (
     CONF_BRIGHTNESS_PCT,
     CONF_BRIGHTNESS_STRATEGY,
     CONF_CLAMP_TO_DEVICE,
-    CONF_COALESCE_WINDOW_MS,
     CONF_COLD_WHITE,
     CONF_COLOR_FORMAT,
     CONF_COLOR_LIGHTS_DARK_MEMBERS,
@@ -59,8 +59,10 @@ from .const import (
     CONF_DOUBLE_PRESS_ACTION,
     CONF_DOUBLE_PRESS_STATES,
     CONF_DOUBLE_PRESS_WINDOW_MS,
+    CONF_DOWN_DOUBLE_FROM_PRESSES,
     CONF_DOWN_DOUBLE_PRESS_ACTION,
     CONF_DOWN_DOUBLE_PRESS_STATES,
+    CONF_DOWN_DOUBLE_PRESS_WINDOW_MS,
     CONF_DOWN_LONG_PRESS_ACTION,
     CONF_DOWN_LONG_PRESS_STATES,
     CONF_DOWN_PRESS_ACTION,
@@ -92,7 +94,6 @@ from .const import (
     CONF_MAX_COLOR_TEMP_K,
     CONF_MIN_BRIGHTNESS_PCT,
     CONF_MIN_COLOR_TEMP_K,
-    CONF_MIN_PRESS_INTERVAL_MS,
     CONF_NAME,
     CONF_NIGHT_BEHAVIOR,
     CONF_NIGHT_BRIGHTNESS_PCT,
@@ -624,12 +625,14 @@ class ControllerConfig:
     down_double_press_action: PressAction = PressAction.NONE
     down_long_press_action: PressAction = PressAction.DIM
     dim_step_pct: float = 10.0
-    min_press_interval_ms: int = 150
-    coalesce_window_ms: int = 0
     # For buttons that have no double press of their own and simply publish
-    # the same single press twice.
+    # the same single press twice. Each half of a rocker decides for itself.
     double_from_two_presses: bool = False
     double_press_window_ms: int = 400
+    down_double_from_two_presses: bool = False
+    down_double_press_window_ms: int = 400
+    # For a switch whose words we have none of: any change is a press.
+    any_change_is_a_press: bool = False
 
     @property
     def slug(self) -> str:
@@ -709,10 +712,15 @@ class ControllerConfig:
                 raw.get(CONF_DOWN_LONG_PRESS_ACTION, PressAction.DIM.value)
             ),
             dim_step_pct=float(raw.get(CONF_DIM_STEP_PCT, 10)),
-            min_press_interval_ms=int(raw[CONF_MIN_PRESS_INTERVAL_MS]),
-            coalesce_window_ms=int(raw[CONF_COALESCE_WINDOW_MS]),
             double_from_two_presses=bool(raw.get(CONF_DOUBLE_FROM_PRESSES, False)),
             double_press_window_ms=int(raw.get(CONF_DOUBLE_PRESS_WINDOW_MS, 400)),
+            down_double_from_two_presses=bool(
+                raw.get(CONF_DOWN_DOUBLE_FROM_PRESSES, False)
+            ),
+            down_double_press_window_ms=int(
+                raw.get(CONF_DOWN_DOUBLE_PRESS_WINDOW_MS, 400)
+            ),
+            any_change_is_a_press=bool(raw.get(CONF_ANY_CHANGE_IS_PRESS, False)),
         )
 
 
@@ -743,8 +751,6 @@ def synthetic_controller(
         press_attribute="",
         double_press_action=PressAction.CYCLE_PREVIOUS,
         long_press_action=PressAction.RESET_ADAPTIVE,
-        min_press_interval_ms=0,
-        coalesce_window_ms=350,
     )
 
 

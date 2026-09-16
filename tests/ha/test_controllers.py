@@ -51,8 +51,6 @@ def controller_subentry(
         "double_press_states": ["double"],
         "long_press_states": ["hold"],
         "press_attribute": "event_type",
-        "min_press_interval_ms": 0,
-        "coalesce_window_ms": 0,
         **overrides,
     }
     return ConfigSubentryData(
@@ -334,27 +332,17 @@ class TestEntityBinding:
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Adaptive"
 
-    async def test_rapid_taps_move_as_many_places(
-        self, hass: HomeAssistant, freezer
-    ) -> None:
-        """A burst must not be collapsed to a single step, nor strobe through."""
-        await self._setup(hass, scenes=("Cosy", "Bright"), coalesce_window_ms=300)
+    async def test_rapid_taps_move_as_many_places(self, hass: HomeAssistant) -> None:
+        """And each of them lands at once rather than waiting on a window."""
+        await self._setup(hass, scenes=("Cosy", "Bright"))
         self._fire(hass)  # light the room, landing on adaptive
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Adaptive"
 
-        for _ in range(2):
+        for expected in ("Cosy", "Bright"):
             self._fire(hass)
             await hass.async_block_till_done()
-        # Still waiting for the window to close.
-        assert hass.states.get(SELECT).state == "Adaptive"
-
-        freezer.tick(dt.timedelta(seconds=1))
-        async_fire_time_changed(hass)
-        await hass.async_block_till_done()
-
-        # Two taps, two places: adaptive -> Cosy -> Bright, rendered once.
-        assert hass.states.get(SELECT).state == "Bright"
+            assert hass.states.get(SELECT).state == expected
 
     async def test_two_taps_stand_in_for_a_double_press(
         self, hass: HomeAssistant, freezer
@@ -456,23 +444,117 @@ class TestEntityBinding:
         await hass.async_block_till_done()
         assert heard == ["double_press"]
 
-    async def test_a_single_tap_moves_one_place(
-        self, hass: HomeAssistant, freezer
+    async def test_a_press_is_acted_on_without_waiting(
+        self, hass: HomeAssistant
     ) -> None:
-        await self._setup(hass, scenes=("Cosy", "Bright"), coalesce_window_ms=300)
+        """No window, no debounce: a press that reports its own gesture is
+        already unambiguous, and waiting on it only ever added lag."""
+        await self._setup(hass, scenes=("Cosy", "Bright"))
         self._fire(hass)
-        await hass.async_block_till_done()
-        freezer.tick(dt.timedelta(seconds=1))
-        async_fire_time_changed(hass)
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Adaptive"
 
         self._fire(hass)
         await hass.async_block_till_done()
-        freezer.tick(dt.timedelta(seconds=1))
-        async_fire_time_changed(hass)
+        assert hass.states.get(SELECT).state == "Cosy"
+
+    async def test_an_unknown_value_can_still_be_a_press(
+        self, hass: HomeAssistant
+    ) -> None:
+        """A switch whose vocabulary we have none of -- a toggle alternating
+        on and off is the common one -- cycles on anything it publishes."""
+        await self._setup(hass, scenes=("Cosy", "Bright"), any_change_is_a_press=True)
+        self._fire(hass, "on")
+        await hass.async_block_till_done()
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        # "off" is in no list this switch carries, and is a press all the same.
+        self._fire(hass, "off")
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Cosy"
+
+    async def test_an_unknown_value_is_recorded_for_the_diagnostics(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The one thing the logs could not say: a value nobody recognises
+        produces no press, and so leaves no trace of itself."""
+        entry = await self._setup(hass, scenes=("Cosy",))
+        self._fire(hass, "shake")
+        await hass.async_block_till_done()
+
+        runtimes = entry.runtime_data.switch_runtimes.values()
+        seen = [item for runtime in runtimes for item in runtime.seen]
+        assert {"shake"} == {item["value"] for item in seen}
+        assert seen[0]["read_as"] == "nothing"
+
+
+class TestToggleSwitches:
+    """A switch wired straight to the zone's light entity that toggles.
+
+    Its second press arrives as a turn-off, which read literally means the
+    room can only alternate on and off -- never cycle.
+    """
+
+    async def _setup(self, hass: HomeAssistant, **overrides):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = hub_entry(
+            subentries_data=[
+                zone_subentry(),
+                scene_subentry("Cosy"),
+                scene_subentry("Bright", brightness=100),
+            ]
+        )
+        await setup_hub(hass, entry)
+        ids = subentry_ids(entry)
+        add_zone_switch(
+            hass,
+            entry,
+            controller_subentry(
+                "Wall plate",
+                zone_id=ids["Kitchen"],
+                scene_order=[ids["Cosy"], ids["Bright"]],
+                is_default=True,
+                binding_type="zone_light",
+                **overrides,
+            ),
+            ids["Kitchen"],
+        )
+        await hass.async_block_till_done()
+        return entry
+
+    async def _toggle_off(self, hass: HomeAssistant) -> None:
+        await hass.services.async_call(
+            "light", "turn_off", {"entity_id": ZONE}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+    async def test_a_turn_off_darkens_the_room_by_default(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._setup(hass)
+        await press_zone(hass)
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        await self._toggle_off(hass)
+        assert hass.states.get("light.one").state == "off"
+
+    async def test_a_toggle_cycles_instead_of_darkening(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._setup(hass, any_change_is_a_press=True)
+        await press_zone(hass)
+        assert hass.states.get(SELECT).state == "Adaptive"
+
+        await self._toggle_off(hass)
+        assert hass.states.get(SELECT).state == "Cosy"
+        assert hass.states.get("light.one").state == "on"
+
+    async def test_a_dark_room_still_turns_off(self, hass: HomeAssistant) -> None:
+        """Only a lit room reads a turn-off as the next press; otherwise the
+        switch would light the room every time anything turned it off."""
+        await self._setup(hass, any_change_is_a_press=True)
+        await self._toggle_off(hass)
+        assert hass.states.get("light.one").state == "off"
 
 
 class TestServices:
@@ -773,6 +855,38 @@ class TestTwoButtonSwitches:
 
         await self._push(hass, "down")
 
+        assert controller.mode is ZoneMode.OFF
+
+    async def test_each_half_pairs_its_own_taps(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """A switch can report a double on one button and not the other, so
+        the lower half decides for itself whether two taps mean one."""
+        controller = await self._setup(
+            hass,
+            down_double_from_two_presses=True,
+            down_double_press_window_ms=400,
+            down_double_press_action="reset_adaptive",
+        )
+        await self._push(hass, "up")
+        assert controller.mode is ZoneMode.ADAPTIVE
+
+        # Two taps of the lower half, whose single press switches the room off.
+        for _ in range(2):
+            await self._push(hass, "down")
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+
+        # Read as its double press instead, which is not "off".
+        assert controller.mode is ZoneMode.ADAPTIVE
+
+        # And the upper half, which said nothing about pairing, is unchanged.
+        await self._push(hass, "idle")
+        await self._push(hass, "down")
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
         assert controller.mode is ZoneMode.OFF
 
     async def test_holding_down_dims_without_leaving_the_curve(

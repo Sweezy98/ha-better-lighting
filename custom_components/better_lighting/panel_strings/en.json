@@ -79,5 +79,16 @@
   "sunset": "sunset",
   "sending_now": "What each light would be sent now",
   "pick_a_room": "Pick a room to see its curve.",
-  "cancel": "Cancel"
+  "cancel": "Cancel",
+  "basics": "Basics",
+  "back": "Back",
+  "menu": "Menu",
+  "ha_sidebar": "Home Assistant menu",
+  "scenes": "Scenes",
+  "no_modes": "No modes yet. Add one to put the whole house into a film, a night out or a party.",
+  "n_lights": "{count} lights",
+  "n_scenes": "{count} scenes",
+  "n_rules": "{count} rules",
+  "brightness": "Brightness",
+  "colour_temperature": "Colour temperature"
 }

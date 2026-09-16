@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,10 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Anything before the first letter or digit of a label: the emoji the flow
+# menus lead with, and the space after it.
+_LEADING_SYMBOLS = re.compile(r"^[^\w]+", re.UNICODE)
 
 # The order the panel shows a room's sections in: what it is, what it does by
 # itself, then what it does about people and windows. Same grouping as the
@@ -151,6 +156,16 @@ def _walk_steps(block: Any):
             yield from _walk_steps(value)
 
 
+def _plain(label: str) -> str:
+    """A label with its decoration taken off.
+
+    The flow menus lead with an emoji, which reads well in a list of buttons
+    and badly in a breadcrumb trail -- and the panel draws its own icons
+    beside these words anyway, so a second one in the text is just noise.
+    """
+    return _LEADING_SYMBOLS.sub("", label).strip()
+
+
 def labels(language: str) -> dict[str, Any]:
     """Field labels, descriptions and option names, flattened by key.
 
@@ -189,6 +204,14 @@ def labels(language: str) -> dict[str, Any]:
     sections = {
         section.value: section.value.replace("_", " ").title() for section in Section
     }
+    # A form's own section headers name several of these, and are the only
+    # translated words for the ones no menu lists -- a switch's lower half
+    # was showing "Down" in both languages because nothing read them.
+    for step in _walk_steps(translations):
+        if isinstance(step, dict):
+            for name, block in (step.get("sections") or {}).items():
+                if isinstance(block, dict) and (title := block.get("name")):
+                    sections[name] = title
     # The menus already name each of these in the user's language; reuse those
     # rather than inventing a second set of words for the same things. Every
     # menu entry counts, not only the ones named after a Section -- scenes,
@@ -201,7 +224,7 @@ def labels(language: str) -> dict[str, Any]:
         "data": data,
         "descriptions": described,
         "options": options,
-        "sections": sections,
+        "sections": {name: _plain(title) for name, title in sections.items()},
     }
 
 

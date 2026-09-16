@@ -327,6 +327,7 @@ function ensureHaControls() {
       "ha-switch",
       "ha-icon-picker",
       "ha-area-picker",
+      "ha-icon",
     ];
     if (wanted.every((tag) => customElements.get(tag))) return true;
     try {
@@ -353,6 +354,51 @@ function ensureHaControls() {
   })();
   return controlsReady;
 }
+
+/**
+ * Home Assistant's chart component, if it can be reached.
+ *
+ * Separate from the controls above and loaded only by the diagnostics page:
+ * it drags in ECharts, which is far too much to make every visit to the panel
+ * pay for. The history-graph card is what pulls it in; when that stops working
+ * the curve is drawn by hand instead, which is what happened here before.
+ */
+let chartReady;
+function ensureHaChart() {
+  if (chartReady) return chartReady;
+  chartReady = (async () => {
+    if (customElements.get("ha-chart-base")) return true;
+    try {
+      const helpers = await window.loadCardHelpers?.();
+      if (helpers) {
+        await helpers.createCardElement({ type: "history-graph", entities: [] });
+      }
+    } catch {
+      // Then the hand-drawn curve it is.
+    }
+    return Boolean(customElements.get("ha-chart-base"));
+  })();
+  return chartReady;
+}
+
+/* The icon beside each screen in the sidebar. Home Assistant's own names, so
+   they match what the rest of the interface uses for the same idea. */
+const SECTION_ICONS = {
+  basic: "mdi:information-outline",
+  group: "mdi:lightbulb-group",
+  adaptive: "mdi:weather-sunny",
+  night: "mdi:weather-night",
+  power: "mdi:flash",
+  presence: "mdi:motion-sensor",
+  insect: "mdi:window-open-variant",
+  advanced: "mdi:cog-outline",
+  down: "mdi:arrow-down-bold-outline",
+  scenes: "mdi:palette",
+  switches: "mdi:light-switch",
+  calibrations: "mdi:tune-variant",
+  rules: "mdi:script-text-outline",
+  presets: "mdi:palette-swatch",
+};
 
 /* ------------------------------------------------------------------ */
 /* A form, rendered from the same field tables the settings screens use.*/
@@ -475,28 +521,6 @@ class BlForm extends HTMLElement {
         .import { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
                   padding:12px 0; border-top:1px solid var(--divider-color,#e0e0e0); }
         .import .chip { gap:6px; }
-        #crumbs { display:flex; min-height:34px; align-items:center; gap:10px; margin-bottom:12px; }
-        .crumb-back { background:var(--card-background-color); color:inherit;
-                      border:1px solid var(--divider-color,#ccc); border-radius:8px;
-                      width:34px; height:34px; padding:0; font-size:20px;
-                      line-height:1; cursor:pointer; flex:0 0 auto; }
-        .crumb-back[disabled] { opacity:.35; cursor:default; }
-        .crumb-trail { color:var(--secondary-text-color); font-size:14px; }
-        details.diag { border-top:1px solid var(--divider-color,#e0e0e0); }
-        details.diag table { width:100%; border-collapse:collapse; margin:4px 0 12px; }
-        details.diag th { text-align:left; font-weight:400; padding:4px 12px 4px 4px;
-                          color:var(--secondary-text-color); white-space:nowrap;
-                          vertical-align:top; width:1%; }
-        details.diag td { padding:4px; font-variant-numeric:tabular-nums; }
-        .log { max-height:340px; overflow:auto; font-size:13px; }
-        .log .entry { padding:6px 4px; border-top:1px solid var(--divider-color,#e0e0e0);
-                      display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
-        .curve { width:100%; height:200px; display:block; margin:8px 0 12px;
-                 border-radius:8px; overflow:hidden;
-                 background:var(--secondary-background-color,#eee); }
-        .curve-now th, .curve-lights th { text-align:left; font-weight:400;
-                 color:var(--secondary-text-color); padding:3px 12px 3px 0; }
-        .curve-lights td, .curve-now td { font-variant-numeric:tabular-nums; }
       </style>
       <div id="fields"></div>`;
     const holder = this.shadowRoot.getElementById("fields");
@@ -658,14 +682,20 @@ class BlForm extends HTMLElement {
       return null;
     }
     let selector = field.selector;
+    const [[kind, config]] = Object.entries(selector);
     if (field.options_key) {
       const options = (this._choices[field.options_key] || []).map((choice) => ({
         value: choice.value,
         label: choice.label,
       }));
       if (!options.length) return null;
-      const [[kind, config]] = Object.entries(selector);
       selector = { [kind]: { ...config, options } };
+    }
+    // Home Assistant draws a select with few options as a column of radio
+    // buttons unless it is told otherwise, which is why the scene pickers
+    // looked nothing like the dropdowns beside them.
+    if (kind === "select" && !config.multiple && !config.mode) {
+      selector = { select: { ...selector.select, mode: "dropdown" } };
     }
 
     const element = document.createElement("ha-selector");
@@ -766,9 +796,11 @@ class BetterLightingPanel extends HTMLElement {
     this._schema = null;
     this._roomId = null;
     this._modeId = null;
-    // Which screen is open: a room's section, its scenes, the global
-    // settings, or a mode. The panel is one page, not a wizard.
-    this._view = { kind: "room", section: null };
+    // Which screen is open: the list of rooms, one room's section, its
+    // scenes, the global settings, or a mode. The panel is one page, not a
+    // wizard.
+    this._view = { kind: "rooms" };
+    this._navOpen = false;
     this._scene = null;
     this._selectedLight = null;
     this._previewing = false;
@@ -890,6 +922,12 @@ class BetterLightingPanel extends HTMLElement {
     this._hub = hub || {};
     if (!this._roomId && rooms.length) this._roomId = rooms[0].id;
     this._paint();
+    // The icons come from an element registered lazily with Home Assistant's
+    // card editors, so the first paint usually happens without them.
+    if (!this._iconsChecked) {
+      this._iconsChecked = true;
+      ensureHaControls().then(() => this._paint());
+    }
   }
 
   get _mode() {
@@ -1042,16 +1080,17 @@ class BetterLightingPanel extends HTMLElement {
 
     main.innerHTML = `
       <div class="card">
-        <h2>${this._t("diagnostics")}</h2>
-        <div class="bar"><button class="flat" id="refresh">${this._t(
+        <div class="bar" style="margin-top:0"><button class="flat" id="refresh">${this._t(
           "refresh"
         )}</button></div>
         ${rooms}
         ${modes}
       </div>
       <div class="card">
-        <h2>${this._t("the_curve")}</h2>
-        <div id="curve"></div>
+        <details open>
+          <summary>${this._t("the_curve")}</summary>
+          <div class="fold-body" id="curve"></div>
+        </details>
       </div>
       <div class="card">
         <h2>${this._t("live_events")}</h2>
@@ -1070,10 +1109,12 @@ class BetterLightingPanel extends HTMLElement {
   /**
    * The adaptive curve, drawn.
    *
-   * Plain SVG: a line for brightness and a band behind it painted with the
-   * colour temperature at each point, so the shape and the warmth are the
-   * same picture. Markers for sunrise, sunset and now, because the question
-   * being asked is almost always "what is it doing at this hour".
+   * Home Assistant's own chart when it can be reached, so the graph behaves
+   * like every other graph in the house -- the same tooltips, the same
+   * legend, the same theme. Behind it, a hand-drawn SVG: a line for
+   * brightness over a band painted with the colour temperature at each
+   * point. Either way, markers for sunrise, sunset and now, because the
+   * question being asked is almost always "what is it doing at this hour".
    */
   async _paintCurve(into) {
     if (!this._roomId) {
@@ -1122,13 +1163,7 @@ class BetterLightingPanel extends HTMLElement {
 
     into.innerHTML = `
       <p class="muted">${this._t("curve_hint")}</p>
-      <svg viewBox="0 0 ${width} ${height}" class="curve" preserveAspectRatio="none">
-        ${band}
-        <path d="${line}" fill="none" stroke="currentColor" stroke-width="2"/>
-        ${marker(data.events.sunrise, this._t("sunrise"), true)}
-        ${marker(data.events.sunset, this._t("sunset"), true)}
-        ${marker(data.now.at, this._t("now"), false)}
-      </svg>
+      <div id="chart"></div>
       <table class="curve-now">
         <tr><th>${this._t("now")}</th>
             <td>${data.now.brightness_pct}% · ${data.now.color_temp_kelvin} K</td></tr>
@@ -1144,6 +1179,100 @@ class BetterLightingPanel extends HTMLElement {
             }</td></tr>`
         )
         .join("")}</table>`;
+
+    const chart = into.querySelector("#chart");
+    if (!(await this._haChart(chart, data))) {
+      chart.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" class="curve" preserveAspectRatio="none">
+          ${band}
+          <path d="${line}" fill="none" stroke="currentColor" stroke-width="2"/>
+          ${marker(data.events.sunrise, this._t("sunrise"), true)}
+          ${marker(data.events.sunset, this._t("sunset"), true)}
+          ${marker(data.now.at, this._t("now"), false)}
+        </svg>`;
+    }
+  }
+
+  /**
+   * The same curve, in Home Assistant's chart component.
+   *
+   * Returns whether it managed it: the component is lazily registered with
+   * the history card and was never promised to a custom panel, so failing to
+   * get it has to be ordinary rather than fatal.
+   */
+  async _haChart(into, data) {
+    if (!(await ensureHaChart()) || !customElements.get("ha-chart-base")) {
+      return false;
+    }
+    try {
+      const at = (iso) => new Date(iso).getTime();
+      const mark = (iso, label, dashed) => ({
+        xAxis: at(iso),
+        label: { formatter: label, position: "insideEndTop" },
+        lineStyle: { type: dashed ? "dashed" : "solid" },
+      });
+      const chart = document.createElement("ha-chart-base");
+      chart.hass = this._hass;
+      chart.height = "260px";
+      chart.data = [
+        {
+          id: "brightness",
+          type: "line",
+          name: this._t("brightness"),
+          yAxisIndex: 0,
+          showSymbol: false,
+          smooth: true,
+          data: data.samples.map((point) => [at(point.at), point.brightness_pct]),
+          markLine: {
+            symbol: "none",
+            silent: true,
+            data: [
+              mark(data.events.sunrise, this._t("sunrise"), true),
+              mark(data.events.sunset, this._t("sunset"), true),
+              mark(data.now.at, this._t("now"), false),
+            ],
+          },
+        },
+        {
+          id: "color_temp",
+          type: "line",
+          name: this._t("colour_temperature"),
+          yAxisIndex: 1,
+          showSymbol: false,
+          smooth: true,
+          data: data.samples.map((point) => [
+            at(point.at),
+            point.color_temp_kelvin,
+          ]),
+        },
+      ];
+      chart.options = {
+        xAxis: { type: "time" },
+        yAxis: [
+          {
+            type: "value",
+            min: 0,
+            max: 100,
+            axisLabel: { formatter: "{value}%" },
+            splitLine: { show: true },
+          },
+          {
+            type: "value",
+            position: "right",
+            scale: true,
+            axisLabel: { formatter: "{value} K" },
+            splitLine: { show: false },
+          },
+        ],
+        grid: { top: 24, bottom: 8, left: 8, right: 8, containLabel: true },
+        tooltip: { trigger: "axis" },
+      };
+      into.appendChild(chart);
+      return true;
+    } catch {
+      // Whatever it wanted, it is not worth the diagnostics page for.
+      return false;
+    }
   }
 
   /** Subscribe to the events the integration fires, and keep the last few. */
@@ -1194,114 +1323,145 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /**
-   * Where you are, and the one way back.
+   * Where you are, as a trail from the top.
    *
-   * Sub-pages used to carry their own back button, which meant several
-   * different buttons doing the same thing and none of them saying what you
-   * would go back *to*. One strip above the content says both.
+   * Every screen names its whole path -- Rooms, the room, the section -- so
+   * the header says both where you are and what each step up leads to, and
+   * the one back button follows the trail rather than a history of clicks.
    */
   _trail() {
     const view = this._view;
     const room = this._room;
     const mode = this._mode;
-    const named = this._labels.sections;
-    const to = (next) => () => {
+    // Leaving a screen always drops a draft: a preview left running would
+    // otherwise keep the room on a scene nobody saved.
+    const to = (next) => async () => {
+      await this._stopPreview();
+      this._scene = null;
       this._view = next;
       this._paint();
     };
-
-    if (this._scene) {
-      return {
-        parts: [room?.name, named.scenes, this._scene.name],
-        back: async () => {
-          await this._stopPreview();
-          this._scene = null;
-          this._view = { kind: "scenes" };
-          this._paint();
-        },
-      };
-    }
+    const rooms = { label: this._t("rooms"), go: to({ kind: "rooms" }) };
+    const modes = { label: this._t("modes"), go: to({ kind: "modes" }) };
+    const theRoom = room
+      ? { label: room.name, go: to({ kind: "room", section: null }) }
+      : null;
+    const named = (key) => this._sectionName(key);
 
     switch (view.kind) {
+      case "rooms":
+        return [rooms];
+      case "modes":
+        return [modes];
       case "hub":
-        return { parts: [this._t("global_settings")] };
+        return [{ label: this._t("global_settings") }];
       case "diagnostics":
-        return { parts: [this._t("diagnostics")] };
+        return [{ label: this._t("diagnostics") }];
       case "presets": {
-        if (view.index === undefined) return { parts: [this._t("colour_presets")] };
+        const top = { label: named("presets"), go: to({ kind: "presets" }) };
+        if (view.index === undefined) return [top];
         const preset = (this._hub.color_presets || [])[view.index];
-        return {
-          parts: [this._t("colour_presets"), preset?.name],
-          back: to({ kind: "presets" }),
-        };
+        return [top, { label: preset?.name || this._t("add") }];
       }
-      case "scenes":
+      case "scenes": {
+        const top = {
+          label: named("scenes"),
+          go: to({ kind: "scenes" }),
+        };
+        if (this._scene) {
+          return [rooms, theRoom, top, { label: this._scene.name }];
+        }
         if (view.sub === "import") {
-          return {
-            parts: [room?.name, named.scenes, this._t("import_scenes")],
-            back: to({ kind: "scenes" }),
-          };
+          return [rooms, theRoom, top, { label: this._t("import_scenes") }];
         }
-        return { parts: [room?.name, named.scenes] };
+        return [rooms, theRoom, top];
+      }
       case "switches": {
+        const top = { label: named("switches"), go: to({ kind: "switches" }) };
         const item = (room?.data.switches || [])[view.index];
+        if (view.index === undefined) return [rooms, theRoom, top];
+        const one = {
+          label: item?.name || this._t("switch"),
+          go: to({ kind: "switches", index: view.index }),
+        };
         if (view.sub === "order") {
-          return {
-            parts: [room?.name, named.switches, item?.name, this._t("what_it_cycles")],
-            back: to({ kind: "switches", index: view.index }),
-          };
+          return [rooms, theRoom, top, one, { label: this._t("what_it_cycles") }];
         }
-        if (view.index !== undefined) {
-          return {
-            parts: [room?.name, named.switches, item?.name],
-            back: to({ kind: "switches" }),
-          };
-        }
-        return { parts: [room?.name, named.switches] };
+        return [rooms, theRoom, top, { ...one, go: undefined }];
       }
       case "calibrations": {
+        const top = {
+          label: named("calibrations"),
+          go: to({ kind: "calibrations" }),
+        };
         const item = (room?.data.light_profiles || [])[view.index];
-        if (view.index !== undefined) {
-          return {
-            parts: [room?.name, named.calibrations, item?.light_entity],
-            back: to({ kind: "calibrations" }),
-          };
-        }
-        return { parts: [room?.name, named.calibrations] };
+        if (view.index === undefined) return [rooms, theRoom, top];
+        return [
+          rooms,
+          theRoom,
+          top,
+          { label: item?.light_entity || this._t("add") },
+        ];
       }
-      case "mode":
-        if (view.creating) return { parts: [this._t("add_mode")] };
+      case "mode": {
+        if (view.creating) return [modes, { label: this._t("add_mode") }];
+        const one = { label: mode?.name, go: to({ kind: "mode" }) };
         if (view.rule !== undefined) {
-          return { parts: [mode?.name, named.rules], back: to({ kind: "mode" }) };
+          return [modes, one, { label: named("rules") }];
         }
-        return { parts: [mode?.name] };
+        return [modes, { ...one, go: undefined }];
+      }
       default: {
-        if (view.creating) return { parts: [this._t("add_room")] };
+        if (view.creating) return [rooms, { label: this._t("add_room") }];
+        if (!room) return [rooms];
         const groups = this._schema?.forms.zone || [];
         const group =
           groups.find((g) => g.section === view.section) || groups[0];
-        return {
-          parts: [room?.name, named[group?.section] || group?.section],
-        };
+        return [rooms, theRoom, { label: named(group?.section) }];
       }
     }
   }
 
+  /**
+   * The trail, and the button that walks back up it.
+   *
+   * Both live in the page header beside the title rather than above the
+   * content: a strip that appears and disappears between screens shifted
+   * everything below it, and the header is the one thing on the page that
+   * never moves.
+   */
   _paintCrumbs() {
     const holder = this.shadowRoot.getElementById("crumbs");
+    const back = this.shadowRoot.getElementById("crumb-back");
+    const menu = this.shadowRoot.getElementById("menu");
     if (!holder) return;
-    const trail = this._trail();
-    // Always present, even at the top: a strip that comes and goes shifts
-    // everything below it every time you move, which reads as a glitch.
-    holder.innerHTML = `<button class="crumb-back" id="crumb-back" ${
-      trail.back ? "" : "disabled"
-    }>&lsaquo;</button>
-      <span class="crumb-trail">${(trail.parts || [])
-        .filter(Boolean)
-        .join(" &rsaquo; ")}</span>`;
-    if (trail.back) {
-      holder.querySelector("#crumb-back").addEventListener("click", trail.back);
-    }
+    const crumbs = this._trail().filter(Boolean);
+
+    back.title = this._t("back");
+    back.innerHTML = this._icon("mdi:arrow-left") || "\u2039";
+    menu.title = this._t("ha_sidebar");
+    menu.innerHTML = this._icon("mdi:menu") || "\u2630";
+
+    holder.innerHTML = crumbs
+      .map((crumb, index) => {
+        const last = index === crumbs.length - 1;
+        const step = `<span class="crumb"${
+          last || !crumb.go ? "" : ` data-crumb="${index}"`
+        }>${crumb.label ?? ""}</span>`;
+        return index ? `<span class="crumb sep">\u203a</span>${step}` : step;
+      })
+      .join("");
+    holder.querySelectorAll("[data-crumb]").forEach((step) =>
+      step.addEventListener("click", () =>
+        crumbs[Number(step.dataset.crumb)].go()
+      )
+    );
+
+    // The button is always there and greys out at the top, rather than coming
+    // and going: a control that vanishes is one people stop reaching for.
+    const parent = crumbs[crumbs.length - 2];
+    back.disabled = !parent?.go;
+    back.onclick = parent?.go || null;
   }
 
   /** The runtime choices a field may ask for, for the room in hand. */
@@ -1323,18 +1483,54 @@ class BetterLightingPanel extends HTMLElement {
   _shell() {
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display:block; height:100%;
+        :host { display:block; min-height:100%;
                 background:var(--primary-background-color);
                 color:var(--primary-text-color);
                 font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
-        header { display:flex; align-items:center; gap:16px; height:56px; padding:0 16px;
+        /* Sticky, because the way back has to be reachable from the bottom of
+           a long form as well as the top of one. */
+        header { position:sticky; top:0; z-index:5;
+                 display:flex; align-items:center; gap:8px;
+                 min-height:56px; padding:6px 12px; box-sizing:border-box;
                  background:var(--app-header-background-color, var(--primary-color));
-                 color:var(--app-header-text-color, #fff); font-size:20px; }
-        .body { display:grid; grid-template-columns:240px 1fr; gap:16px; padding:16px;
+                 color:var(--app-header-text-color, #fff);
+                 box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.15)); }
+        header .titles { display:flex; align-items:baseline; gap:6px 14px;
+                         flex-wrap:wrap; min-width:0; }
+        .app-title { font-size:20px; white-space:nowrap; }
+        nav.crumbs { display:flex; align-items:baseline; gap:6px; flex-wrap:wrap;
+                     font-size:14px; opacity:.85; min-width:0; }
+        nav.crumbs .crumb { white-space:nowrap; }
+        nav.crumbs .crumb[data-crumb] { cursor:pointer; }
+        nav.crumbs .crumb[data-crumb]:hover { text-decoration:underline; }
+        .icon-btn { background:transparent; color:inherit; border:none; padding:0;
+                    width:40px; height:40px; border-radius:50%; flex:0 0 auto;
+                    display:inline-flex; align-items:center; justify-content:center;
+                    cursor:pointer; }
+        .icon-btn:hover:not([disabled]) { background:rgba(255,255,255,.12); }
+        .icon-btn[disabled] { opacity:.35; cursor:default; }
+        /* Home Assistant hides its own sidebar on a narrow screen and expects
+           the page to offer the way out. Without this the panel is a room with
+           no door. */
+        #menu { display:none; }
+        @media (max-width:870px) { #menu { display:inline-flex; } }
+        ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
+        .body { display:grid; grid-template-columns:260px 1fr; gap:16px; padding:16px;
                 align-items:start; }
-        @media (max-width:800px) { .body { grid-template-columns:1fr; } }
+        @media (max-width:800px) { .body { grid-template-columns:1fr; padding:12px; } }
+        @media (max-width:500px) { .body { padding:8px; gap:12px; } }
+        /* The menu scrolls with its own list rather than with the page, so a
+           house with twelve rooms does not bury the global settings. */
+        .nav { position:sticky; top:72px; max-height:calc(100vh - 88px); overflow:auto; }
+        .nav-head { display:none; }
+        @media (max-width:800px) {
+          .nav { position:static; max-height:none; overflow:visible; }
+          .nav-head { display:block; }
+          .nav-body[data-collapsed="1"] { display:none; }
+        }
         .card { background:var(--card-background-color,#fff); border-radius:12px;
                 padding:16px; box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.1)); }
+        @media (max-width:500px) { .card { padding:12px; } }
         /* Stacked cards -- a mode and its rules, the diagnostics tables and
            the curve -- were flush against each other, which read as one card
            with a line through it rather than two things. */
@@ -1342,10 +1538,12 @@ class BetterLightingPanel extends HTMLElement {
         .card > :last-child { margin-bottom:0; }
         h2 { margin:0 0 12px; font-size:16px; font-weight:500; }
         ul { list-style:none; margin:0 0 4px; padding:0; }
-        li { padding:10px 12px; border-radius:8px; cursor:pointer; }
+        li { padding:10px 12px; border-radius:8px; cursor:pointer;
+             display:flex; align-items:center; gap:10px; }
         li:hover { background:var(--secondary-background-color); }
         li[aria-selected="true"] { background:var(--primary-color); color:#fff; }
-        ul.sub { margin:2px 0 8px 12px; border-left:2px solid var(--divider-color,#ddd); }
+        li.section { font-size:15px; font-weight:500; }
+        ul.sub { margin:2px 0 8px 14px; border-left:2px solid var(--divider-color,#ddd); }
         ul.sub li { font-size:14px; padding:7px 10px; }
         h3 { margin:18px 0 10px; font-size:15px; font-weight:500; }
         /* A boxed accordion, in the shape Home Assistant's expansion panel
@@ -1367,21 +1565,25 @@ class BetterLightingPanel extends HTMLElement {
         details[open] > summary::after { transform:rotate(225deg) translate(-3px,-3px); }
         details[open] > summary { border-bottom:1px solid var(--divider-color,#3d3d3d); }
         details > bl-form { display:block; padding:16px; }
+        details > .fold-body { padding:16px; }
         .light { display:flex; align-items:center; gap:12px; padding:8px 12px;
-                 border-radius:8px; cursor:pointer; }
+                 border-radius:8px; cursor:pointer; flex-wrap:wrap; }
+        .light > ha-selector { flex:1 1 150px; min-width:150px; }
         .light[aria-selected="true"] { outline:2px solid var(--primary-color); }
         .swatch { width:22px; height:22px; border-radius:50%; flex:0 0 auto;
                   border:1px solid rgba(0,0,0,.2); }
-        .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
-                white-space:nowrap; }
+        .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+        li .grow, .light .grow { white-space:normal; }
         .muted { color:var(--secondary-text-color); font-size:13px; }
         button { font:inherit; padding:8px 14px; border-radius:8px; border:none;
-                 cursor:pointer; background:var(--primary-color); color:#fff; }
+                 cursor:pointer; background:var(--primary-color); color:#fff;
+                 display:inline-flex; align-items:center; gap:6px; }
         button.flat { background:transparent; color:var(--primary-color); }
         button.danger { background:var(--error-color,#db4437); }
         .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px; }
         .card > p.muted:first-of-type { margin-top:0; }
         input[type=text] { font:inherit; padding:8px; border-radius:8px; width:100%;
+                           box-sizing:border-box;
                            border:1px solid var(--divider-color,#ccc);
                            background:var(--card-background-color); color:inherit; }
         .editor { display:grid; grid-template-columns:1fr 300px; gap:16px; }
@@ -1393,82 +1595,193 @@ class BetterLightingPanel extends HTMLElement {
         .update button { background:#fff; color:var(--primary-text-color,#111); }
         .update .muted { color:rgba(255,255,255,.85); }
         .banner { display:flex; align-items:center; gap:16px; margin-bottom:16px;
-                  border-left:4px solid var(--info-color,#3f9bd4); }
+                  border-left:4px solid var(--info-color,#3f9bd4); flex-wrap:wrap; }
         .banner.live { border-left-color:var(--success-color,#43a047); }
         .light select { font:inherit; padding:5px 8px; border-radius:8px;
                         border:1px solid var(--divider-color,#ccc);
                         background:var(--card-background-color); color:inherit; }
         .live { background:var(--success-color,#43a047); }
+        /* Inside the box now that these are boxed accordions, rather than
+           running up against its edges. */
+        details.diag table { width:100%; border-collapse:collapse; margin:8px 0 12px; }
+        details.diag th { text-align:left; font-weight:400; padding:4px 12px 4px 16px;
+                          color:var(--secondary-text-color); vertical-align:top; }
+        details.diag td { padding:4px 16px 4px 0; font-variant-numeric:tabular-nums;
+                          word-break:break-word; }
+        .log { max-height:340px; overflow:auto; font-size:13px; }
+        .log .entry { padding:6px 4px; border-top:1px solid var(--divider-color,#e0e0e0);
+                      display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+        .log .entry span { word-break:break-word; }
+        .curve { width:100%; height:200px; display:block; margin:8px 0 12px;
+                 border-radius:8px; overflow:hidden;
+                 background:var(--secondary-background-color,#eee); }
+        .curve-now th, .curve-lights th { text-align:left; font-weight:400;
+                 color:var(--secondary-text-color); padding:3px 12px 3px 0; }
+        .curve-lights td, .curve-now td { font-variant-numeric:tabular-nums; }
       </style>
-      <header><span>Better Lighting</span></header>
+      <header>
+        <button class="icon-btn" id="menu"></button>
+        <button class="icon-btn" id="crumb-back" disabled></button>
+        <div class="titles">
+          <span class="app-title">Better Lighting</span>
+          <nav class="crumbs" id="crumbs"></nav>
+        </div>
+      </header>
       <div class="body">
-        <div class="card" id="rooms"></div>
-        <div><div id="crumbs"></div><div id="main"></div></div>
+        <div class="card nav" id="rooms"></div>
+        <div id="main"></div>
       </div>`;
+
+    // Home Assistant's own sidebar, which it hides on a narrow screen.
+    this.shadowRoot.getElementById("menu").addEventListener("click", () =>
+      this.dispatchEvent(
+        new CustomEvent("hass-toggle-menu", { bubbles: true, composed: true })
+      )
+    );
+  }
+
+  /** An mdi icon, when Home Assistant's element for drawing one is here. */
+  _icon(name) {
+    return customElements.get("ha-icon")
+      ? `<ha-icon icon="${name}"></ha-icon>`
+      : "";
+  }
+
+  /** What to call one screen. */
+  _sectionName(key) {
+    // Every form has a "basic" group and no flow menu names it -- the room's
+    // is called Lights there, the hub's and the switch's nothing at all --
+    // so the panel supplies one word for all of them.
+    if (key === "basic") return this._t("basics");
+    return this._labels.sections[key] || String(key).replace(/_/g, " ");
   }
 
   _paint() {
     const nav = this.shadowRoot.getElementById("rooms");
-    const labels = this._labels;
     const sections = (this._schema?.forms.zone || []).map((group) => group.section);
+    const icon = (name) => this._icon(name);
 
     // No section chosen means the first one, which is what the content pane
     // falls back to -- so the highlight has to agree with it, or a room opens
     // showing Group behaviour with nothing in the list marked.
     const current = this._view.section || sections[0];
+    // Only the screens that belong to a room keep that room open. Colour
+    // presets and diagnostics are nobody's room, and leaving the room lit
+    // while one of those was showing is what made the highlight look broken.
+    const inRoom = ["room", "scenes", "switches", "calibrations"].includes(
+      this._view.kind
+    );
+    const extras = [
+      ["scenes", this._t("scenes")],
+      ["switches", this._t("switches")],
+      ["calibrations", this._t("calibration")],
+    ];
+
     const roomRows = this._rooms
       .map((room) => {
-        const open = room.id === this._roomId && this._view.kind !== "hub" &&
-          this._view.kind !== "mode";
+        const open = inRoom && room.id === this._roomId;
         const children = open
           ? `<ul class="sub">${[
               ...sections.map(
                 (section) =>
                   `<li data-section="${section}" aria-selected="${
                     this._view.kind === "room" && current === section
-                  }">${labels.sections[section] || section}</li>`
+                  }">${icon(SECTION_ICONS[section] || "mdi:circle-small")}<span
+                    class="grow">${this._sectionName(section)}</span></li>`
               ),
-              `<li data-section="scenes" aria-selected="${
-                this._view.kind === "scenes"
-              }">${labels.sections.scenes || "🎨 Scenes"}</li>`,
-              `<li data-section="switches" aria-selected="${
-                this._view.kind === "switches"
-              }">${labels.sections.switches || "🎚️ Switches"}</li>`,
-              `<li data-section="calibrations" aria-selected="${
-                this._view.kind === "calibrations"
-              }">${labels.sections.calibrations || "📐 Calibration"}</li>`,
+              ...extras.map(
+                ([key, fallback]) =>
+                  `<li data-section="${key}" aria-selected="${
+                    this._view.kind === key
+                  }">${icon(SECTION_ICONS[key])}<span class="grow">${
+                    this._labels.sections[key] || fallback
+                  }</span></li>`
+              ),
             ].join("")}</ul>`
           : "";
-        return `<li class="room" data-room="${room.id}" aria-selected="${open}">${room.name}</li>${children}`;
+        return `<li class="room" data-room="${room.id}" aria-selected="${open}">${icon(
+          room.data?.icon || "mdi:lightbulb-group"
+        )}<span class="grow">${room.name}</span></li>${children}`;
       })
       .join("");
 
     nav.innerHTML = `
-      <h2>${this._t("rooms")}</h2>
-      <ul>${roomRows}</ul>
-      <div class="bar"><button class="flat" id="add-room">${this._t("add_room")}</button></div>
-      <h2 style="margin-top:20px">${this._t("modes")}</h2>
-      <ul>${this._modes
-        .map(
-          (mode) =>
-            `<li data-mode="${mode.id}" aria-selected="${
-              this._view.kind === "mode" && this._modeId === mode.id
-            }">${mode.name}</li>`
-        )
-        .join("")}</ul>
-      <div class="bar"><button class="flat" id="add-mode">${this._t("add_mode")}</button></div>
-      <ul style="margin-top:20px">
-        <li data-hub="1" aria-selected="${this._view.kind === "hub"}">⚙️ ${this._t("global_settings")}</li>
-        <li data-presets="1" aria-selected="${
-          this._view.kind === "presets"
-        }">${labels.sections.presets || `🎨 ${this._t("colour_presets")}`}</li>
-        <li data-diagnostics="1" aria-selected="${
-          this._view.kind === "diagnostics"
-        }">🩺 ${this._t("diagnostics")}</li>
-      </ul>`;
+      <div class="nav-head">
+        <button class="flat" id="nav-toggle">${icon("mdi:menu")}<span>${this._t(
+          "menu"
+        )}</span></button>
+      </div>
+      <div class="nav-body" id="nav-body" data-collapsed="${this._navOpen ? "0" : "1"}">
+        <ul>
+          <li class="section" data-overview="rooms" aria-selected="${
+            this._view.kind === "rooms"
+          }">${icon("mdi:home-group")}<span class="grow">${this._t("rooms")}</span></li>
+          ${roomRows}
+        </ul>
+        <div class="bar"><button class="flat" id="add-room">${icon(
+          "mdi:plus"
+        )}<span>${this._t("add_room")}</span></button></div>
+        <ul style="margin-top:12px">
+          <li class="section" data-overview="modes" aria-selected="${
+            this._view.kind === "modes"
+          }">${icon("mdi:movie-open-outline")}<span class="grow">${this._t(
+            "modes"
+          )}</span></li>
+          ${this._modes
+            .map(
+              (mode) =>
+                `<li data-mode="${mode.id}" aria-selected="${
+                  this._view.kind === "mode" && this._modeId === mode.id
+                }">${icon(mode.data?.icon || "mdi:movie-open")}<span class="grow">${
+                  mode.name
+                }</span></li>`
+            )
+            .join("")}
+        </ul>
+        <div class="bar"><button class="flat" id="add-mode">${icon(
+          "mdi:plus"
+        )}<span>${this._t("add_mode")}</span></button></div>
+        <ul style="margin-top:20px">
+          <li class="section" data-hub="1" aria-selected="${
+            this._view.kind === "hub"
+          }">${icon("mdi:cog")}<span class="grow">${this._t(
+            "global_settings"
+          )}</span></li>
+          <li class="section" data-presets="1" aria-selected="${
+            this._view.kind === "presets"
+          }">${icon(SECTION_ICONS.presets)}<span class="grow">${
+            this._labels.sections.presets || this._t("colour_presets")
+          }</span></li>
+          <li class="section" data-diagnostics="1" aria-selected="${
+            this._view.kind === "diagnostics"
+          }">${icon("mdi:stethoscope")}<span class="grow">${this._t(
+            "diagnostics"
+          )}</span></li>
+        </ul>
+      </div>`;
 
+    // On a narrow screen the menu is a drawer rather than a column, and
+    // choosing something closes it -- otherwise every tap leaves you looking
+    // at the menu you just used.
+    const chosen = () => {
+      this._navOpen = false;
+    };
+    nav.querySelector("#nav-toggle").addEventListener("click", () => {
+      this._navOpen = !this._navOpen;
+      nav.querySelector("#nav-body").dataset.collapsed = this._navOpen ? "0" : "1";
+    });
+    nav.querySelectorAll("li[data-overview]").forEach((item) =>
+      item.addEventListener("click", () => {
+        chosen();
+        this._stopPreview();
+        this._scene = null;
+        this._view = { kind: item.dataset.overview };
+        this._paint();
+      })
+    );
     nav.querySelectorAll("li.room").forEach((item) =>
       item.addEventListener("click", () => {
+        chosen();
         this._stopPreview();
         this._roomId = item.dataset.room;
         this._view = { kind: "room", section: null };
@@ -1479,6 +1792,7 @@ class BetterLightingPanel extends HTMLElement {
     nav.querySelectorAll("li[data-section]").forEach((item) =>
       item.addEventListener("click", (event) => {
         event.stopPropagation();
+        chosen();
         const section = item.dataset.section;
         this._stopPreview();
         this._scene = null;
@@ -1490,29 +1804,35 @@ class BetterLightingPanel extends HTMLElement {
     );
     nav.querySelectorAll("li[data-mode]").forEach((item) =>
       item.addEventListener("click", () => {
+        chosen();
         this._modeId = item.dataset.mode;
         this._view = { kind: "mode" };
         this._paint();
       })
     );
     nav.querySelector("li[data-hub]").addEventListener("click", () => {
+      chosen();
       this._view = { kind: "hub" };
       this._paint();
     });
     nav.querySelector("li[data-presets]").addEventListener("click", () => {
+      chosen();
       this._view = { kind: "presets" };
       this._paint();
     });
     nav.querySelector("li[data-diagnostics]").addEventListener("click", () => {
+      chosen();
       this._view = { kind: "diagnostics" };
       this._paint();
     });
     nav.querySelector("#add-room").addEventListener("click", () => {
+      chosen();
       this._roomId = null;
       this._view = { kind: "room", section: null, creating: true };
       this._paint();
     });
     nav.querySelector("#add-mode").addEventListener("click", () => {
+      chosen();
       this._modeId = null;
       this._view = { kind: "mode", creating: true };
       this._paint();
@@ -1525,13 +1845,16 @@ class BetterLightingPanel extends HTMLElement {
     this._paintCrumbs();
     if (this._scene) return this._paintEditor();
     switch (this._view.kind) {
+      case "rooms":
+        return this._paintRooms();
+      case "modes":
+        return this._paintModes();
       case "diagnostics":
         return this._paintDiagnostics();
       case "presets":
         return this._paintPresets();
       case "hub":
         return this._paintSettings({
-          title: this._t("global_settings"),
           form: this._schema?.forms.hub || [],
           values: this._hub,
           save: (values) => this._call("save_hub", { options: values }),
@@ -1543,12 +1866,95 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintScenes();
       case "switches":
         if (this._view.sub === "order") return this._paintSwitchOrder();
-        return this._paintCollection("switches", "switch", this._t("switches"));
+        return this._paintCollection("switches", "switch");
       case "calibrations":
-        return this._paintCollection("light_profiles", "calibration", this._t("calibration"));
+        return this._paintCollection("light_profiles", "calibration");
       default:
         return this._paintRoomSection();
     }
+  }
+
+  /**
+   * Every room at once.
+   *
+   * The landing screen, and what the Rooms crumb leads back to: the menu
+   * lists rooms to move between them, but a house is easier to take in as a
+   * page than as a column, and there was nowhere showing what a room holds
+   * before you opened it.
+   */
+  _paintRooms() {
+    const main = this.shadowRoot.getElementById("main");
+    main.innerHTML = `
+      <div class="card">
+        <ul>${this._rooms
+          .map(
+            (room) => `<li data-room="${room.id}">${this._icon(
+              room.data?.icon || "mdi:lightbulb-group"
+            )}<span class="grow">${room.name}<div class="muted">${this._t(
+              "n_lights"
+            ).replace("{count}", String((room.lights || []).length))} \u00b7 ${this._t(
+              "n_scenes"
+            ).replace(
+              "{count}",
+              String((room.scenes || []).length)
+            )}</div></span></li>`
+          )
+          .join("")}</ul>
+        ${this._rooms.length ? "" : `<p class="muted">${this._t("no_rooms")}</p>`}
+        <div class="bar"><button id="add">${this._icon("mdi:plus")}<span>${this._t(
+          "add_room"
+        )}</span></button></div>
+      </div>`;
+
+    main.querySelectorAll("li[data-room]").forEach((row) =>
+      row.addEventListener("click", () => {
+        this._roomId = row.dataset.room;
+        this._view = { kind: "room", section: null };
+        this._paint();
+      })
+    );
+    main.querySelector("#add").addEventListener("click", () => {
+      this._roomId = null;
+      this._view = { kind: "room", section: null, creating: true };
+      this._paint();
+    });
+  }
+
+  /** Every mode at once, with what each of them does. */
+  _paintModes() {
+    const main = this.shadowRoot.getElementById("main");
+    main.innerHTML = `
+      <div class="card">
+        <ul>${this._modes
+          .map(
+            (mode) => `<li data-mode="${mode.id}">${this._icon(
+              mode.data?.icon || "mdi:movie-open"
+            )}<span class="grow">${mode.name}<div class="muted">${(
+              mode.data?.states || []
+            ).join(", ") || this._t("none")} \u00b7 ${this._t("n_rules").replace(
+              "{count}",
+              String((mode.data?.rules || []).length)
+            )}</div></span></li>`
+          )
+          .join("")}</ul>
+        ${this._modes.length ? "" : `<p class="muted">${this._t("no_modes")}</p>`}
+        <div class="bar"><button id="add">${this._icon("mdi:plus")}<span>${this._t(
+          "add_mode"
+        )}</span></button></div>
+      </div>`;
+
+    main.querySelectorAll("li[data-mode]").forEach((row) =>
+      row.addEventListener("click", () => {
+        this._modeId = row.dataset.mode;
+        this._view = { kind: "mode" };
+        this._paint();
+      })
+    );
+    main.querySelector("#add").addEventListener("click", () => {
+      this._modeId = null;
+      this._view = { kind: "mode", creating: true };
+      this._paint();
+    });
   }
 
   /** One room section, or the form that creates a room. */
@@ -1574,7 +1980,6 @@ class BetterLightingPanel extends HTMLElement {
     // screens are there the moment it does.
     if (creating) {
       this._paintSettings({
-        title: this._t("add_room"),
         form: groups.slice(0, 1),
         values: {},
         choices: this._choices(null),
@@ -1595,9 +2000,6 @@ class BetterLightingPanel extends HTMLElement {
     const values = { ...room.data };
 
     this._paintSettings({
-      title: `${room.name} — ${
-        this._labels.sections[group.section] || group.section
-      }`,
       form: [group],
       values,
       choices: this._choices(room),
@@ -1631,7 +2033,6 @@ class BetterLightingPanel extends HTMLElement {
 
     const creating = this._view.creating || !mode;
     this._paintSettings({
-      title: creating ? this._t("add_mode") : mode.name,
       form: this._schema?.forms.mode || [],
       values: creating ? { states: [] } : { ...mode.data },
       choices: this._choices(this._room),
@@ -1693,7 +2094,7 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /** A room's switches or calibrations: a list, and a form for one of them. */
-  _paintCollection(storageKey, formKey, title) {
+  _paintCollection(storageKey, formKey) {
     const room = this._room;
     const main = this.shadowRoot.getElementById("main");
     if (!room) return;
@@ -1703,7 +2104,6 @@ class BetterLightingPanel extends HTMLElement {
     if (index === undefined) {
       main.innerHTML = `
         <div class="card">
-          <h2>${room.name} — ${title}</h2>
           <ul>${items
             .map(
               (item, i) =>
@@ -1726,7 +2126,6 @@ class BetterLightingPanel extends HTMLElement {
     }
 
     this._paintSettings({
-      title: `${room.name} — ${title}`,
       form: this._schema?.forms[formKey] || [],
       values: { ...(items[index] || {}) },
       choices: this._choices(room),
@@ -1772,14 +2171,13 @@ class BetterLightingPanel extends HTMLElement {
    * share one implementation: show the list, or show the form for the item
    * whose index the view carries.
    */
-  _paintListEditor({ title, items, formKey, choices, describe, onSave, reorder }) {
+  _paintListEditor({ items, formKey, choices, describe, onSave, reorder }) {
     const main = this.shadowRoot.getElementById("main");
     const index = this._view.index;
 
     if (index === undefined) {
       main.innerHTML = `
         <div class="card">
-          <h2>${title}</h2>
           <ul id="items">${items
             .map(
               (item, i) => `<li data-index="${i}">
@@ -1789,10 +2187,10 @@ class BetterLightingPanel extends HTMLElement {
                       ? `<span class="moves">
                            <button class="flat" data-up="${i}" ${
                              i === 0 ? "disabled" : ""
-                           }>↑</button>
+                           }>${this._icon("mdi:arrow-up")}</button>
                            <button class="flat" data-down="${i}" ${
                              i === items.length - 1 ? "disabled" : ""
-                           }>↓</button>
+                           }>${this._icon("mdi:arrow-down")}</button>
                          </span>`
                       : ""
                   }
@@ -1830,7 +2228,6 @@ class BetterLightingPanel extends HTMLElement {
 
     const current = items[index] || {};
     this._paintSettings({
-      title,
       form: this._schema?.forms[formKey] || [],
       values: { ...current },
       choices,
@@ -1874,7 +2271,6 @@ class BetterLightingPanel extends HTMLElement {
 
     main.innerHTML = `
       <div class="card">
-        <h2>${this._t("import_scenes")}</h2>
         <p class="muted">${this._t("import_hint")}</p>
         <div id="list"></div>
 
@@ -1946,7 +2342,6 @@ class BetterLightingPanel extends HTMLElement {
   _paintPresets() {
     const presets = this._hub.color_presets || [];
     this._paintListEditor({
-      title: this._labels.sections.presets || this._t("colour_presets"),
       items: presets,
       formKey: "preset",
       choices: {},
@@ -1973,7 +2368,6 @@ class BetterLightingPanel extends HTMLElement {
     const ruleRoom = this._rooms.find((room) => room.id === current.zones) || null;
 
     this._paintSettings({
-      title: `${mode.name} — ${this._labels.sections.rules || this._t("rules")}`,
       form: this._schema?.forms.rule || [],
       values: { ...current },
       choices: {
@@ -2037,20 +2431,25 @@ class BetterLightingPanel extends HTMLElement {
 
     main.innerHTML = `
       <div class="card">
-        <h2>${item.name || this._t("switch")} — ${this._t("what_it_cycles")}</h2>
         <p class="muted">${this._t("cycle_hint")}</p>
         <ul id="order">
-          <li><span class="grow">1. ☀ ${this._t("adaptive")}</span></li>
+          <li>${this._icon("mdi:weather-sunny")}<span class="grow">1. ${this._t(
+            "adaptive"
+          )}</span></li>
           ${order
             .map(
               (id, i) => `<li>
                 <span class="grow">${i + 2}. ${names[id] || id}</span>
                 <span class="moves">
-                  <button class="flat" data-up="${i}" ${i === 0 ? "disabled" : ""}>↑</button>
+                  <button class="flat" data-up="${i}" ${
+                    i === 0 ? "disabled" : ""
+                  }>${this._icon("mdi:arrow-up")}</button>
                   <button class="flat" data-down="${i}" ${
                     i === order.length - 1 ? "disabled" : ""
-                  }>↓</button>
-                  <button class="flat" data-remove="${i}">✕</button>
+                  }>${this._icon("mdi:arrow-down")}</button>
+                  <button class="flat" data-remove="${i}">${this._icon(
+                    "mdi:close"
+                  )}</button>
                 </span>
               </li>`
             )
@@ -2091,11 +2490,10 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /** The one settings screen: a form, a Save, and sometimes a Delete. */
-  _paintSettings({ title, form, values, choices, save, remove }) {
+  _paintSettings({ form, values, choices, save, remove }) {
     const main = this.shadowRoot.getElementById("main");
     main.innerHTML = `
       <div class="card">
-        <h2>${title}</h2>
         <div id="error" class="muted"></div>
         <div id="form"></div>
         <div class="bar">
@@ -2148,8 +2546,9 @@ class BetterLightingPanel extends HTMLElement {
     // Cancel goes wherever the crumb would, or reloads this screen when it is
     // already the top of its branch -- either way, nothing typed is kept.
     main.querySelector("#cancel").addEventListener("click", () => {
-      const trail = this._trail();
-      if (trail.back) trail.back();
+      const crumbs = this._trail().filter(Boolean);
+      const parent = crumbs[crumbs.length - 2];
+      if (parent?.go) parent.go();
       else this._load();
     });
     main.querySelector("#remove")?.addEventListener("click", async () => {
@@ -2167,13 +2566,17 @@ class BetterLightingPanel extends HTMLElement {
     }
     main.innerHTML = `
       <div class="card">
-        <h2>${room.name}</h2>
         <ul>${room.scenes
           .map(
             (scene, index) =>
-              `<li data-index="${index}">${scene.name}<div class="muted">${
-                Object.keys(scene.lights || {}).length
-              } lights</div></li>`
+              `<li data-index="${index}">${this._icon(
+                SECTION_ICONS.scenes
+              )}<span class="grow">${scene.name}<div class="muted">${this._t(
+                "n_lights"
+              ).replace(
+                "{count}",
+                String(Object.keys(scene.lights || {}).length)
+              )}</div></span></li>`
           )
           .join("")}</ul>
         <div class="bar">
@@ -2187,13 +2590,13 @@ class BetterLightingPanel extends HTMLElement {
       item.addEventListener("click", () => {
         this._scene = JSON.parse(JSON.stringify(room.scenes[Number(item.dataset.index)]));
         this._selectedLight = room.lights[0] || null;
-        this._paintEditor();
+        this._paint();
       })
     );
     main.querySelector("#new").addEventListener("click", () => {
       this._scene = { name: this._t("new_scene"), lights: {} };
       this._selectedLight = room.lights[0] || null;
-      this._paintEditor();
+      this._paint();
     });
     main.querySelector("#import").addEventListener("click", () => {
       this._view = { kind: "scenes", sub: "import" };
@@ -2202,7 +2605,7 @@ class BetterLightingPanel extends HTMLElement {
     main.querySelector("#capture").addEventListener("click", () => {
       this._scene = { name: this._t("captured"), lights: this._captureRoom() };
       this._selectedLight = room.lights[0] || null;
-      this._paintEditor();
+      this._paint();
     });
   }
 
@@ -2440,7 +2843,7 @@ class BetterLightingPanel extends HTMLElement {
       const remove = document.createElement("button");
       remove.className = "flat";
       remove.title = this._t("remove");
-      remove.textContent = "🗑";
+      remove.innerHTML = this._icon("mdi:delete-outline") || "\u2715";
       remove.addEventListener("click", (event) => {
         event.stopPropagation();
         delete this._scene.lights[entityId];

@@ -79,5 +79,16 @@
   "sunset": "Sonnenuntergang",
   "sending_now": "Was jede Lampe jetzt bekäme",
   "pick_a_room": "Einen Raum auswählen, um seinen Verlauf zu sehen.",
-  "cancel": "Abbrechen"
+  "cancel": "Abbrechen",
+  "basics": "Grundlagen",
+  "back": "Zurück",
+  "menu": "Menü",
+  "ha_sidebar": "Home-Assistant-Menü",
+  "scenes": "Szenen",
+  "no_modes": "Noch keine Modi. Einen hinzufügen, um das ganze Haus in einen Film, einen Abend aus oder eine Party zu versetzen.",
+  "n_lights": "{count} Lampen",
+  "n_scenes": "{count} Szenen",
+  "n_rules": "{count} Regeln",
+  "brightness": "Helligkeit",
+  "colour_temperature": "Farbtemperatur"
 }

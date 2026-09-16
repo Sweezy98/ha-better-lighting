@@ -254,6 +254,8 @@ def test_the_panel_covers_every_settings_surface() -> None:
     panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
     surfaces = {
         "global settings": '"hub"',
+        "every room at once": "_paintRooms",
+        "every mode at once": "_paintModes",
         "colour presets": "_paintPresets",
         "add a room": "add-room",
         "room settings": "_paintRoomSection",
@@ -269,6 +271,8 @@ def test_the_panel_covers_every_settings_surface() -> None:
         "noticing a new version": "_checkVersion",
         "diagnostics": "_paintDiagnostics",
         "the adaptive curve, drawn": "_paintCurve",
+        "the curve in Home Assistant's own chart": "_haChart",
+        "the way back to Home Assistant on a phone": "hass-toggle-menu",
         "a mode's rules, on the mode's own screen": "_appendRules",
     }
     missing = sorted(
@@ -391,3 +395,44 @@ def test_the_panel_has_one_way_back_rather_than_several() -> None:
     assert "crumb-back" in panel_js
     # And none of the old ones survived the change.
     assert 'id="back"' not in panel_js, "a page still has its own back button"
+
+
+def test_every_room_screen_has_an_icon_in_the_menu() -> None:
+    """The menu is a column of words without them, and a room's screens are
+    the half of it people move between most."""
+    from custom_components.better_lighting import panel_schema
+
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    icons = set(re.findall(r"^  (\w+): \"mdi:", panel_js, flags=re.M))
+    wanted = {section.value for section in panel_schema.ZONE_SECTIONS} | {
+        "scenes",
+        "switches",
+        "calibrations",
+    }
+    assert wanted <= icons, f"no icon for: {sorted(wanted - icons)}"
+
+
+def test_screen_names_carry_no_decoration() -> None:
+    """The flow menus lead with an emoji, which reads badly in a breadcrumb
+    trail and duplicates the icon the panel draws beside it."""
+    from custom_components.better_lighting import panel_schema
+
+    for language in ("en", "de"):
+        for name, label in panel_schema.labels(language)["sections"].items():
+            assert label[:1].isalnum(), f"{language}/{name} still decorated: {label!r}"
+
+
+def test_the_trail_knows_every_screen_the_panel_can_open() -> None:
+    """A view the trail has no case for lands on the room branch, which names
+    the wrong thing and offers the wrong way back."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    trail = panel_js[
+        panel_js.index("  _trail() {") : panel_js.index("  _paintCrumbs()")
+    ]
+
+    kinds = set(re.findall(r'kind:\s*"(\w+)"', panel_js))
+    handled = set(re.findall(r'case "(\w+)":', trail))
+    # "room" is the default branch, since it is the one with sections.
+    assert kinds - handled == {"room"}, (
+        f"the trail has no case for: {sorted(kinds - handled - {'room'})}"
+    )

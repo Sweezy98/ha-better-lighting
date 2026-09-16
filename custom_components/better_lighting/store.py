@@ -100,6 +100,25 @@ class SessionStore:
         if self._sessions.pop(mode_id, None) is not None:
             self._schedule_save()
 
+    def prune(self, known: set[str]) -> int:
+        """Forget sessions belonging to modes that no longer exist.
+
+        A deleted mode takes its rules with it but not its stored session,
+        which would otherwise sit in the file for the life of the install and
+        be restored into nothing on every start.
+        """
+        stale = set(self._sessions) - known
+        for mode_id in stale:
+            del self._sessions[mode_id]
+        if stale:
+            self._schedule_save()
+        return len(stale)
+
+    async def async_remove(self) -> None:
+        """Delete the file. For when the integration is being uninstalled."""
+        self._sessions.clear()
+        await self._store.async_remove()
+
     def _schedule_save(self) -> None:
         self._store.async_delay_save(self._as_dict, SAVE_DELAY)
 

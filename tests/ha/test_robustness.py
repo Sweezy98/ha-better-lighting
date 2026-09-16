@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.better_lighting.const import DOMAIN
@@ -303,3 +305,160 @@ async def test_a_device_with_no_owner_is_swept_up(hass: HomeAssistant) -> None:
 
     # Ours was its only entry, so the registry drops the device altogether.
     assert registry.async_get(orphan.id) is None
+
+
+class TestNothingIsLeftBehind:
+    """What each kind of removal has to take with it."""
+
+    async def _with_a_switch(self, hass: HomeAssistant):
+        from tests.conftest import add_zone_switch
+        from tests.ha.test_controllers import controller_subentry
+
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry())
+        ids = subentry_ids(entry)
+        switch_id = add_zone_switch(
+            hass,
+            entry,
+            controller_subentry("Door", zone_id=ids["Kitchen"], scene_order=[]),
+            ids["Kitchen"],
+        )
+        await hass.async_block_till_done()
+        return entry, ids["Kitchen"], switch_id
+
+    async def test_removing_a_switch_removes_its_entity(
+        self, hass: HomeAssistant
+    ) -> None:
+        """A switch lives inside a room, so no subentry removal cleans up."""
+        entry, zone_id, switch_id = await self._with_a_switch(hass)
+        registry = er.async_get(hass)
+        assert any(
+            switch_id in (e.unique_id or "")
+            for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        )
+
+        zone = entry.subentries[zone_id]
+        hass.config_entries.async_update_subentry(
+            entry, zone, data={**zone.data, "switches": []}
+        )
+        await hass.async_block_till_done()
+
+        assert not any(
+            switch_id in (e.unique_id or "")
+            for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+        )
+
+    async def test_removing_a_room_removes_its_entities(
+        self, hass: HomeAssistant
+    ) -> None:
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry())
+        zone_id = subentry_ids(entry)["Kitchen"]
+        assert hass.states.get("light.kitchen") is not None
+
+        hass.config_entries.async_remove_subentry(entry, zone_id)
+        await hass.async_block_till_done()
+
+        registry = er.async_get(hass)
+        assert not [
+            e
+            for e in er.async_entries_for_config_entry(registry, entry.entry_id)
+            if e.unique_id.startswith(zone_id)
+        ]
+
+    async def test_a_deleted_modes_stored_session_is_forgotten(
+        self, hass: HomeAssistant
+    ) -> None:
+        """It would otherwise sit in the file and restore into nothing."""
+        from custom_components.better_lighting.store import PersistedSession
+
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry())
+        sessions = entry.runtime_data.sessions
+        sessions.put(
+            PersistedSession(
+                mode_id="a-mode-that-was-deleted", session_id="x", state="playing"
+            )
+        )
+
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert entry.runtime_data.sessions.get("a-mode-that-was-deleted") is None
+
+    async def test_removing_the_integration_takes_its_repair_issues(
+        self, hass: HomeAssistant
+    ) -> None:
+        from custom_components.better_lighting import async_remove_entry
+
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry())
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            "leftover",
+            is_fixable=False,
+            severity="warning",
+            translation_key="missing_scene",
+        )
+        assert _our_issues(hass)
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await async_remove_entry(hass, entry)
+
+        assert not _our_issues(hass)
+
+    async def test_removing_the_integration_takes_its_session_file(
+        self, hass: HomeAssistant
+    ) -> None:
+        from custom_components.better_lighting import async_remove_entry
+        from custom_components.better_lighting.store import (
+            PersistedSession,
+            SessionStore,
+        )
+
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry())
+        entry.runtime_data.sessions.put(
+            PersistedSession(mode_id="m", session_id="s", state="playing")
+        )
+        await entry.runtime_data.sessions.async_flush()
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await async_remove_entry(hass, entry)
+
+        fresh = SessionStore(hass)
+        await fresh.async_load()
+        assert fresh.get("m") is None
+
+    async def test_removing_the_integration_takes_its_services(
+        self, hass: HomeAssistant
+    ) -> None:
+        """They hang off the domain, so nothing else would remove them."""
+        from custom_components.better_lighting import async_remove_entry
+
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry())
+        assert hass.services.has_service(DOMAIN, "press")
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await async_remove_entry(hass, entry)
+
+        assert not hass.services.async_services().get(DOMAIN)
+
+    async def test_every_declared_service_is_removed(self) -> None:
+        """A service added later must be added to the teardown too."""
+        import re
+
+        source = (
+            pathlib.Path(__file__).parents[2]
+            / "custom_components"
+            / "better_lighting"
+            / "services.py"
+        ).read_text()
+        registered = set(
+            re.findall(r"async_register\(\s*DOMAIN,\s*(SERVICE_\w+)", source, re.S)
+        )
+        teardown = source.split("def async_remove_services")[1]
+        removed = set(re.findall(r"(SERVICE_\w+)", teardown))
+        assert registered <= removed, f"never removed: {sorted(registered - removed)}"

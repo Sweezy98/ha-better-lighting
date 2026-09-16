@@ -243,3 +243,24 @@ def async_register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_CLEAR_MANUAL, _clear_manual, CLEAR_MANUAL_SCHEMA
     )
+
+
+@callback
+def async_remove_services(hass: HomeAssistant) -> None:
+    """Take the services away with the integration.
+
+    They are registered on the domain rather than on an entry, so nothing
+    removes them for us: after an uninstall without a restart they would
+    still be listed, and calling one would fail somewhere unhelpful.
+    """
+    for name in (
+        SERVICE_SET_MODE,
+        SERVICE_END_MODE,
+        SERVICE_REJOIN_MODE,
+        SERVICE_PRESS,
+        SERVICE_CYCLE,
+        SERVICE_SET_ADAPTIVE,
+        SERVICE_ACTIVATE_SCENE,
+        SERVICE_CLEAR_MANUAL,
+    ):
+        hass.services.async_remove(DOMAIN, name)

@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 
 from .const import DOMAIN, PLATFORMS, BindingType, SubentryType
 from .context import ContextRegistry
@@ -39,7 +41,7 @@ from .presence import ZonePresence
 from .profiles import LightProfile
 from .repairs import async_check_references
 from .scenes import Scene
-from .services import async_register_services
+from .services import async_register_services, async_remove_services
 from .session import DeferredRegistry
 from .store import SessionStore
 from .zone import ZoneController
@@ -188,6 +190,27 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
 
 
 @callback
+def _async_prune_entities(
+    hass: HomeAssistant, entry: ConfigEntry, runtime: BetterLightingRuntime
+) -> None:
+    """Remove entities whose object is gone.
+
+    Every entity we create is named after the thing it belongs to, so an
+    entity whose id no longer matches anything configured has outlived it.
+    Switches are the case that matters: they live inside a room now, so
+    deleting one does not delete a subentry and nothing else would ever
+    clear its press entity.
+    """
+    known = {*runtime.zones, *runtime.modes, *runtime.switches}
+    registry = er.async_get(hass)
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        unique_id = entity.unique_id or ""
+        if not any(unique_id.startswith(f"{owner}_") for owner in known):
+            _LOGGER.debug("Removing %s, whose owner is gone", entity.entity_id)
+            registry.async_remove(entity.entity_id)
+
+
+@callback
 def _async_prune_devices(
     hass: HomeAssistant, entry: ConfigEntry, runtime: BetterLightingRuntime
 ) -> None:
@@ -287,7 +310,13 @@ async def async_setup_entry(
         await mode_runtime.async_setup()
         entry.async_on_unload(mode_runtime.async_shutdown)
 
+    _async_prune_entities(hass, entry, runtime)
     _async_prune_devices(hass, entry, runtime)
+
+    if runtime.sessions is not None and (
+        dropped := runtime.sessions.prune(set(runtime.modes))
+    ):
+        _LOGGER.debug("Dropped %d stored session(s) for modes that are gone", dropped)
 
     async_check_references(hass, entry.entry_id, runtime)
 
@@ -386,3 +415,20 @@ def _window_closed(hass: HomeAssistant, controller: ZoneController):
         hass.async_create_task(controller.async_window_closed())
 
     return _notify
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clean up what outlives the config entry.
+
+    Unloading tidies memory; this runs when the integration is being removed
+    for good, and has to take the things Home Assistant does not know are
+    ours: the session file, and any repair issues we raised.
+    """
+    async_remove_services(hass)
+
+    store = SessionStore(hass)
+    await store.async_remove()
+
+    for issue in list(ir.async_get(hass).issues.values()):
+        if issue.domain == DOMAIN:
+            ir.async_delete_issue(hass, DOMAIN, issue.issue_id)

@@ -343,3 +343,31 @@ def test_the_panel_string_table_has_no_unread_entries() -> None:
     panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
     used = set(re.findall(r'_t\(\s*"([a-z_]+)"', panel_js))
     assert set(panel_schema.ui_strings("en")) == used
+
+
+def test_the_panel_never_wires_an_element_it_does_not_render() -> None:
+    """querySelector returning null throws, and takes the rest of the paint
+    with it.
+
+    That is how a missing nav row emptied the whole content pane: the row was
+    never added, its listener was, and the exception landed between painting
+    the sidebar and painting everything else. A string edit that half-lands is
+    invisible until somebody opens the page, so it is checked here instead.
+    """
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    # Selectors dereferenced straight away -- no `?.` -- must be rendered
+    # somewhere in the file. Attribute selectors and ids are checkable; a bare
+    # tag name is not worth chasing.
+    for selector in set(
+        re.findall(r'querySelector\(\s*"([^"]+)"\s*\)\.addEventListener', panel_js)
+    ):
+        if attribute := re.search(r"\[([\w-]+)", selector):
+            token = f"{attribute.group(1)}="
+        elif selector.startswith("#"):
+            token = f'id="{selector[1:]}"'
+        else:
+            continue
+        assert token in panel_js, (
+            f"the panel wires {selector!r} but never renders it (looked for {token!r})"
+        )

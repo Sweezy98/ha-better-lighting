@@ -1098,6 +1098,9 @@ class BetterLightingPanel extends HTMLElement {
         <li data-presets="1" aria-selected="${
           this._view.kind === "presets"
         }">${labels.sections.presets || `🎨 ${this._t("colour_presets")}`}</li>
+        <li data-diagnostics="1" aria-selected="${
+          this._view.kind === "diagnostics"
+        }">🩺 ${this._t("diagnostics")}</li>
       </ul>`;
 
     nav.querySelectorAll("li.room").forEach((item) =>

@@ -269,6 +269,7 @@ def test_the_panel_covers_every_settings_surface() -> None:
         "importing a Home Assistant scene": "_paintImport",
         "noticing a new version": "_checkVersion",
         "diagnostics": "_paintDiagnostics",
+        "the adaptive curve, drawn": "_paintCurve",
         "a mode's rules, on the mode's own screen": "_appendRules",
     }
     missing = sorted(
@@ -321,19 +322,28 @@ def test_the_panel_strings_are_translated_as_completely_as_the_forms() -> None:
 def test_home_assistants_controls_are_used_but_not_relied_on() -> None:
     """They are lazily registered and were never promised to a custom panel.
 
-    So every borrowed control must have a plain fallback beside it: if the
-    recipe that loads them stops working, the page gets plainer rather than
-    breaking.
+    So every borrowed control must be created only behind a check that it
+    exists, with a plain control to fall back on. If the recipe that loads
+    them stops working, the page gets plainer rather than breaking.
     """
     panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
-    for tag in ("ha-entity-picker", "ha-switch"):
-        assert tag in panel_js, f"{tag} is not used"
+
+    # Whatever is created by name must be guarded by name.
+    for tag in set(re.findall(r'createElement\("(ha-[\w-]+)"\)', panel_js)):
         assert f'customElements.get("{tag}")' in panel_js, (
-            f"{tag} is used without checking it exists"
+            f"{tag} is created without checking it exists"
         )
+    # And the one created through a variable is guarded through that variable.
+    if re.search(r"createElement\(tag\)", panel_js):
+        assert "customElements.get(tag)" in panel_js
+
+    # Every borrowed control we rely on is actually reached for somewhere.
+    for tag in ("ha-entity-picker", "ha-switch", "ha-icon-picker"):
+        assert tag in panel_js, f"{tag} is not used"
+
     # And the fallbacks are still there.
-    assert "_plainSelect" in panel_js
-    assert 'input.type = "checkbox"' in panel_js
+    for fallback in ("_plainSelect", "_plainText", 'input.type = "checkbox"'):
+        assert fallback in panel_js, f"{fallback} is gone"
 
 
 def test_the_panel_string_table_has_no_unread_entries() -> None:
@@ -371,3 +381,14 @@ def test_the_panel_never_wires_an_element_it_does_not_render() -> None:
         assert token in panel_js, (
             f"the panel wires {selector!r} but never renders it (looked for {token!r})"
         )
+
+
+def test_the_panel_has_one_way_back_rather_than_several() -> None:
+    """Sub-pages carried their own back buttons, which said where you were
+    going only by accident. The crumb strip replaces all of them."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    assert "_paintCrumbs" in panel_js and "_trail" in panel_js
+    assert "crumb-back" in panel_js
+    # And none of the old ones survived the change.
+    assert 'id="back"' not in panel_js, "a page still has its own back button"

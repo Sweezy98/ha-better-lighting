@@ -9,7 +9,6 @@
   "save": "Speichern",
   "delete": "Löschen",
   "add": "Hinzufügen",
-  "back": "Zurück",
   "save_failed": "Das konnte nicht gespeichert werden.",
   "none": "—",
   "scene": "Szene",
@@ -72,5 +71,12 @@
   "diag_enabled": "Aktiviert",
   "diag_session": "Sitzung",
   "diag_opted_out": "Ausgenommen",
-  "diag_deferred": "Zurückgestellt"
+  "diag_deferred": "Zurückgestellt",
+  "the_curve": "Der Verlauf",
+  "curve_hint": "Was die Sonne für diesen Raum im Lauf des Tages bedeutet. Die Linie ist die Helligkeit, das Band dahinter die Farbtemperatur.",
+  "now": "jetzt",
+  "sunrise": "Sonnenaufgang",
+  "sunset": "Sonnenuntergang",
+  "sending_now": "Was jede Lampe jetzt bekäme",
+  "pick_a_room": "Einen Raum auswählen, um seinen Verlauf zu sehen."
 }

@@ -385,6 +385,14 @@ ended up; the log tells you which press or which film put it there.
 It is the same dump the diagnostics download produces, so what you read on the
 page and what you attach to a bug report cannot disagree.
 
+It also **draws the adaptive curve** for the selected room across today: a line
+for brightness, a band behind it painted with the colour temperature at each
+moment, and markers for sunrise, sunset and now. Underneath, what each light
+would actually be sent this second — the curve after per-light offsets, clamps
+and anything held manually. The curve is otherwise the least visible thing the
+integration does; this turns "the evening feels too bright" into something you
+can point at.
+
 ---
 
 ## Services

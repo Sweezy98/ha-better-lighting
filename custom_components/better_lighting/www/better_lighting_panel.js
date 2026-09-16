@@ -318,18 +318,26 @@ let controlsReady;
 function ensureHaControls() {
   if (controlsReady) return controlsReady;
   controlsReady = (async () => {
-    if (customElements.get("ha-entity-picker") && customElements.get("ha-switch")) {
-      return true;
-    }
+    const wanted = ["ha-entity-picker", "ha-switch", "ha-icon-picker"];
+    if (wanted.every((tag) => customElements.get(tag))) return true;
     try {
       const helpers = await window.loadCardHelpers?.();
       if (!helpers) return false;
-      const card = await helpers.createCardElement({
-        type: "entities",
-        entities: [],
-      });
-      await card.constructor.getConfigElement();
-      return Boolean(customElements.get("ha-entity-picker"));
+      // Two editors rather than one: the entities card brings the picker and
+      // the toggle, the button card brings the icon picker. Either may fail
+      // without costing the other.
+      for (const config of [
+        { type: "entities", entities: [] },
+        { type: "button" },
+      ]) {
+        try {
+          const card = await helpers.createCardElement(config);
+          await card.constructor.getConfigElement();
+        } catch {
+          // This one is unavailable; the next may not be.
+        }
+      }
+      return wanted.some((tag) => customElements.get(tag));
     } catch {
       return false;
     }
@@ -458,6 +466,13 @@ class BlForm extends HTMLElement {
         .import { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
                   padding:12px 0; border-top:1px solid var(--divider-color,#e0e0e0); }
         .import .chip { gap:6px; }
+        #crumbs:empty { display:none; }
+        #crumbs { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+        .crumb-back { background:var(--card-background-color); color:inherit;
+                      border:1px solid var(--divider-color,#ccc); border-radius:8px;
+                      width:34px; height:34px; padding:0; font-size:20px;
+                      line-height:1; cursor:pointer; flex:0 0 auto; }
+        .crumb-trail { color:var(--secondary-text-color); font-size:14px; }
         details.diag { border-top:1px solid var(--divider-color,#e0e0e0); }
         details.diag table { width:100%; border-collapse:collapse; margin:4px 0 12px; }
         details.diag th { text-align:left; font-weight:400; padding:4px 12px 4px 4px;
@@ -467,6 +482,12 @@ class BlForm extends HTMLElement {
         .log { max-height:340px; overflow:auto; font-size:13px; }
         .log .entry { padding:6px 4px; border-top:1px solid var(--divider-color,#e0e0e0);
                       display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+        .curve { width:100%; height:200px; display:block; margin:8px 0 12px;
+                 border-radius:8px; overflow:hidden;
+                 background:var(--secondary-background-color,#eee); }
+        .curve-now th, .curve-lights th { text-align:left; font-weight:400;
+                 color:var(--secondary-text-color); padding:3px 12px 3px 0; }
+        .curve-lights td, .curve-now td { font-variant-numeric:tabular-nums; }
       </style>
       <div id="fields"></div>`;
     const holder = this.shadowRoot.getElementById("fields");
@@ -568,6 +589,21 @@ class BlForm extends HTMLElement {
         const options = this._choicesFor(field);
         return this._plainSelect(field, value, options);
       }
+      case "icon": {
+        // Home Assistant's icon picker: it searches, previews and knows every
+        // mdi name, which a text field emphatically does not.
+        if (this._hass && customElements.get("ha-icon-picker")) {
+          const picker = document.createElement("ha-icon-picker");
+          picker.hass = this._hass;
+          picker.value = value ?? "";
+          picker.addEventListener("value-changed", (event) => {
+            event.stopPropagation();
+            this._set(field.key, event.detail.value);
+          });
+          return picker;
+        }
+        return this._plainText(field, value);
+      }
       case "color": {
         const wheel = document.createElement("bl-color-wheel");
         const [hue, saturation] = rgbToHs(value || [255, 140, 40]);
@@ -578,14 +614,18 @@ class BlForm extends HTMLElement {
         );
         return wheel;
       }
-      default: {
-        const input = document.createElement("input");
-        input.type = "text";
-        input.value = value ?? "";
-        input.addEventListener("change", () => this._set(field.key, input.value));
-        return input;
-      }
+      default:
+        return this._plainText(field, value);
     }
+  }
+
+  /** The fallback for anything with no better control: a text field. */
+  _plainText(field, value) {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = value ?? "";
+    input.addEventListener("change", () => this._set(field.key, input.value));
+    return input;
   }
 
   /** The fallback control: a dropdown, or a chip list when several. */
@@ -884,6 +924,10 @@ class BetterLightingPanel extends HTMLElement {
         ${modes}
       </div>
       <div class="card">
+        <h2>${this._t("the_curve")}</h2>
+        <div id="curve"></div>
+      </div>
+      <div class="card">
         <h2>${this._t("live_events")}</h2>
         <div id="events" class="log"><p class="muted">${this._t(
           "waiting_for_events"
@@ -893,7 +937,87 @@ class BetterLightingPanel extends HTMLElement {
     main.querySelector("#refresh").addEventListener("click", () =>
       this._paintDiagnostics()
     );
+    this._paintCurve(main.querySelector("#curve"));
     this._watchEvents();
+  }
+
+  /**
+   * The adaptive curve, drawn.
+   *
+   * Plain SVG: a line for brightness and a band behind it painted with the
+   * colour temperature at each point, so the shape and the warmth are the
+   * same picture. Markers for sunrise, sunset and now, because the question
+   * being asked is almost always "what is it doing at this hour".
+   */
+  async _paintCurve(into) {
+    if (!this._roomId) {
+      into.innerHTML = `<p class="muted">${this._t("pick_a_room")}</p>`;
+      return;
+    }
+    const data = await this._call("curve", { zone_id: this._roomId });
+    const samples = data.samples || [];
+    if (!samples.length) return;
+
+    const width = 720;
+    const height = 200;
+    const at = (iso) => new Date(iso).getTime();
+    const first = at(samples[0].at);
+    const span = at(samples[samples.length - 1].at) - first || 1;
+    const x = (iso) => ((at(iso) - first) / span) * width;
+    const y = (pct) => height - (pct / 100) * height;
+
+    // The colour band: one thin rectangle per sample, painted with what the
+    // curve says the light should be at that moment.
+    const band = samples
+      .map((point, index) => {
+        const next = samples[index + 1];
+        const left = x(point.at);
+        const right = next ? x(next.at) : width;
+        const [r, g, b] = kelvinToRgb(point.color_temp_kelvin);
+        return `<rect x="${left}" y="0" width="${Math.max(
+          1,
+          right - left
+        )}" height="${height}" fill="rgb(${r},${g},${b})" opacity="0.35"/>`;
+      })
+      .join("");
+
+    const line = samples
+      .map((point, index) => `${index ? "L" : "M"}${x(point.at)},${y(point.brightness_pct)}`)
+      .join(" ");
+
+    const marker = (iso, label, dashed) => {
+      const at = x(iso);
+      return `<line x1="${at}" y1="0" x2="${at}" y2="${height}"
+                stroke="currentColor" stroke-opacity="0.5"
+                ${dashed ? 'stroke-dasharray="4 4"' : ""}/>
+        <text x="${at + 4}" y="14" font-size="11" fill="currentColor"
+              fill-opacity="0.7">${label}</text>`;
+    };
+
+    into.innerHTML = `
+      <p class="muted">${this._t("curve_hint")}</p>
+      <svg viewBox="0 0 ${width} ${height}" class="curve" preserveAspectRatio="none">
+        ${band}
+        <path d="${line}" fill="none" stroke="currentColor" stroke-width="2"/>
+        ${marker(data.events.sunrise, this._t("sunrise"), true)}
+        ${marker(data.events.sunset, this._t("sunset"), true)}
+        ${marker(data.now.at, this._t("now"), false)}
+      </svg>
+      <table class="curve-now">
+        <tr><th>${this._t("now")}</th>
+            <td>${data.now.brightness_pct}% · ${data.now.color_temp_kelvin} K</td></tr>
+      </table>
+      <h3>${this._t("sending_now")}</h3>
+      <table class="curve-lights">${(data.lights || [])
+        .map(
+          (light) =>
+            `<tr><th>${this._name(light.entity_id)}</th><td>${
+              light.brightness ?? "—"
+            }${
+              light.color_temp_kelvin ? ` · ${light.color_temp_kelvin} K` : ""
+            }</td></tr>`
+        )
+        .join("")}</table>`;
   }
 
   /** Subscribe to the events the integration fires, and keep the last few. */
@@ -941,6 +1065,107 @@ class BetterLightingPanel extends HTMLElement {
              <span class="muted">${JSON.stringify(event.data)}</span></div>`
       )
       .join("");
+  }
+
+  /**
+   * Where you are, and the one way back.
+   *
+   * Sub-pages used to carry their own back button, which meant several
+   * different buttons doing the same thing and none of them saying what you
+   * would go back *to*. One strip above the content says both.
+   */
+  _trail() {
+    const view = this._view;
+    const room = this._room;
+    const mode = this._mode;
+    const named = this._labels.sections;
+    const to = (next) => () => {
+      this._view = next;
+      this._paint();
+    };
+
+    if (this._scene) {
+      return {
+        parts: [room?.name, named.scenes, this._scene.name],
+        back: async () => {
+          await this._stopPreview();
+          this._scene = null;
+          this._view = { kind: "scenes" };
+          this._paint();
+        },
+      };
+    }
+
+    switch (view.kind) {
+      case "scenes":
+        if (view.sub === "import") {
+          return {
+            parts: [room?.name, named.scenes, this._t("import_scenes")],
+            back: to({ kind: "scenes" }),
+          };
+        }
+        return null;
+      case "switches": {
+        const item = (room?.data.switches || [])[view.index];
+        if (view.sub === "order") {
+          return {
+            parts: [room?.name, named.switches, item?.name, this._t("what_it_cycles")],
+            back: to({ kind: "switches", index: view.index }),
+          };
+        }
+        if (view.index !== undefined) {
+          return {
+            parts: [room?.name, named.switches, item?.name],
+            back: to({ kind: "switches" }),
+          };
+        }
+        return null;
+      }
+      case "calibrations": {
+        const item = (room?.data.light_profiles || [])[view.index];
+        if (view.index !== undefined) {
+          return {
+            parts: [room?.name, named.calibrations, item?.light_entity],
+            back: to({ kind: "calibrations" }),
+          };
+        }
+        return null;
+      }
+      case "mode":
+        if (view.rule !== undefined) {
+          return {
+            parts: [mode?.name, named.rules],
+            back: to({ kind: "mode" }),
+          };
+        }
+        return null;
+      case "presets":
+        if (view.index !== undefined) {
+          const preset = (this._hub.color_presets || [])[view.index];
+          return {
+            parts: [this._t("colour_presets"), preset?.name],
+            back: to({ kind: "presets" }),
+          };
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  _paintCrumbs() {
+    const holder = this.shadowRoot.getElementById("crumbs");
+    if (!holder) return;
+    const trail = this._trail();
+    if (!trail) {
+      holder.innerHTML = "";
+      return;
+    }
+    holder.innerHTML = `<button class="crumb-back" id="crumb-back">&lsaquo;</button>
+      <span class="crumb-trail">${trail.parts
+        .filter(Boolean)
+        .join(" &rsaquo; ")}</span>`;
+    holder.querySelector("#crumb-back").addEventListener("click", trail.back);
   }
 
   /** Home Assistant's own page for this integration, where its flows live. */
@@ -1039,7 +1264,7 @@ class BetterLightingPanel extends HTMLElement {
       <header><span>Better Lighting</span></header>
       <div class="body">
         <div class="card" id="rooms"></div>
-        <div id="main"></div>
+        <div><div id="crumbs"></div><div id="main"></div></div>
       </div>`;
   }
 
@@ -1160,6 +1385,7 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   _paintMain() {
+    this._paintCrumbs();
     if (this._scene) return this._paintEditor();
     switch (this._view.kind) {
       case "diagnostics":
@@ -1407,8 +1633,7 @@ class BetterLightingPanel extends HTMLElement {
             )
             .join("")}</ul>
           ${items.length ? "" : `<p class="muted">${this._t("none")}</p>`}
-          <div class="bar"><button id="add">${this._t("add")}</button>
-            <button class="flat" id="back">⬅️ ${this._t("back")}</button></div>
+          <div class="bar"><button id="add">${this._t("add")}</button></div>
         </div>`;
 
       main.querySelectorAll("li").forEach((row) =>
@@ -1431,10 +1656,6 @@ class BetterLightingPanel extends HTMLElement {
       );
       main.querySelector("#add").addEventListener("click", () => {
         this._view = { ...this._view, index: items.length, adding: true };
-        this._paint();
-      });
-      main.querySelector("#back").addEventListener("click", () => {
-        this._view = { ...this._view, index: undefined, sub: undefined };
         this._paint();
       });
       return;
@@ -1480,13 +1701,7 @@ class BetterLightingPanel extends HTMLElement {
     if (!scenes.length) {
       main.innerHTML = `<div class="card"><p class="muted">${this._t(
         "nothing_to_import"
-      )}</p><div class="bar"><button class="flat" id="back">⬅️ ${this._t(
-        "back"
-      )}</button></div></div>`;
-      main.querySelector("#back").addEventListener("click", () => {
-        this._view = { kind: "scenes" };
-        this._paint();
-      });
+      )}</p></div>`;
       return;
     }
 
@@ -1495,9 +1710,7 @@ class BetterLightingPanel extends HTMLElement {
         <h2>${this._t("import_scenes")}</h2>
         <p class="muted">${this._t("import_hint")}</p>
         <div id="list"></div>
-        <div class="bar"><button class="flat" id="back">⬅️ ${this._t(
-          "back"
-        )}</button></div>
+
       </div>`;
 
     const list = main.querySelector("#list");
@@ -1560,10 +1773,6 @@ class BetterLightingPanel extends HTMLElement {
       list.appendChild(card);
     }
 
-    main.querySelector("#back").addEventListener("click", () => {
-      this._view = { kind: "scenes" };
-      this._paint();
-    });
   }
 
   /** The house's named colours, stored with the global settings. */
@@ -1630,10 +1839,6 @@ class BetterLightingPanel extends HTMLElement {
               this._view = { kind: "mode" };
             }
           : null,
-      back: () => {
-        this._view = { kind: "mode" };
-        this._paint();
-      },
     });
   }
 
@@ -1697,7 +1902,6 @@ class BetterLightingPanel extends HTMLElement {
                </select></div>`
             : '<p class="muted">${this._t("all_scenes_used")}</p>'
         }
-        <div class="bar"><button class="flat" id="back">⬅️ ${this._t("back")}</button></div>
       </div>`;
 
     main.querySelectorAll("[data-up],[data-down],[data-remove]").forEach((button) =>
@@ -1717,14 +1921,10 @@ class BetterLightingPanel extends HTMLElement {
     main.querySelector("#add-scene")?.addEventListener("change", async (event) => {
       if (event.target.value) await save([...order, event.target.value]);
     });
-    main.querySelector("#back").addEventListener("click", () => {
-      this._view = { ...this._view, sub: undefined };
-      this._paint();
-    });
   }
 
   /** The one settings screen: a form, a Save, and sometimes a Delete. */
-  _paintSettings({ title, form, values, choices, save, remove, back }) {
+  _paintSettings({ title, form, values, choices, save, remove }) {
     const main = this.shadowRoot.getElementById("main");
     main.innerHTML = `
       <div class="card">
@@ -1733,7 +1933,6 @@ class BetterLightingPanel extends HTMLElement {
         <div id="form"></div>
         <div class="bar">
           <button id="save">${this._t("save")}</button>
-          ${back ? `<button class="flat" id="back">⬅️ ${this._t("back")}</button>` : ""}
           ${remove ? `<button class="danger" id="remove">${this._t("delete")}</button>` : ""}
         </div>
       </div>`;
@@ -1778,7 +1977,6 @@ class BetterLightingPanel extends HTMLElement {
           err?.message || this._t("save_failed");
       }
     });
-    main.querySelector("#back")?.addEventListener("click", () => back());
     main.querySelector("#remove")?.addEventListener("click", async () => {
       await remove();
       await this._load();
@@ -1961,7 +2159,6 @@ class BetterLightingPanel extends HTMLElement {
         <div class="bar">
           <button id="save">${this._t("save")}</button>
           <button class="flat" id="recapture">${this._t("capture_room")}</button>
-          <button class="flat" id="back">⬅️ ${this._t("back")}</button>
           ${this._scene.scene_id ? `<button class="danger" id="delete">${this._t("delete")}</button>` : ""}
         </div>
       </div>`;
@@ -1982,11 +2179,6 @@ class BetterLightingPanel extends HTMLElement {
     main.querySelector("#recapture").addEventListener("click", () => {
       this._scene.lights = this._captureRoom();
       this._paintEditor();
-    });
-    main.querySelector("#back").addEventListener("click", async () => {
-      await this._stopPreview();
-      this._scene = null;
-      this._load();
     });
     main.querySelector("#delete")?.addEventListener("click", async () => {
       await this._call("delete_scene", {

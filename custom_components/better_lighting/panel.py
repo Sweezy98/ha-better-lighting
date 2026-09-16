@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from datetime import UTC, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -28,9 +29,10 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 from homeassistant.util import ulid as ulid_util
 
-from . import panel_schema
+from . import adaptive, panel_schema
 from .config_flow import validate_zone_lights
 from .const import (
     COLOR_FORMAT_NONE,
@@ -65,7 +67,7 @@ from .const import (
     SubentryType,
 )
 from .models import zone_scene
-from .render import ZoneMode
+from .render import Trigger, ZoneMode
 from .schemas import post_validate
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,6 +81,11 @@ ELEMENT = "better-lighting-panel"
 # the user saves never takes it, so a preview can always be told apart from
 # the real thing and cleaned up by name.
 DRAFT_ID = "__draft__"
+
+# Points sampled across the day for the curve graph. 96 is every quarter of an
+# hour: fine enough to show the shape around sunset, cheap enough to compute on
+# every open.
+_CURVE_STEPS = 96
 
 # Where we note that the panel's route is already on the HTTP app.
 _STATIC_REGISTERED = f"{DOMAIN}_panel_static"
@@ -175,6 +182,7 @@ def async_register_commands(hass: HomeAssistant) -> None:
         websocket_import_scene,
         websocket_version,
         websocket_diagnostics,
+        websocket_curve,
     ):
         websocket_api.async_register_command(hass, handler)
 
@@ -817,4 +825,85 @@ async def websocket_diagnostics(
         return
     connection.send_result(
         msg["id"], await async_get_config_entry_diagnostics(hass, entry)
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/curve", vol.Required("zone_id"): str}
+)
+@callback
+def websocket_curve(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """The adaptive curve for one room, sampled across today.
+
+    The curve is the least visible thing the integration does: a number
+    arrives at a bulb and there is no way to tell whether it came from the
+    shape you asked for. Sampling it and drawing it turns "the evening feels
+    too bright" into something you can point at.
+
+    Computed with the room's own resolved config -- hub defaults, zone
+    overrides, the lot -- so what is drawn is what the renderer will use.
+    """
+    entry = _entry(hass)
+    controller = entry.runtime_data.controllers.get(msg["zone_id"]) if entry else None
+    if controller is None:
+        connection.send_error(msg["id"], "not_found", "No such room")
+        return
+
+    config = controller.adaptive_config()
+    now = dt_util.utcnow()
+    start = dt_util.start_of_local_day(dt_util.as_local(now)).astimezone(UTC)
+
+    samples = []
+    for step in range(_CURVE_STEPS + 1):
+        moment = start + timedelta(minutes=step * (1440 // _CURVE_STEPS))
+        point = adaptive.compute(config, moment)
+        samples.append(
+            {
+                "at": moment.isoformat(),
+                "brightness_pct": round(point.brightness_pct, 1),
+                "color_temp_kelvin": point.color_temp_kelvin,
+                "sun_position": round(point.sun_position, 4),
+            }
+        )
+
+    events = {
+        "sunrise": config.sun.sunrise(now).isoformat(),
+        "sunset": config.sun.sunset(now).isoformat(),
+    }
+
+    current = adaptive.compute(config, now, is_night=controller.is_night)
+    connection.send_result(
+        msg["id"],
+        {
+            "samples": samples,
+            "events": events,
+            "now": {
+                "at": now.isoformat(),
+                "brightness_pct": round(current.brightness_pct, 1),
+                "color_temp_kelvin": current.color_temp_kelvin,
+                "sun_position": round(current.sun_position, 4),
+                "is_night": current.is_night,
+            },
+            "config": {
+                "brightness_mode": config.brightness_mode.value,
+                "min_brightness_pct": config.min_brightness_pct,
+                "max_brightness_pct": config.max_brightness_pct,
+                "min_color_temp_k": config.min_color_temp_k,
+                "max_color_temp_k": config.max_color_temp_k,
+            },
+            # What the renderer would actually send each light right now,
+            # after offsets, clamps and anything held manually.
+            "lights": [
+                {
+                    "entity_id": command.entity_id,
+                    "brightness": command.data.get("brightness"),
+                    "color_temp_kelvin": command.data.get("color_temp_kelvin"),
+                    "reason": command.reason,
+                }
+                for command in controller.commands_for(Trigger.TICK)
+            ],
+        },
     )

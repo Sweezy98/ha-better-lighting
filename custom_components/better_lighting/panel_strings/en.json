@@ -9,7 +9,6 @@
   "save": "Save",
   "delete": "Delete",
   "add": "Add",
-  "back": "Back",
   "save_failed": "That could not be saved.",
   "none": "—",
   "scene": "Scene",
@@ -72,5 +71,12 @@
   "diag_enabled": "Enabled",
   "diag_session": "Session",
   "diag_opted_out": "Opted out",
-  "diag_deferred": "Deferred"
+  "diag_deferred": "Deferred",
+  "the_curve": "The curve",
+  "curve_hint": "What the sun implies for this room across today. The line is brightness; the band behind it is colour temperature.",
+  "now": "now",
+  "sunrise": "sunrise",
+  "sunset": "sunset",
+  "sending_now": "What each light would be sent now",
+  "pick_a_room": "Pick a room to see its curve."
 }

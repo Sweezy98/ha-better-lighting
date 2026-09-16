@@ -741,3 +741,61 @@ class TestThePanelScriptIsNotCachedForever:
         download = await async_get_config_entry_diagnostics(hass, entry)
 
         assert panel == download
+
+    async def test_the_curve_is_sampled_across_the_day(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """The least visible thing the integration does, made visible."""
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "zone_id": zone_id})
+        result = (await client.receive_json())["result"]
+
+        assert len(result["samples"]) == 97
+        first, last = result["samples"][0], result["samples"][-1]
+        assert first["at"] < last["at"]
+        for sample in result["samples"]:
+            assert 0 <= sample["brightness_pct"] <= 100
+            assert 1000 <= sample["color_temp_kelvin"] <= 10000
+
+        assert "sunrise" in result["events"] and "sunset" in result["events"]
+        assert result["now"]["brightness_pct"] is not None
+
+    async def test_the_curve_says_what_each_light_would_be_sent(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """Curve, offsets and clamps together, which is what actually lands."""
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "zone_id": zone_id})
+        result = (await client.receive_json())["result"]
+
+        assert [light["entity_id"] for light in result["lights"]] == ["light.one"]
+
+    async def test_the_curve_follows_the_rooms_own_limits(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """Drawn from the room's resolved config, not the hub's defaults."""
+        await async_setup_component(hass, "websocket_api", {})
+        await setup_members(hass, [MemberLight("One", is_on=True, brightness=200)])
+        entry = hub_entry(
+            subentries_data=[
+                zone_subentry(
+                    "Kitchen",
+                    ["light.one"],
+                    adaptive_override_enabled=True,
+                    max_brightness_pct=40,
+                )
+            ]
+        )
+        await setup_hub(hass, entry)
+        client = await hass_ws_client(hass)
+        zone_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "zone_id": zone_id})
+        result = (await client.receive_json())["result"]
+
+        assert result["config"]["max_brightness_pct"] == 40
+        assert max(s["brightness_pct"] for s in result["samples"]) <= 40

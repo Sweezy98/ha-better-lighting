@@ -292,6 +292,15 @@ held down two steps keeps tracking the sun all evening — two steps below where
 otherwise be. Holding the dimmer in a dark room sets where it will come back on rather than
 lighting it.
 
+A rule can also **run scripts**. A film is not only a lighting change — the amplifier, the
+blinds, a notification — and a rule already knows when the mode reaches a state, so it is the
+right place to say what else happens. The scripts run once per rule however many rooms it
+covers.
+
+One of the states a rule can name is **off**, which is the mode ending. Its scripts run then —
+including when the mode is switched off part-way through a film, which is also when the rooms
+go back to how they were.
+
 ---
 
 ## Adaptive lighting

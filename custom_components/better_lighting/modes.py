@@ -22,7 +22,9 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+import voluptuous as vol
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.exceptions import ServiceNotFound
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 from homeassistant.util import ulid as ulid_util
@@ -271,13 +273,22 @@ class ModeGroupRuntime:
             self.state = IDLE_STATE
         self.session_id = None
 
-        for zone_id in self.config.zone_ids:
+        ran: set[ModeRule] = set()
+        for zone_id in sorted(self.config.zone_ids):
             controller = self.controllers.get(zone_id)
             if controller is None:
                 continue
             controller.release_session_owner()
             if restore:
                 await self._async_restore_zone(zone_id, controller, snapshot)
+            # The rooms go back to how they were; a rule for the idle state is
+            # how everything else does. Run even when the mode was switched
+            # off part-way through rather than the film ending, since the
+            # house is being put back to rights either way.
+            rule = self.config.rule_for(IDLE_STATE, zone_id)
+            if rule is not None and rule not in ran:
+                ran.add(rule)
+                await self._async_run_scripts(rule)
 
         self.opted_out = set()
         self._persist()
@@ -297,6 +308,7 @@ class ModeGroupRuntime:
     # -- applying a state --------------------------------------------------
 
     async def _async_apply_state(self) -> None:
+        ran: set[ModeRule] = set()
         for zone_id in sorted(self.config.zone_ids):
             if zone_id in self.opted_out:
                 continue
@@ -306,6 +318,12 @@ class ModeGroupRuntime:
             rule = self.config.rule_for(self.state, zone_id)
             if rule is None:
                 continue
+            # One rule can govern several rooms, and its scripts are the
+            # mode's business rather than any one room's: running them once
+            # per room would start the amplifier three times.
+            if rule not in ran:
+                ran.add(rule)
+                await self._async_run_scripts(rule)
             await self._async_apply_rule(zone_id, controller, rule)
 
     async def _async_apply_rule(
@@ -328,6 +346,41 @@ class ModeGroupRuntime:
                 await controller.async_set_mode(ZoneMode.SCENE, rule.scene_id)
             case ZoneAction.TURN_OFF:
                 await self._async_turn_off(zone_id, controller, rule)
+
+    async def _async_run_scripts(self, rule: ModeRule) -> None:
+        """Whatever else this rule does to the house.
+
+        Fired rather than awaited: a script that dims for thirty seconds, or
+        waits for a door, must not hold up the room next to it. Deliberately
+        in no context of ours -- a script is somebody's own instruction, and
+        anything it turns on should be read as exactly that rather than
+        mistaken for our own command coming back.
+        """
+        if not rule.scripts:
+            return
+        _LOGGER.debug("%s: running %s", self.config.name, ", ".join(rule.scripts))
+
+        async def _run() -> None:
+            try:
+                await self.hass.services.async_call(
+                    "script",
+                    "turn_on",
+                    {"entity_id": list(rule.scripts)},
+                    blocking=False,
+                )
+            except (ServiceNotFound, vol.Invalid) as err:
+                # A script the user has since deleted, most likely. Worth
+                # saying once; not worth an unhandled task exception every
+                # time the film starts, and certainly not worth stopping the
+                # rest of the mode.
+                _LOGGER.warning(
+                    "%s could not run %s: %s",
+                    self.config.name,
+                    ", ".join(rule.scripts),
+                    err,
+                )
+
+        self.hass.async_create_task(_run())
 
     async def _async_turn_off(
         self, zone_id: str, controller: ZoneController, rule: ModeRule

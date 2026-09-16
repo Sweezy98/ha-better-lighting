@@ -800,7 +800,8 @@
             "mode_states": "In diesen Zuständen",
             "zones": "Dieser Raum",
             "action": "Das tun",
-            "scene_id": "Szene"
+            "scene_id": "Szene",
+            "scripts": "Auszuführende Skripte"
           },
           "sections": {
             "advanced": {
@@ -817,6 +818,9 @@
                 "presence_entry_action": "Dieselben vier Möglichkeiten wie beim Zustandswechsel selbst. Wirkt sofort beim Betreten, ein Ausschalten wartet hier also nicht, bis der Raum leer ist."
               }
             }
+          },
+          "data_description": {
+            "scripts": "Werden ausgeführt, wenn diese Regel greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Regel abdeckt. Eine Regel für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück."
           }
         },
         "remove_rule": {
@@ -840,7 +844,8 @@
             "mode_states": "In diesen Zuständen",
             "zones": "Dieser Raum",
             "action": "Das tun",
-            "scene_id": "Szene"
+            "scene_id": "Szene",
+            "scripts": "Auszuführende Skripte"
           },
           "sections": {
             "advanced": {
@@ -857,6 +862,9 @@
                 "presence_entry_action": "Dieselben vier Möglichkeiten wie beim Zustandswechsel selbst. Wirkt sofort beim Betreten, ein Ausschalten wartet hier also nicht, bis der Raum leer ist."
               }
             }
+          },
+          "data_description": {
+            "scripts": "Werden ausgeführt, wenn diese Regel greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Regel abdeckt. Eine Regel für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück."
           }
         },
         "settings": {
@@ -1005,7 +1013,9 @@
       "options": {}
     },
     "mode_state": {
-      "options": {}
+      "options": {
+        "off": "Aus — der Modus ist beendet"
+      }
     },
     "zone_action": {
       "options": {

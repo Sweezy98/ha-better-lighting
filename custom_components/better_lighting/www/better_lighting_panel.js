@@ -2562,9 +2562,14 @@ class BetterLightingPanel extends HTMLElement {
       values: { ...current },
       choices: {
         ...this._choices(ruleRoom),
-        mode_states: (mode.data.states || []).map((state) => ({
+        // "off" first: it is what the mode's own select calls the end of a
+        // session, and a rule for it is how everything that is not a light
+        // gets put back.
+        mode_states: ["off", ...(mode.data.states || [])].map((state) => ({
           value: state,
-          label: state,
+          // The mode's own states are words the user chose and there is
+          // nothing to translate; the idle one is ours.
+          label: this._labels.options.mode_state?.[state] || state,
         })),
       },
       save: async (changed) => {

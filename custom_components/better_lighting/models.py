@@ -135,6 +135,7 @@ from .const import (
     CONF_RULE_ON_FREE,
     CONF_RULE_RESPECT_PRESENCE,
     CONF_RULE_SCENE,
+    CONF_RULE_SCRIPTS,
     CONF_RULE_STATES,
     CONF_RULE_ZONES,
     CONF_RULES,
@@ -810,6 +811,9 @@ class ModeRule:
     presence_entry_action: ZoneAction = ZoneAction.KEEP
     presence_entry_scene: str | None = None
     on_free_action: str = "turn_off"
+    # Run whenever this rule takes effect, alongside whatever it does to the
+    # lights. A film is not only a lighting change.
+    scripts: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ModeRule:
@@ -822,6 +826,7 @@ class ModeRule:
             defer_if_occupied=bool(raw.get(CONF_RULE_DEFER_IF_OCCUPIED, True)),
             presence_entry_action=_entry_action(raw),
             presence_entry_scene=raw.get(CONF_RULE_ENTRY_SCENE) or None,
+            scripts=tuple(raw.get(CONF_RULE_SCRIPTS) or ()),
             on_free_action=raw.get(CONF_RULE_ON_FREE, "turn_off"),
         )
 

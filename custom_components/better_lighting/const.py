@@ -1319,6 +1319,10 @@ CONF_DEFERRED_TTL_MIN = "deferred_ttl_minutes"
 CONF_RULES = "rules"
 
 # Rule fields.
+# The state a mode sits in when it is not running. Not one of the mode's own
+# states: every mode has it, and choosing it is how a session ends.
+IDLE_STATE = "off"
+
 CONF_RULE_STATES = "mode_states"
 CONF_RULE_ZONES = "zones"
 CONF_RULE_ACTION = "action"
@@ -1328,8 +1332,11 @@ CONF_RULE_DEFER_IF_OCCUPIED = "defer_if_occupied"
 CONF_RULE_ENTRY_SCENE = "presence_entry_scene"
 CONF_RULE_ENTRY_ACTION = "presence_entry_action"
 CONF_RULE_ON_FREE = "on_free_action"
+# Scripts to run when this rule takes effect. Lighting is not everything a
+# film does to a house -- the amplifier, the blinds, a notification -- and a
+# rule already knows when to do it.
+CONF_RULE_SCRIPTS = "scripts"
 
-IDLE_STATE = "off"
 DEFAULT_MODE_STATES = ["playing", "paused", "credits"]
 
 ZONE_ACTIONS = [a.value for a in ZoneAction]
@@ -1400,7 +1407,11 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
         FieldSpec(
             CONF_RULE_STATES,
             states,
-            _select(states, "mode_state", multiple=True),
+            # The idle state is offered like any other: it is what the mode's
+            # own select calls "the film is over", and a rule for it is how
+            # the house is put back to rights -- the amplifier off, the
+            # blinds up -- when it is.
+            _select([IDLE_STATE, *states], "mode_state", multiple=True),
             required=True,
         ),
         # One room per rule. A living room wants a different scene for
@@ -1421,6 +1432,13 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
             _select(ZONE_ACTIONS, "zone_action"),
         ),
         FieldSpec(CONF_RULE_SCENE, None, _select([], "scene"), options_key="scenes"),
+        FieldSpec(
+            CONF_RULE_SCRIPTS,
+            [],
+            selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="script", multiple=True)
+            ),
+        ),
         FieldSpec(
             CONF_RULE_RESPECT_PRESENCE, True, _boolean(), section=Section.ADVANCED
         ),

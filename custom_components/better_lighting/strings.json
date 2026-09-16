@@ -800,7 +800,8 @@
             "mode_states": "In these states",
             "zones": "This room",
             "action": "Do this",
-            "scene_id": "Scene"
+            "scene_id": "Scene",
+            "scripts": "Scripts to run"
           },
           "sections": {
             "advanced": {
@@ -817,6 +818,9 @@
                 "presence_entry_action": "The same four choices as the state change itself. Applies the moment the room is entered, so a turn-off here happens immediately rather than waiting for the room to empty."
               }
             }
+          },
+          "data_description": {
+            "scripts": "Run when this rule takes effect, alongside whatever it does to the lights, and once however many rooms the rule covers. A rule for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were."
           }
         },
         "remove_rule": {
@@ -840,7 +844,8 @@
             "mode_states": "In these states",
             "zones": "This room",
             "action": "Do this",
-            "scene_id": "Scene"
+            "scene_id": "Scene",
+            "scripts": "Scripts to run"
           },
           "sections": {
             "advanced": {
@@ -857,6 +862,9 @@
                 "presence_entry_action": "The same four choices as the state change itself. Applies the moment the room is entered, so a turn-off here happens immediately rather than waiting for the room to empty."
               }
             }
+          },
+          "data_description": {
+            "scripts": "Run when this rule takes effect, alongside whatever it does to the lights, and once however many rooms the rule covers. A rule for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were."
           }
         },
         "settings": {
@@ -1005,7 +1013,9 @@
       "options": {}
     },
     "mode_state": {
-      "options": {}
+      "options": {
+        "off": "Off — the mode has ended"
+      }
     },
     "zone_action": {
       "options": {

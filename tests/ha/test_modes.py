@@ -52,6 +52,7 @@ def rule(states, zones, action, **kw) -> dict:
         "presence_entry_action": kw.get("presence_entry_action"),
         "presence_entry_scene": kw.get("presence_entry_scene"),
         "on_free_action": kw.get("on_free_action", "turn_off"),
+        "scripts": kw.get("scripts", []),
     }
 
 
@@ -647,3 +648,83 @@ class TestReEntryActions:
         await self._enter(hass)
 
         assert hass.states.get("light.kitchen_main").state == "off"
+
+
+class TestScripts:
+    """A film is not only a lighting change.
+
+    The amplifier, the blinds, a notification: a rule already knows when the
+    mode reaches a state, so it is the right place to say what else happens.
+    """
+
+    @staticmethod
+    def _watch(hass: HomeAssistant) -> list[dict]:
+        calls: list[dict] = []
+
+        async def _record(call):
+            calls.append(dict(call.data))
+
+        hass.services.async_register("script", "turn_on", _record)
+        return calls
+
+    @staticmethod
+    def _rules(ids):
+        return [
+            rule(
+                ["playing"],
+                [ids["Lounge"], ids["Kitchen"]],
+                "apply_scene",
+                scene_id=ids["Movie"],
+                scripts=["script.dim_the_amplifier"],
+            ),
+            rule(["off"], [ids["Lounge"]], "keep", scripts=["script.lights_up"]),
+        ]
+
+    async def test_a_rule_runs_its_scripts_once_however_many_rooms(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass, rules_for=self._rules)
+        calls = self._watch(hass)
+
+        await set_state(hass, "playing")
+
+        assert calls == [{"entity_id": ["script.dim_the_amplifier"]}]
+
+    async def test_the_end_of_a_session_runs_the_off_rule(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass, rules_for=self._rules)
+        await set_state(hass, "playing")
+        calls = self._watch(hass)
+
+        await set_state(hass, "off")
+
+        assert calls == [{"entity_id": ["script.lights_up"]}]
+
+    async def test_switching_the_mode_off_mid_film_runs_them_too(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The rooms go back to how they were, so everything else should too."""
+        await build(hass, rules_for=self._rules)
+        await set_state(hass, "playing")
+        calls = self._watch(hass)
+
+        await hass.services.async_call(
+            "switch",
+            "turn_off",
+            {"entity_id": "switch.home_cinema_enabled"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+        assert calls == [{"entity_id": ["script.lights_up"]}]
+
+    async def test_a_mode_that_never_started_runs_nothing(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass, rules_for=self._rules)
+        calls = self._watch(hass)
+
+        await set_state(hass, "off")
+
+        assert calls == []

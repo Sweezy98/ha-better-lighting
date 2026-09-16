@@ -138,6 +138,7 @@ def _mode_diagnostics(runtime: Any, mode_id: str) -> dict[str, Any]:
                 "scene_id": rule.scene_id,
                 "respect_presence": rule.respect_presence,
                 "defer_if_occupied": rule.defer_if_occupied,
+                "scripts": list(rule.scripts),
             }
             for rule in mode.rules
         ],

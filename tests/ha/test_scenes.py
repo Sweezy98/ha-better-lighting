@@ -730,9 +730,35 @@ class TestConditionalAndDescribedFields:
         assert result["step_id"] == "power"
         assert "resume_max_age_minutes" in self._keys(result)
 
-    async def test_insect_mode_offers_more_than_a_scene(
+    async def test_insect_mode_shows_only_the_control_it_needs(
         self, hass: HomeAssistant
     ) -> None:
+        """Four answers, and only the one being given asks for anything."""
         result = await self._open(hass, "insect")
         keys = self._keys(result)
-        assert {"insect_action", "insect_color_temp_k", "insect_rgb_color"} <= keys
+        # The default is to go warm, so the temperature is asked for and the
+        # colour picker and scene picker are not.
+        assert "insect_action" in keys
+        assert "insect_color_temp_k" in keys
+        assert "insect_rgb_color" not in keys
+        assert "insect_scene_id" not in keys
+
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"insect_action": "rgb_color"}
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "insect"}
+        )
+        keys = self._keys(result)
+        assert "insect_rgb_color" in keys
+        assert "insect_color_temp_k" not in keys
+
+    async def test_the_night_scene_picker_waits_for_the_scene_behaviour(
+        self, hass: HomeAssistant
+    ) -> None:
+        result = await self._open(hass, "night")
+        keys = self._keys(result)
+        # Dim and warm is the default, so its two settings show and the scene
+        # picker does not.
+        assert "night_brightness_pct" in keys
+        assert "night_scene_id" not in keys

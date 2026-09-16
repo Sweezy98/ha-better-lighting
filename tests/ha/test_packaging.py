@@ -252,12 +252,13 @@ def test_the_panel_covers_every_settings_surface() -> None:
     a surface added to the flows and forgotten on the page.
     """
     panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    # Naming, creating and deleting a room are Home Assistant's own flow, so
+    # they are deliberately absent here.
     surfaces = {
         "global settings": '"hub"',
         "colour presets": "_paintPresets",
         "add a room": "add-room",
         "room settings": "_paintRoomSection",
-        "delete a room": "delete_zone",
         "scenes": "_paintEditor",
         "capture a scene": "_captureRoom",
         "switches": '"switch"',

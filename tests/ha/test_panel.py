@@ -236,9 +236,14 @@ class TestEverySettingIsReachable:
             for group in form
             for field in group["fields"]
         }
-        from custom_components.better_lighting.const import ZONE_SPECS
+        from custom_components.better_lighting.const import ZONE_SPECS, Section
 
-        assert {spec.key for spec in ZONE_SPECS} <= described
+        # Everything except a room's name, lights and icon, which belong to
+        # Home Assistant's own add-and-reconfigure flow rather than here.
+        behaviour = {
+            spec.key for spec in ZONE_SPECS if spec.section is not Section.BASIC
+        }
+        assert behaviour <= described
 
     async def test_labels_follow_the_requested_language(
         self, hass: HomeAssistant, hass_ws_client
@@ -646,3 +651,50 @@ class TestThePanelScriptIsNotCachedForever:
         await hass.async_block_till_done()
 
         assert DOMAIN in hass.data["frontend_panels"]
+
+    async def test_conditional_fields_are_declared_not_hand_written(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """The panel and the forms hide the same things for the same reason."""
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
+        zone = (await client.receive_json())["result"]["forms"]["zone"]
+        fields = {f["key"]: f for group in zone for f in group["fields"]}
+
+        assert fields["night_scene_id"]["depends_on"] == {
+            "key": "night_behavior",
+            "values": ["scene"],
+        }
+        assert fields["resume_max_age_minutes"]["depends_on"]["values"] == [
+            "last_scene"
+        ]
+        assert fields["insect_rgb_color"]["depends_on"]["values"] == ["rgb_color"]
+
+    async def test_a_rooms_name_is_not_editable_here(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """Two places to rename a room is one too many."""
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
+        zone = (await client.receive_json())["result"]["forms"]["zone"]
+        keys = {f["key"] for group in zone for f in group["fields"]}
+
+        assert "name" not in keys
+        assert "lights" not in keys
+        # What the flow does not cover is still here.
+        assert "night_behavior" in keys
+
+    async def test_the_section_headings_are_translated(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """Scenes, switches and calibration are screens without a Section."""
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema", "language": "de"})
+        sections = (await client.receive_json())["result"]["labels"]["sections"]
+
+        for key in ("scenes", "switches", "calibrations", "rules", "presets"):
+            assert sections.get(key), f"{key} has no heading"
+            assert sections[key] != key

@@ -43,12 +43,26 @@ def build_schema(
     a collapsed section named the same thing is a fold to open for no reason.
     """
     current = dict(values or {})
+    defaults = {spec.key: spec.default for spec in specs}
     basic: dict[Any, Any] = {}
     grouped: dict[Section, dict[Any, Any]] = {}
 
     for spec in specs:
         if include is not None and spec.section not in include:
             continue
+        if spec.depends_on is not None:
+            # A field that only means something alongside another answer is
+            # left out until that answer is given. Declared on the spec so the
+            # forms and the panel hide the same things for the same reason --
+            # this used to be written out by hand, once, in one step.
+            #
+            # Falls back to the other field's own default, because a room
+            # being created has stored nothing yet and the form is showing
+            # that default: reading the absence as "no answer" would hide the
+            # control belonging to the answer on screen.
+            key, wanted = spec.depends_on
+            if current.get(key, defaults.get(key)) not in wanted:
+                continue
 
         default = spec.as_default(current)
         widget = spec.selector

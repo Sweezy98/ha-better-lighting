@@ -437,6 +437,10 @@ ZONE_POWER_SPECS: tuple[FieldSpec, ...] = (
             )
         ),
         section=Section.POWER,
+        depends_on=(
+            CONF_RESTORE_ON_POWER_CYCLE,
+            (RestoreOnPowerCycle.LAST_SCENE.value,),
+        ),
     ),
 )
 
@@ -481,9 +485,22 @@ ZONE_NIGHT_SPECS: tuple[FieldSpec, ...] = (
         _select([], "night_scene"),
         section=Section.NIGHT,
         options_key="scenes",
+        depends_on=(CONF_NIGHT_BEHAVIOR, (NightBehavior.SCENE.value,)),
     ),
-    FieldSpec(CONF_NIGHT_BRIGHTNESS_PCT, 1, _pct(), section=Section.NIGHT),
-    FieldSpec(CONF_NIGHT_COLOR_TEMP_K, 1800, _kelvin(), section=Section.NIGHT),
+    FieldSpec(
+        CONF_NIGHT_BRIGHTNESS_PCT,
+        1,
+        _pct(),
+        section=Section.NIGHT,
+        depends_on=(CONF_NIGHT_BEHAVIOR, (NightBehavior.MIN_SETTINGS.value,)),
+    ),
+    FieldSpec(
+        CONF_NIGHT_COLOR_TEMP_K,
+        1800,
+        _kelvin(),
+        section=Section.NIGHT,
+        depends_on=(CONF_NIGHT_BEHAVIOR, (NightBehavior.MIN_SETTINGS.value,)),
+    ),
     FieldSpec(
         CONF_NIGHT_TRANSITION,
         2,
@@ -917,6 +934,7 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         # Deliberately unfiltered: button devices surface as event, sensor,
         # binary_sensor or input_button depending on the integration.
         selector.EntitySelector(selector.EntitySelectorConfig()),
+        depends_on=(CONF_BINDING_TYPE, (BindingType.ENTITY_STATE.value,)),
     ),
     FieldSpec(CONF_IS_DEFAULT, False, _boolean()),
     # --- cycle shape ---
@@ -1119,14 +1137,30 @@ ZONE_INSECT_SPECS: tuple[FieldSpec, ...] = (
         _select([a.value for a in InsectAction], "insect_action"),
         section=Section.INSECT,
     ),
-    FieldSpec(CONF_INSECT_COLOR_TEMP_K, 2000, _kelvin(), section=Section.INSECT),
+    FieldSpec(
+        CONF_INSECT_COLOR_TEMP_K,
+        2000,
+        _kelvin(),
+        section=Section.INSECT,
+        depends_on=(CONF_INSECT_ACTION, (InsectAction.COLOR_TEMP.value,)),
+    ),
     FieldSpec(
         CONF_INSECT_RGB_COLOR,
         [255, 140, 40],
         selector.ColorRGBSelector(),
         section=Section.INSECT,
+        depends_on=(CONF_INSECT_ACTION, (InsectAction.RGB_COLOR.value,)),
     ),
-    FieldSpec(CONF_INSECT_BRIGHTNESS_PCT, 30, _pct(), section=Section.INSECT),
+    FieldSpec(
+        CONF_INSECT_BRIGHTNESS_PCT,
+        30,
+        _pct(),
+        section=Section.INSECT,
+        depends_on=(
+            CONF_INSECT_ACTION,
+            (InsectAction.COLOR_TEMP.value, InsectAction.RGB_COLOR.value),
+        ),
+    ),
     FieldSpec(
         CONF_WINDOW_ENTITIES,
         [],

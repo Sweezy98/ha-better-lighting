@@ -41,8 +41,10 @@ _LOGGER = logging.getLogger(__name__)
 # The order the panel shows a room's sections in: what it is, what it does by
 # itself, then what it does about people and windows. Same grouping as the
 # menu, because somebody who learned one should not have to learn the other.
+# Section.BASIC is deliberately absent: a room's name, its lights and its icon
+# are what Home Assistant's own add-and-reconfigure flow is for, and two places
+# to rename a room is one too many.
 ZONE_SECTIONS: tuple[Section, ...] = (
-    Section.BASIC,
     Section.GROUP,
     Section.ADAPTIVE,
     Section.NIGHT,
@@ -178,13 +180,14 @@ def labels(language: str) -> dict[str, Any]:
     sections = {
         section.value: section.value.replace("_", " ").title() for section in Section
     }
-    # The menu already names each section in the user's language; reuse those
-    # rather than inventing a second set of words for the same things.
+    # The menus already name each of these in the user's language; reuse those
+    # rather than inventing a second set of words for the same things. Every
+    # menu entry counts, not only the ones named after a Section -- scenes,
+    # switches, calibration, rules and presets are screens without a Section
+    # of their own, and filtering on the enum is what left them in English.
     for step in _walk_steps(translations):
         if isinstance(step, dict) and (menu := step.get("menu_options")):
-            for key, label in menu.items():
-                if key in sections:
-                    sections[key] = label
+            sections.update(menu)
     return {
         "data": data,
         "descriptions": described,

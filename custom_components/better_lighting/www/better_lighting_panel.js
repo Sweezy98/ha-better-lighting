@@ -179,7 +179,7 @@ class BlColorWheel extends HTMLElement {
 /* ------------------------------------------------------------------ */
 
 class BlSlider extends HTMLElement {
-  static observedAttributes = ["value", "min", "max", "gradient", "label"];
+  static observedAttributes = ["value", "min", "max", "gradient", "unit"];
 
   constructor() {
     super();
@@ -192,22 +192,33 @@ class BlSlider extends HTMLElement {
   connectedCallback() {
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display:block; touch-action:none; }
-        .row { display:flex; align-items:center; gap:12px; }
-        .track { position:relative; flex:1; height:44px; border-radius:12px;
-                 overflow:hidden; cursor:pointer;
+        /* width:100% because the host is often a flex item: without it the
+           track gets no width at all, and all that shows is the number box --
+           which is exactly how this looked. */
+        :host { display:block; width:100%; touch-action:none; }
+        .row { display:flex; align-items:center; gap:10px; }
+        .track { position:relative; flex:1 1 auto; min-width:80px; height:44px;
+                 border-radius:12px; overflow:hidden; cursor:pointer;
                  background:var(--bl-track, var(--secondary-background-color,#e0e0e0)); }
-        .fill { position:absolute; inset:0 auto 0 0; background:var(--bl-fill,#f5c518); }
-        .value { min-width:64px; text-align:right; font-variant-numeric:tabular-nums; }
-        input { width:70px; }
+        .fill { position:absolute; inset:0 auto 0 0;
+                background:var(--bl-fill, var(--primary-color,#f5c518)); }
+        /* Matching the plain number fields beside it, so one form does not
+           look like two. */
+        input { font:inherit; width:96px; flex:0 0 auto; padding:9px 10px;
+                border-radius:8px; box-sizing:border-box;
+                border:1px solid var(--divider-color,#ccc);
+                background:var(--card-background-color); color:inherit; }
+        .unit { color:var(--secondary-text-color); }
       </style>
       <div class="row">
         <div class="track"><div class="fill"></div></div>
         <input type="number" part="box">
+        <span class="unit"></span>
       </div>`;
     this._track = this.shadowRoot.querySelector(".track");
     this._fill = this.shadowRoot.querySelector(".fill");
     this._box = this.shadowRoot.querySelector("input");
+    this._unit = this.shadowRoot.querySelector(".unit");
     this._render();
 
     const pick = (event) => {
@@ -244,6 +255,7 @@ class BlSlider extends HTMLElement {
     if (name === "min") this._min = Number(value);
     if (name === "max") this._max = Number(value);
     if (name === "gradient") this._gradient = value;
+    if (name === "unit") this._unitText = value;
     this._render();
   }
 
@@ -261,6 +273,7 @@ class BlSlider extends HTMLElement {
     if (!this._track) return;
     const fraction = (this._value - this._min) / (this._max - this._min || 1);
     this._fill.style.width = `${fraction * 100}%`;
+    if (this._unit) this._unit.textContent = this._unitText || "";
     this._box.min = this._min;
     this._box.max = this._max;
     this._box.value = this._value;
@@ -360,7 +373,12 @@ class BlForm extends HTMLElement {
 
   _visible(field) {
     if (!field.depends_on) return true;
-    return field.depends_on.values.includes(this._values[field.depends_on.key]);
+    const key = field.depends_on.key;
+    // The other field's default when nothing is stored, since that is what
+    // the form beside this one is showing.
+    const other = this._fields.find((candidate) => candidate.key === key);
+    const value = this._values[key] ?? other?.default;
+    return field.depends_on.values.includes(value);
   }
 
   _render() {
@@ -420,20 +438,23 @@ class BlForm extends HTMLElement {
         return box;
       }
       case "number": {
-        const row = document.createElement("div");
-        row.className = "row";
-        const slider = field.mode === "slider";
-        if (slider) {
+        if (field.mode === "slider") {
+          // Returned bare rather than inside a row: the slider is its own
+          // row, and nesting it in another flex line collapsed its track.
           const bl = document.createElement("bl-slider");
           bl.setAttribute("min", field.min ?? 0);
           bl.setAttribute("max", field.max ?? 100);
-          bl.setAttribute("value", value ?? field.min ?? 0);
+          bl.setAttribute("value", value ?? field.default ?? field.min ?? 0);
+          if (field.unit_of_measurement) {
+            bl.setAttribute("unit", field.unit_of_measurement);
+          }
           bl.addEventListener("value-changed", (event) =>
             this._set(field.key, event.detail.value)
           );
-          row.appendChild(bl);
-          return row;
+          return bl;
         }
+        const row = document.createElement("div");
+        row.className = "row";
         const input = document.createElement("input");
         input.type = "number";
         if (field.min !== undefined) input.min = field.min;
@@ -552,7 +573,7 @@ class BetterLightingPanel extends HTMLElement {
     this._modeId = null;
     // Which screen is open: a room's section, its scenes, the global
     // settings, or a mode. The panel is one page, not a wizard.
-    this._view = { kind: "room", section: "basic" };
+    this._view = { kind: "room", section: null };
     this._scene = null;
     this._selectedLight = null;
     this._previewing = false;
@@ -773,7 +794,7 @@ class BetterLightingPanel extends HTMLElement {
       item.addEventListener("click", () => {
         this._stopPreview();
         this._roomId = item.dataset.room;
-        this._view = { kind: "room", section: "basic" };
+        this._view = { kind: "room", section: null };
         this._scene = null;
         this._paint();
       })
@@ -851,34 +872,42 @@ class BetterLightingPanel extends HTMLElement {
 
   /** One room section, or the form that creates a room. */
   _paintRoomSection() {
-    const creating = this._view.creating || !this._room;
     const room = this._room;
+    const main = this.shadowRoot.getElementById("main");
+    if (!room) {
+      main.innerHTML = `<div class="card"><p class="muted">${this._t(
+        "no_rooms"
+      )}</p><div class="bar"><button id="add">${this._t(
+        "add_room"
+      )}</button></div></div>`;
+      main.querySelector("#add").addEventListener("click", () =>
+        this._openIntegrationPage()
+      );
+      return;
+    }
+
     const groups = this._schema?.forms.zone || [];
     const group = groups.find((g) => g.section === this._view.section) || groups[0];
-    const values = creating ? {} : { ...room.data };
+    const values = { ...room.data };
 
+    // Naming a room, choosing its lights and deleting it all belong to Home
+    // Assistant's own flow. What is left here is what that flow does not
+    // cover: how the room behaves.
     this._paintSettings({
-      title: creating
-        ? this._t("add_room")
-        : `${room.name} — ${this._labels.sections[group.section] || group.section}`,
-      // A new room needs the essentials, not every screen at once.
-      form: creating ? [groups[0]] : [group],
+      title: `${room.name} — ${
+        this._labels.sections[group.section] || group.section
+      }`,
+      form: [group],
       values,
       choices: this._choices(room),
       save: async (next) => {
         const result = await this._call("save_zone", {
-          zone_id: creating ? null : room.id,
+          zone_id: room.id,
           data: { ...values, ...next },
         });
-        this._view = { kind: "room", section: this._view.section || "basic" };
+        this._view = { kind: "room", section: group.section };
         return result;
       },
-      remove: creating
-        ? null
-        : async () => {
-            await this._call("delete_zone", { zone_id: room.id });
-            this._roomId = null;
-          },
     });
   }
 

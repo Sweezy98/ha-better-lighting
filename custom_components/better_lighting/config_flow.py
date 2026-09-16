@@ -26,12 +26,15 @@ from homeassistant.util import ulid as ulid_util
 from .const import (
     COLOR_FORMAT_INHERIT,
     COLOR_FORMAT_NONE,
+    COLOR_FORMAT_PRESET,
+    COLOR_PRESET_SPECS,
     CONF_ADAPTIVE_POSITION,
     CONF_BINDING_ENTITY,
     CONF_BINDING_TYPE,
     CONF_BRIGHTNESS_OFFSET_PCT,
     CONF_BRIGHTNESS_PCT,
     CONF_COLOR_FORMAT,
+    CONF_COLOR_PRESETS,
     CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
     CONF_ICON,
@@ -46,6 +49,7 @@ from .const import (
     CONF_ON_LIGHTS_ONLY,
     CONF_ON_UNSUPPORTED_COLOR,
     CONF_OTHERS,
+    CONF_PRESET_NAME,
     CONF_RGB_COLOR,
     CONF_RULE_ACTION,
     CONF_RULE_ENTRY_ACTION,
@@ -200,9 +204,34 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class BetterLightingOptionsFlow(OptionsFlow):
-    """Edit the hub's global defaults."""
+    """Edit the hub's global defaults and the house's colour presets."""
+
+    def __init__(self) -> None:
+        self._options: dict[str, Any] = {}
+        self._presets: list[dict[str, Any]] = []
+        # An explicit flag, not "are the options empty": a hub that has never
+        # been configured has empty options, and testing for that reloaded --
+        # and so discarded -- every preset each time the menu was reopened.
+        self._loaded = False
+        self._pending: dict[str, Any] = {}
+        self._editing: int | None = None
 
     async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if not self._loaded:
+            self._options = dict(self.config_entry.options)
+            self._presets = [
+                dict(preset) for preset in (self._options.get(CONF_COLOR_PRESETS) or [])
+            ]
+            self._loaded = True
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["settings", "presets", "finish"],
+            description_placeholders={"presets": self._presets_summary()},
+        )
+
+    async def async_step_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
@@ -210,14 +239,148 @@ class BetterLightingOptionsFlow(OptionsFlow):
             flat = flatten_sections(HUB_SPECS, user_input)
             cleaned, errors = post_validate(HUB_SPECS, flat)
             if not errors:
-                return self.async_create_entry(data=cleaned)
+                self._options |= cleaned
+                return await self.async_step_init()
 
         return self.async_show_form(
-            step_id="init",
-            data_schema=build_schema(
-                HUB_SPECS, user_input or dict(self.config_entry.options)
-            ),
+            step_id="settings",
+            data_schema=build_schema(HUB_SPECS, user_input or self._options),
             errors=errors,
+        )
+
+    # -- colour presets ----------------------------------------------------
+
+    def _presets_summary(self) -> str:
+        if not self._presets:
+            return "(none yet)"
+        lines = []
+        for preset in self._presets:
+            if preset.get(CONF_COLOR_FORMAT) == CONF_COLOR_TEMP_KELVIN:
+                detail = f"{preset.get(CONF_COLOR_TEMP_KELVIN)} K"
+            else:
+                rgb = preset.get(CONF_RGB_COLOR) or []
+                detail = "RGB " + ",".join(str(v) for v in rgb)
+            lines.append(f"{preset.get(CONF_NAME)}: {detail}")
+        return "\n".join(lines)
+
+    def _preset_picker(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required("preset"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": str(index), "label": str(preset.get(CONF_NAME))}
+                            for index, preset in enumerate(self._presets)
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        sort=False,
+                    )
+                )
+            }
+        )
+
+    async def async_step_presets(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        options = ["add_preset"]
+        if self._presets:
+            options += ["edit_preset", "remove_preset"]
+        options.append("init")
+        return self.async_show_menu(
+            step_id="presets",
+            menu_options=options,
+            description_placeholders={"presets": self._presets_summary()},
+        )
+
+    async def async_step_add_preset(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._async_preset_form("add_preset", user_input, index=None)
+
+    async def async_step_edit_preset(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            self._editing = int(user_input["preset"])
+            return await self.async_step_preset_form()
+        return self.async_show_form(
+            step_id="edit_preset",
+            data_schema=self._preset_picker(),
+            description_placeholders={"presets": self._presets_summary()},
+        )
+
+    async def async_step_preset_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._async_preset_form(
+            "preset_form", user_input, index=self._editing
+        )
+
+    async def _async_preset_form(
+        self, step_id: str, user_input: dict[str, Any] | None, *, index: int | None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors = post_validate(COLOR_PRESET_SPECS, user_input)
+            if not errors:
+                self._pending = cleaned
+                self._editing = index
+                return await self.async_step_preset_color()
+
+        current = user_input
+        if current is None and index is not None:
+            current = dict(self._presets[index])
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=build_schema(COLOR_PRESET_SPECS, current),
+            errors=errors,
+        )
+
+    async def async_step_preset_color(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """The colour itself, showing only the control the format asked for."""
+        specs = scene_light_color_specs(self._pending.get(CONF_COLOR_FORMAT))
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors = post_validate(specs, user_input)
+            if not errors:
+                preset = {**self._pending, **cleaned}
+                if self._editing is not None and 0 <= self._editing < len(
+                    self._presets
+                ):
+                    self._presets[self._editing] = preset
+                else:
+                    self._presets.append(preset)
+                self._pending, self._editing = {}, None
+                return await self.async_step_presets()
+
+        return self.async_show_form(
+            step_id="preset_color",
+            data_schema=build_schema(specs, user_input),
+            errors=errors,
+            description_placeholders={"name": str(self._pending.get(CONF_NAME))},
+        )
+
+    async def async_step_remove_preset(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            index = int(user_input["preset"])
+            if 0 <= index < len(self._presets):
+                self._presets.pop(index)
+            return await self.async_step_presets()
+        return self.async_show_form(
+            step_id="remove_preset",
+            data_schema=self._preset_picker(),
+            description_placeholders={"presets": self._presets_summary()},
+        )
+
+    async def async_step_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return self.async_create_entry(
+            data={**self._options, CONF_COLOR_PRESETS: self._presets}
         )
 
 
@@ -646,14 +809,67 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             description_placeholders={"lights": self._lights_summary()},
         )
 
+    def _presets(self) -> list[dict[str, Any]]:
+        return list(self._get_entry().options.get(CONF_COLOR_PRESETS) or ())
+
     async def async_step_light_color(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         entity_id, pending = self._pending_light
         fmt = pending.get(CONF_COLOR_FORMAT)
-        specs = scene_light_color_specs(fmt)
         errors: dict[str, str] = {}
 
+        if fmt == COLOR_FORMAT_PRESET:
+            presets = self._presets()
+            if not presets:
+                # Nothing to pick from. Better to say so than to show a dead
+                # dropdown; the colour is left to the sun for now.
+                self._scene.setdefault(CONF_SCENE_LIGHTS, {})[entity_id] = {
+                    **pending,
+                    CONF_COLOR_FORMAT: COLOR_FORMAT_NONE,
+                }
+                self._pending_light = ("", {})
+                return await self.async_step_scene_lights()
+
+            if user_input is not None:
+                chosen = presets[int(user_input[CONF_PRESET_NAME])]
+                # Copied, not referenced: editing a preset later must not
+                # silently repaint scenes that were built with it.
+                resolved = {
+                    key: value
+                    for key, value in chosen.items()
+                    if key in (CONF_COLOR_FORMAT, CONF_RGB_COLOR, CONF_COLOR_TEMP_KELVIN)
+                }
+                self._scene.setdefault(CONF_SCENE_LIGHTS, {})[entity_id] = {
+                    **pending,
+                    **resolved,
+                }
+                self._pending_light = ("", {})
+                return await self.async_step_scene_lights()
+
+            return self.async_show_form(
+                step_id="light_preset",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_PRESET_NAME): selector.SelectSelector(
+                            selector.SelectSelectorConfig(
+                                options=[
+                                    {
+                                        "value": str(index),
+                                        "label": str(preset.get(CONF_NAME)),
+                                    }
+                                    for index, preset in enumerate(presets)
+                                ],
+                                mode=selector.SelectSelectorMode.DROPDOWN,
+                                sort=False,
+                            )
+                        )
+                    }
+                ),
+                description_placeholders={"light": entity_id},
+            )
+
+        specs = scene_light_color_specs(fmt)
         if user_input is not None:
             cleaned, errors = post_validate(specs, user_input)
             if not errors:
@@ -670,6 +886,11 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             errors=errors,
             description_placeholders={"light": entity_id},
         )
+
+    async def async_step_light_preset(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self.async_step_light_color(user_input)
 
     async def async_step_remove_light(
         self, user_input: dict[str, Any] | None = None

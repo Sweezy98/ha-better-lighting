@@ -61,13 +61,54 @@ async def test_options_flow_updates_defaults(hass: HomeAssistant) -> None:
     entry = await setup_hub(hass, hub_entry())
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["type"] is FlowResultType.FORM
+    # The defaults now sit behind a menu that also holds the colour presets.
+    assert result["type"] is FlowResultType.MENU
 
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "settings"}
+    )
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {**HUB_INPUT, "min_brightness_pct": 12}
     )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "finish"}
+    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options["min_brightness_pct"] == 12
+
+
+async def test_colour_presets_are_named_once_and_reused(
+    hass: HomeAssistant,
+) -> None:
+    """The practical answer to a config flow having no colour wheel."""
+    entry = await setup_hub(hass, hub_entry())
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "presets"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_preset"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"name": "TV orange", "color_format": "rgb_color"}
+    )
+    assert result["step_id"] == "preset_color"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"rgb_color": [255, 140, 40]}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "init"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "finish"}
+    )
+
+    presets = entry.options["color_presets"]
+    assert presets == [
+        {"name": "TV orange", "color_format": "rgb_color", "rgb_color": [255, 140, 40]}
+    ]
 
 
 async def test_adds_a_zone_subentry(hass: HomeAssistant) -> None:

@@ -714,13 +714,42 @@ CONF_COLD_WHITE = "cold_white"
 # the sun; "rgb_white" is RGB plus the two white channels an RGBWW fixture has.
 COLOR_FORMAT_INHERIT = "inherit"
 COLOR_FORMAT_RGB_WHITE = "rgb_white"
+# A colour named once in the global config and picked by name here. Resolved to
+# a real colour when it is chosen, not held as a live reference: a scene should
+# not change under you because a preset was edited months later.
+COLOR_FORMAT_PRESET = "preset"
 SCENE_LIGHT_COLOR_FORMATS = [
     COLOR_FORMAT_INHERIT,
     COLOR_FORMAT_NONE,
+    COLOR_FORMAT_PRESET,
     CONF_COLOR_TEMP_KELVIN,
     CONF_RGB_COLOR,
     COLOR_FORMAT_RGB_WHITE,
 ]
+
+# --------------------------------------------------------------------------
+# Colour presets, in the global config.
+# --------------------------------------------------------------------------
+# The house's named colours -- "TV orange", "candle" -- so a colour used in
+# several scenes is described once and picked by name. They replace the
+# house-wide scene recipes that scenes-in-rooms made redundant, and they are
+# the practical answer to a config flow having no colour wheel.
+CONF_COLOR_PRESETS = "color_presets"
+CONF_PRESET_NAME = "preset_name"
+
+COLOR_PRESET_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(
+        CONF_COLOR_FORMAT,
+        CONF_RGB_COLOR,
+        _select([CONF_RGB_COLOR, CONF_COLOR_TEMP_KELVIN], "color_format"),
+    ),
+)
 
 
 def scene_light_specs() -> tuple[FieldSpec, ...]:

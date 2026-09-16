@@ -58,6 +58,15 @@
   "options": {
     "step": {
       "init": {
+        "title": "Better Lighting",
+        "description": "Colour presets:\n\n{presets}",
+        "menu_options": {
+          "settings": "Global defaults",
+          "presets": "Colour presets",
+          "finish": "Done"
+        }
+      },
+      "settings": {
         "title": "Global defaults",
         "description": "Changing these re-applies to every zone that has not overridden them.",
         "data": {
@@ -69,6 +78,7 @@
           "max_color_temp_k": "Coldest colour temperature",
           "brightness_mode": "Brightness curve"
         },
+        "data_description": {},
         "sections": {
           "advanced": {
             "name": "Advanced",
@@ -96,6 +106,52 @@
               "night_color_temp_k": "Night colour temperature"
             }
           }
+        }
+      },
+      "presets": {
+        "title": "Colour presets",
+        "description": "Colours named once and picked by name wherever a colour is needed:\n\n{presets}",
+        "menu_options": {
+          "add_preset": "Add a preset",
+          "edit_preset": "Change a preset",
+          "remove_preset": "Remove a preset",
+          "init": "Back"
+        }
+      },
+      "add_preset": {
+        "title": "Add a preset",
+        "data": {
+          "name": "Name",
+          "color_format": "Kind of colour"
+        }
+      },
+      "preset_form": {
+        "title": "Change a preset",
+        "data": {
+          "name": "Name",
+          "color_format": "Kind of colour"
+        }
+      },
+      "edit_preset": {
+        "title": "Change a preset",
+        "description": "Colour presets:\n\n{presets}",
+        "data": {
+          "preset": "Preset"
+        }
+      },
+      "remove_preset": {
+        "title": "Remove a preset",
+        "description": "Colour presets:\n\n{presets}",
+        "data": {
+          "preset": "Preset"
+        }
+      },
+      "preset_color": {
+        "title": "Colour",
+        "description": "The colour for {name}.",
+        "data": {
+          "rgb_color": "Colour",
+          "color_temp_kelvin": "Colour temperature"
         }
       }
     },
@@ -547,6 +603,13 @@
           "description": "Calibration for this room's lights:\n\n{calibrations}",
           "data": {
             "calibration": "Light"
+          }
+        },
+        "light_preset": {
+          "title": "Colour preset",
+          "description": "Which preset {light} should use.",
+          "data": {
+            "preset_name": "Preset"
           }
         }
       },

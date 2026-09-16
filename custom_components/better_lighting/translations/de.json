@@ -58,6 +58,15 @@
   "options": {
     "step": {
       "init": {
+        "title": "Better Lighting",
+        "description": "Farbvorlagen:\n\n{presets}",
+        "menu_options": {
+          "settings": "Globale Standardwerte",
+          "presets": "Farbvorlagen",
+          "finish": "Fertig"
+        }
+      },
+      "settings": {
         "title": "Globale Standardwerte",
         "description": "Änderungen wirken sich auf jeden Raum aus, der sie nicht überschrieben hat.",
         "data": {
@@ -69,6 +78,7 @@
           "max_color_temp_k": "Kälteste Farbtemperatur",
           "brightness_mode": "Helligkeitsverlauf"
         },
+        "data_description": {},
         "sections": {
           "advanced": {
             "name": "Erweitert",
@@ -96,6 +106,52 @@
               "night_color_temp_k": "Farbtemperatur im Nachtmodus"
             }
           }
+        }
+      },
+      "presets": {
+        "title": "Farbvorlagen",
+        "description": "Farben, die einmal benannt und überall per Name ausgewählt werden:\n\n{presets}",
+        "menu_options": {
+          "add_preset": "Vorlage hinzufügen",
+          "edit_preset": "Vorlage ändern",
+          "remove_preset": "Vorlage entfernen",
+          "init": "Zurück"
+        }
+      },
+      "add_preset": {
+        "title": "Vorlage hinzufügen",
+        "data": {
+          "name": "Name",
+          "color_format": "Art der Farbe"
+        }
+      },
+      "preset_form": {
+        "title": "Vorlage ändern",
+        "data": {
+          "name": "Name",
+          "color_format": "Art der Farbe"
+        }
+      },
+      "edit_preset": {
+        "title": "Vorlage ändern",
+        "description": "Farbvorlagen:\n\n{presets}",
+        "data": {
+          "preset": "Vorlage"
+        }
+      },
+      "remove_preset": {
+        "title": "Vorlage entfernen",
+        "description": "Farbvorlagen:\n\n{presets}",
+        "data": {
+          "preset": "Vorlage"
+        }
+      },
+      "preset_color": {
+        "title": "Farbe",
+        "description": "Die Farbe für {name}.",
+        "data": {
+          "rgb_color": "Farbe",
+          "color_temp_kelvin": "Farbtemperatur"
         }
       }
     },
@@ -547,6 +603,13 @@
           "description": "Abgleich für die Lampen dieses Raums:\n\n{calibrations}",
           "data": {
             "calibration": "Lampe"
+          }
+        },
+        "light_preset": {
+          "title": "Farbvorlage",
+          "description": "Welche Vorlage {light} verwenden soll.",
+          "data": {
+            "preset_name": "Vorlage"
           }
         }
       },

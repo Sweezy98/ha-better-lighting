@@ -860,7 +860,6 @@ class BetterLightingPanel extends HTMLElement {
     if (this._closeOverflow) window.removeEventListener("click", this._closeOverflow);
     document.removeEventListener("visibilitychange", this._visibility);
     clearInterval(this._versionTimer);
-    clearInterval(this._countdown);
     for (const off of this._unsubscribers || []) {
       try {
         off();
@@ -893,40 +892,40 @@ class BetterLightingPanel extends HTMLElement {
       const { panel } = await this._call("version");
       if (panel && panel !== OWN_VERSION) {
         this._stale = true;
-        this._showUpdateBanner();
+        this._showUpdateToast();
       }
     } catch {
       // Offline, restarting, or an older backend. Nothing worth saying.
     }
   }
 
-  _showUpdateBanner() {
-    if (this.shadowRoot.getElementById("update")) return;
-    const bar = document.createElement("div");
-    bar.id = "update";
-    bar.className = "update";
-    bar.innerHTML = `<span class="grow">${this._t("update_available")}</span>
-      <span id="countdown" class="muted"></span>
-      <button id="reload">${this._t("reload_now")}</button>`;
-    this.shadowRoot.insertBefore(bar, this.shadowRoot.querySelector(".body"));
-
-    bar.querySelector("#reload").addEventListener("click", () =>
-      location.reload()
+  /**
+   * Home Assistant's own toast, rather than a bar of our own.
+   *
+   * hass-notification is how everything in the frontend says this kind of
+   * thing, including Home Assistant when its own new version is waiting --
+   * same corner, same shape, same behaviour. Held open and undismissable,
+   * because the page really is out of date until it is reloaded, and offering
+   * the reload rather than taking it: somebody halfway through a scene should
+   * get to press Save first.
+   */
+  _showUpdateToast() {
+    this.dispatchEvent(
+      new CustomEvent("hass-notification", {
+        detail: {
+          id: "better-lighting-update",
+          message: this._t("update_available"),
+          duration: -1,
+          dismissable: false,
+          action: {
+            text: this._t("reload_now"),
+            action: () => location.reload(),
+          },
+        },
+        bubbles: true,
+        composed: true,
+      })
     );
-    // A countdown rather than a reload out of nowhere: somebody halfway
-    // through a scene should get the chance to press Save first.
-    let left = 30;
-    const tick = () => {
-      bar.querySelector("#countdown").textContent = this._t(
-        "reloading_in"
-      ).replace("{seconds}", String(left));
-      if (left-- <= 0) {
-        clearInterval(this._countdown);
-        location.reload();
-      }
-    };
-    tick();
-    this._countdown = setInterval(tick, 1000);
   }
 
   async _load() {
@@ -1665,10 +1664,6 @@ class BetterLightingPanel extends HTMLElement {
         @media (max-width:1000px) { .editor { grid-template-columns:1fr; } }
         .pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px;
                 background:var(--secondary-background-color); }
-        .update { display:flex; align-items:center; gap:12px; padding:12px 16px;
-                  background:var(--info-color,#3f9bd4); color:#fff; }
-        .update button { background:#fff; color:var(--primary-text-color,#111); }
-        .update .muted { color:rgba(255,255,255,.85); }
         .banner { display:flex; align-items:center; gap:16px; margin-bottom:16px;
                   border-left:4px solid var(--info-color,#3f9bd4); flex-wrap:wrap; }
         .banner.live { border-left-color:var(--success-color,#43a047); }

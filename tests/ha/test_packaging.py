@@ -269,6 +269,7 @@ def test_the_panel_covers_every_settings_surface() -> None:
         "mode rules": "_paintRules",
         "importing a Home Assistant scene": "_paintImport",
         "noticing a new version": "_checkVersion",
+        "saying so in Home Assistant's own toast": "hass-notification",
         "diagnostics": "_paintDiagnostics",
         "the adaptive curve, drawn": "_paintCurve",
         "the curve in Home Assistant's own chart": "_haChart",

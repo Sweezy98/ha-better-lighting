@@ -48,7 +48,6 @@
   "imported": "Importiert",
   "update_available": "Eine neue Version dieser Seite ist verfügbar.",
   "reload_now": "Neu laden",
-  "reloading_in": "Neu laden in {seconds} s",
   "diagnostics": "Diagnose",
   "live_events": "Was passiert ist",
   "waiting_for_events": "Noch nichts. Einen Schalter drücken oder einen Modus wechseln lassen.",

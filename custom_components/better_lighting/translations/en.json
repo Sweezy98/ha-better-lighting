@@ -98,7 +98,6 @@
   },
   "config_subentries": {
     "zone": {
-      "title": "Zone",
       "entry_type": "Zone",
       "initiate_flow": {
         "user": "Add zone",
@@ -342,7 +341,6 @@
       }
     },
     "light_profile": {
-      "title": "Light profile",
       "entry_type": "Light profile",
       "initiate_flow": {
         "user": "Add light calibration",
@@ -421,7 +419,6 @@
       }
     },
     "scene": {
-      "title": "Scene",
       "entry_type": "Scene",
       "initiate_flow": {
         "user": "Add scene",
@@ -560,7 +557,6 @@
       }
     },
     "controller": {
-      "title": "Light switch",
       "entry_type": "Light switch",
       "initiate_flow": {
         "user": "Add light switch",
@@ -691,7 +687,6 @@
       }
     },
     "mode": {
-      "title": "Cross-zone mode",
       "entry_type": "Mode",
       "initiate_flow": {
         "user": "Add mode",

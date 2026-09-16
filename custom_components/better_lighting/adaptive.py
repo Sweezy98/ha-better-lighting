@@ -28,7 +28,7 @@ import math
 from dataclasses import dataclass
 from datetime import UTC, timedelta
 from enum import StrEnum
-from functools import cached_property, partial
+from functools import cached_property
 from typing import Literal
 
 import astral
@@ -44,7 +44,17 @@ from .util import clamp
 
 _LOGGER = logging.getLogger(__name__)
 
-utcnow: partial[datetime.datetime] = partial(datetime.datetime.now, UTC)
+
+def utcnow() -> datetime.datetime:
+    """The current moment, in UTC.
+
+    A plain function rather than ``partial(datetime.datetime.now, UTC)``: a
+    partial binds the method at import time, so anything that patches the clock
+    later -- freezegun in the tests, say -- is silently ignored and the whole
+    suite quietly depends on the hour it is run at.
+    """
+    return datetime.datetime.now(UTC)
+
 
 # Above the polar circle the sun may not cross the horizon at all. On such days
 # a synthetic one-hour "day" or "night" is placed this far from solar noon or

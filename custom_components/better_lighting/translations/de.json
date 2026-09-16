@@ -98,7 +98,6 @@
   },
   "config_subentries": {
     "zone": {
-      "title": "Raum",
       "entry_type": "Raum",
       "initiate_flow": {
         "user": "Raum hinzufügen",
@@ -342,7 +341,6 @@
       }
     },
     "light_profile": {
-      "title": "Lampenabgleich",
       "entry_type": "Lampenabgleich",
       "initiate_flow": {
         "user": "Lampenabgleich hinzufügen",
@@ -421,7 +419,6 @@
       }
     },
     "scene": {
-      "title": "Szene",
       "entry_type": "Szene",
       "initiate_flow": {
         "user": "Szene hinzufügen",
@@ -560,7 +557,6 @@
       }
     },
     "controller": {
-      "title": "Lichtschalter",
       "entry_type": "Lichtschalter",
       "initiate_flow": {
         "user": "Lichtschalter hinzufügen",
@@ -691,7 +687,6 @@
       }
     },
     "mode": {
-      "title": "Raumübergreifender Modus",
       "entry_type": "Modus",
       "initiate_flow": {
         "user": "Modus hinzufügen",

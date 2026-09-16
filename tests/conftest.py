@@ -38,6 +38,25 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     return
 
 
+# Midday at Home Assistant's default test coordinates, so the sun is well up
+# and the adaptive curve sits at its bright end.
+FIXED_NOW = "2026-06-15 20:00:00+00:00"
+
+
+@pytest.fixture(autouse=True)
+def fixed_clock(freezer):
+    """Pin the clock, because the adaptive engine reads it.
+
+    Without this the suite depends on the hour it is run at: tests that move a
+    light "well away" from the adaptive value pass in the afternoon, when that
+    value is high, and fail after midnight, when the curve has already bottomed
+    out and there is nowhere below it to move to. Tests that need time to pass
+    take the ``freezer`` fixture themselves and move it.
+    """
+    freezer.move_to(FIXED_NOW)
+    return freezer
+
+
 class MemberLight(LightEntity):
     """A real light entity, so tests exercise the actual service path.
 

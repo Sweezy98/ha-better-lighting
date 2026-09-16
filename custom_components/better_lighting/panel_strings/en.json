@@ -13,8 +13,6 @@
   "none": "—",
   "scene": "Scene",
   "new_scene": "New scene",
-  "captured": "Captured",
-  "capture_room": "Take the room as it is now",
   "lights": "Lights",
   "add_light": "Add a light…",
   "every_light": "Every light in this room",
@@ -90,5 +88,6 @@
   "n_scenes": "{count} scenes",
   "n_rules": "{count} rules",
   "brightness": "Brightness",
-  "colour_temperature": "Colour temperature"
+  "colour_temperature": "Colour temperature",
+  "more": "More"
 }

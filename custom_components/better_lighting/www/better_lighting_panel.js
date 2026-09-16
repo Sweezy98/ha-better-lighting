@@ -684,12 +684,18 @@ class BlForm extends HTMLElement {
     let selector = field.selector;
     const [[kind, config]] = Object.entries(selector);
     if (field.options_key) {
-      const options = (this._choices[field.options_key] || []).map((choice) => ({
-        value: choice.value,
-        label: choice.label,
-      }));
-      if (!options.length) return null;
-      selector = { [kind]: { ...config, options } };
+      // Even when there is nothing to choose yet. Falling back to a plain
+      // dropdown here is what left "which scene to apply" looking unlike
+      // every other field in a room that has no scenes yet.
+      selector = {
+        [kind]: {
+          ...config,
+          options: (this._choices[field.options_key] || []).map((choice) => ({
+            value: choice.value,
+            label: choice.label,
+          })),
+        },
+      };
     }
     // Home Assistant draws a select with few options as a column of radio
     // buttons unless it is told otherwise, which is why the scene pickers
@@ -704,6 +710,11 @@ class BlForm extends HTMLElement {
     element.value = value ?? undefined;
     element.addEventListener("value-changed", (event) => {
       event.stopPropagation();
+      // Home Assistant's controls are controlled: they report a change and
+      // wait to be given the new value back. Without this line a multi-select
+      // drew the chips it started with for ever, so nothing added to one --
+      // least of all a value typed in by hand -- ever appeared.
+      element.value = event.detail.value;
       this._set(field.key, event.detail.value);
     });
     return element;
@@ -801,6 +812,9 @@ class BetterLightingPanel extends HTMLElement {
     // wizard.
     this._view = { kind: "rooms" };
     this._navOpen = false;
+    // Which menu groups are folded shut. A house with a dozen rooms wants the
+    // modes in reach without scrolling past all of them.
+    this._collapsed = { rooms: false, modes: false };
     this._scene = null;
     this._selectedLight = null;
     this._previewing = false;
@@ -839,6 +853,7 @@ class BetterLightingPanel extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("beforeunload", this._unload);
+    if (this._closeOverflow) window.removeEventListener("click", this._closeOverflow);
     document.removeEventListener("visibilitychange", this._visibility);
     clearInterval(this._versionTimer);
     clearInterval(this._countdown);
@@ -950,7 +965,9 @@ class BetterLightingPanel extends HTMLElement {
       if (placeholder) element.label = placeholder;
       element.addEventListener("value-changed", (event) => {
         event.stopPropagation();
-        if (event.detail.value !== undefined) onChange(event.detail.value);
+        if (event.detail.value === undefined) return;
+        element.value = event.detail.value;
+        onChange(event.detail.value);
       });
       return element;
     }
@@ -1357,6 +1374,8 @@ class BetterLightingPanel extends HTMLElement {
         return [{ label: this._t("global_settings") }];
       case "diagnostics":
         return [{ label: this._t("diagnostics") }];
+      case "import":
+        return [{ label: this._t("import_scenes") }];
       case "presets": {
         const top = { label: named("presets"), go: to({ kind: "presets" }) };
         if (view.index === undefined) return [top];
@@ -1370,9 +1389,6 @@ class BetterLightingPanel extends HTMLElement {
         };
         if (this._scene) {
           return [rooms, theRoom, top, { label: this._scene.name }];
-        }
-        if (view.sub === "import") {
-          return [rooms, theRoom, top, { label: this._t("import_scenes") }];
         }
         return [rooms, theRoom, top];
       }
@@ -1441,6 +1457,14 @@ class BetterLightingPanel extends HTMLElement {
     back.innerHTML = this._icon("mdi:arrow-left") || "\u2039";
     menu.title = this._t("ha_sidebar");
     menu.innerHTML = this._icon("mdi:menu") || "\u2630";
+    // The header is built before the strings have arrived, so its buttons are
+    // labelled here rather than there.
+    const more = this.shadowRoot.getElementById("more");
+    more.title = this._t("more");
+    more.innerHTML = this._icon("mdi:dots-vertical") || "\u22ee";
+    this.shadowRoot.getElementById("go-import").innerHTML = `${this._icon(
+      "mdi:download"
+    )}<span class="grow">${this._t("import_scenes")}</span>`;
 
     holder.innerHTML = crumbs
       .map((crumb, index) => {
@@ -1483,13 +1507,18 @@ class BetterLightingPanel extends HTMLElement {
   _shell() {
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display:block; min-height:100%;
+        /* The page is exactly the height of the window and does not scroll:
+           the menu and the content each scroll inside it, so the header and
+           the menu stay where they are however long a form gets. dvh rather
+           than vh because a phone's address bar comes and goes. */
+        :host { display:flex; flex-direction:column; height:100vh; height:100dvh;
+                overflow:hidden;
                 background:var(--primary-background-color);
                 color:var(--primary-text-color);
                 font-family:var(--paper-font-body1_-_font-family, Roboto, sans-serif); }
         /* Sticky, because the way back has to be reachable from the bottom of
            a long form as well as the top of one. */
-        header { position:sticky; top:0; z-index:5;
+        header { flex:0 0 auto; z-index:5;
                  display:flex; align-items:center; gap:8px;
                  min-height:56px; padding:6px 12px; box-sizing:border-box;
                  background:var(--app-header-background-color, var(--primary-color));
@@ -1515,22 +1544,39 @@ class BetterLightingPanel extends HTMLElement {
         #menu { display:none; }
         @media (max-width:870px) { #menu { display:inline-flex; } }
         ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
-        .body { display:grid; grid-template-columns:260px 1fr; gap:16px; padding:16px;
-                align-items:start; }
-        @media (max-width:800px) { .body { grid-template-columns:1fr; padding:12px; } }
-        @media (max-width:500px) { .body { padding:8px; gap:12px; } }
-        /* The menu scrolls with its own list rather than with the page, so a
-           house with twelve rooms does not bury the global settings. */
-        .nav { position:sticky; top:72px; max-height:calc(100vh - 88px); overflow:auto; }
+        /* Pushed to the far end, and holding what belongs to the panel as a
+           whole rather than to the screen in front of you. */
+        .overflow { position:relative; margin-left:auto; flex:0 0 auto; }
+        .overflow .menu { position:absolute; right:0; top:44px; z-index:6;
+                          min-width:220px; padding:6px 0; border-radius:10px;
+                          background:var(--card-background-color,#fff);
+                          color:var(--primary-text-color);
+                          box-shadow:0 4px 16px rgba(0,0,0,.3); }
+        .overflow .menu[hidden] { display:none; }
+        .menu-item { display:flex; width:100%; gap:12px; align-items:center;
+                     padding:12px 16px; background:transparent; color:inherit;
+                     border-radius:0; text-align:left; }
+        .menu-item:hover { background:var(--secondary-background-color); }
+        .body { flex:1 1 auto; min-height:0;
+                display:grid; grid-template-columns:260px 1fr; gap:16px; padding:16px;
+                align-items:start; overflow:hidden; }
+        /* Each column keeps its own scrollbar and neither is taller than the
+           window. */
+        .nav, #main { max-height:100%; overflow:auto; }
         .nav-head { display:none; }
         @media (max-width:800px) {
-          .nav { position:static; max-height:none; overflow:visible; }
+          /* Too narrow for two columns, so the menu goes back to being a
+             drawer above the content and the page scrolls as one. */
+          .body { grid-template-columns:1fr; padding:12px; overflow:auto; }
+          .nav, #main { max-height:none; overflow:visible; }
           .nav-head { display:block; }
           .nav-body[data-collapsed="1"] { display:none; }
         }
+        @media (max-width:500px) { .body { padding:8px; gap:12px; } }
         .card { background:var(--card-background-color,#fff); border-radius:12px;
-                padding:16px; box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.1)); }
-        @media (max-width:500px) { .card { padding:12px; } }
+                padding:16px 20px;
+                box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.1)); }
+        @media (max-width:500px) { .card { padding:12px 14px; } }
         /* Stacked cards -- a mode and its rules, the diagnostics tables and
            the curve -- were flush against each other, which read as one card
            with a line through it rather than two things. */
@@ -1538,13 +1584,38 @@ class BetterLightingPanel extends HTMLElement {
         .card > :last-child { margin-bottom:0; }
         h2 { margin:0 0 12px; font-size:16px; font-weight:500; }
         ul { list-style:none; margin:0 0 4px; padding:0; }
-        li { padding:10px 12px; border-radius:8px; cursor:pointer;
-             display:flex; align-items:center; gap:10px; }
+        /* The menu is painted the way Home Assistant paints its own sidebar:
+           the accent colour for the text and the icon of the current entry,
+           over a wash of that same colour rather than a solid block of it,
+           and a dimmed icon everywhere else. Its variables, so a theme that
+           restyles the sidebar restyles this too. */
+        li { padding:10px 12px; border-radius:8px; cursor:pointer; position:relative;
+             display:flex; align-items:center; gap:10px;
+             color:var(--sidebar-text-color, var(--primary-text-color)); }
+        li > * { position:relative; z-index:1; }
+        li ha-icon { color:var(--sidebar-icon-color, var(--secondary-text-color)); }
         li:hover { background:var(--secondary-background-color); }
-        li[aria-selected="true"] { background:var(--primary-color); color:#fff; }
+        li[aria-selected="true"] { color:var(--sidebar-selected-text-color,
+                                              var(--primary-color)); }
+        li[aria-selected="true"]::before { content:""; position:absolute; inset:0;
+             z-index:0; border-radius:8px; pointer-events:none;
+             background-color:var(--sidebar-selected-icon-color, var(--primary-color));
+             opacity:var(--dark-divider-opacity, .12); }
+        li[aria-selected="true"] ha-icon { color:var(--sidebar-selected-icon-color,
+                                                     var(--primary-color)); }
+        li[aria-expanded="true"] { font-weight:500; }
+        li.add ha-icon { color:inherit; }
+        .twist { display:inline-flex; align-items:center; cursor:pointer;
+                 opacity:.6; margin:-4px -4px -4px 0; padding:4px; }
+        .twist:hover { opacity:1; }
         li.section { font-size:15px; font-weight:500; }
         ul.sub { margin:2px 0 8px 14px; border-left:2px solid var(--divider-color,#ddd); }
         ul.sub li { font-size:14px; padding:7px 10px; }
+        /* What belongs to the entry above it: the rooms under Rooms, the
+           modes under Modes, and the row that adds one at the same indent as
+           its neighbours rather than floating below them. */
+        ul.group { margin-left:14px; }
+        li.add { color:var(--primary-color); }
         h3 { margin:18px 0 10px; font-size:15px; font-weight:500; }
         /* A boxed accordion, in the shape Home Assistant's expansion panel
            uses: the title on the left, a chevron on the right, and the
@@ -1564,8 +1635,8 @@ class BetterLightingPanel extends HTMLElement {
                          transition:transform .15s; }
         details[open] > summary::after { transform:rotate(225deg) translate(-3px,-3px); }
         details[open] > summary { border-bottom:1px solid var(--divider-color,#3d3d3d); }
-        details > bl-form { display:block; padding:16px; }
-        details > .fold-body { padding:16px; }
+        details > bl-form { display:block; padding:16px 20px; }
+        details > .fold-body { padding:16px 20px; }
         .light { display:flex; align-items:center; gap:12px; padding:8px 12px;
                  border-radius:8px; cursor:pointer; flex-wrap:wrap; }
         .light > ha-selector { flex:1 1 150px; min-width:150px; }
@@ -1626,6 +1697,12 @@ class BetterLightingPanel extends HTMLElement {
           <span class="app-title">Better Lighting</span>
           <nav class="crumbs" id="crumbs"></nav>
         </div>
+        <div class="overflow">
+          <button class="icon-btn" id="more"></button>
+          <div class="menu" id="more-menu" hidden>
+            <button class="menu-item" id="go-import"></button>
+          </div>
+        </div>
       </header>
       <div class="body">
         <div class="card nav" id="rooms"></div>
@@ -1638,6 +1715,23 @@ class BetterLightingPanel extends HTMLElement {
         new CustomEvent("hass-toggle-menu", { bubbles: true, composed: true })
       )
     );
+
+    const overflow = this.shadowRoot.getElementById("more-menu");
+    this.shadowRoot.getElementById("more").addEventListener("click", (event) => {
+      event.stopPropagation();
+      overflow.hidden = !overflow.hidden;
+    });
+    this.shadowRoot.getElementById("go-import").addEventListener("click", () => {
+      overflow.hidden = true;
+      this._view = { kind: "import" };
+      this._paint();
+    });
+    // Anywhere else closes it, as a menu should.
+    this._closeOverflow = () => {
+      overflow.hidden = true;
+    };
+    this.shadowRoot.addEventListener("click", this._closeOverflow);
+    window.addEventListener("click", this._closeOverflow);
   }
 
   /** An mdi icon, when Home Assistant's element for drawing one is here. */
@@ -1657,9 +1751,18 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   _paint() {
+    this._paintNav();
+    this._paintMain();
+  }
+
+  _paintNav() {
     const nav = this.shadowRoot.getElementById("rooms");
     const sections = (this._schema?.forms.zone || []).map((group) => group.section);
     const icon = (name) => this._icon(name);
+    const twist = (key) =>
+      `<span class="twist" data-twist="${key}">${icon(
+        this._collapsed[key] ? "mdi:chevron-right" : "mdi:chevron-down"
+      )}</span>`;
 
     // No section chosen means the first one, which is what the content pane
     // falls back to -- so the highlight has to agree with it, or a room opens
@@ -1699,9 +1802,12 @@ class BetterLightingPanel extends HTMLElement {
               ),
             ].join("")}</ul>`
           : "";
-        return `<li class="room" data-room="${room.id}" aria-selected="${open}">${icon(
-          room.data?.icon || "mdi:lightbulb-group"
-        )}<span class="grow">${room.name}</span></li>${children}`;
+        // Open, but not selected: the screen you are on is one of the rows
+        // underneath, and two highlights at once say two things are current.
+        return `<li class="room" data-room="${room.id}" aria-expanded="${open}"
+          aria-selected="false">${icon(
+            room.data?.icon || "mdi:lightbulb-group"
+          )}<span class="grow">${room.name}</span></li>${children}`;
       })
       .join("");
 
@@ -1715,18 +1821,24 @@ class BetterLightingPanel extends HTMLElement {
         <ul>
           <li class="section" data-overview="rooms" aria-selected="${
             this._view.kind === "rooms"
-          }">${icon("mdi:home-group")}<span class="grow">${this._t("rooms")}</span></li>
-          ${roomRows}
+          }">${icon("mdi:home-group")}<span class="grow">${this._t(
+            "rooms"
+          )}</span>${twist("rooms")}</li>
         </ul>
-        <div class="bar"><button class="flat" id="add-room">${icon(
-          "mdi:plus"
-        )}<span>${this._t("add_room")}</span></button></div>
+        <ul class="group"${this._collapsed.rooms ? " hidden" : ""}>
+          ${roomRows}
+          <li class="add" id="add-room">${icon("mdi:plus")}<span class="grow">${this._t(
+            "add_room"
+          )}</span></li>
+        </ul>
         <ul style="margin-top:12px">
           <li class="section" data-overview="modes" aria-selected="${
             this._view.kind === "modes"
           }">${icon("mdi:movie-open-outline")}<span class="grow">${this._t(
             "modes"
-          )}</span></li>
+          )}</span>${twist("modes")}</li>
+        </ul>
+        <ul class="group"${this._collapsed.modes ? " hidden" : ""}>
           ${this._modes
             .map(
               (mode) =>
@@ -1737,10 +1849,10 @@ class BetterLightingPanel extends HTMLElement {
                 }</span></li>`
             )
             .join("")}
+          <li class="add" id="add-mode">${icon("mdi:plus")}<span class="grow">${this._t(
+            "add_mode"
+          )}</span></li>
         </ul>
-        <div class="bar"><button class="flat" id="add-mode">${icon(
-          "mdi:plus"
-        )}<span>${this._t("add_mode")}</span></button></div>
         <ul style="margin-top:20px">
           <li class="section" data-hub="1" aria-selected="${
             this._view.kind === "hub"
@@ -1837,8 +1949,16 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "mode", creating: true };
       this._paint();
     });
-
-    this._paintMain();
+    nav.querySelectorAll("[data-twist]").forEach((handle) =>
+      handle.addEventListener("click", (event) => {
+        // Folding a group is not going anywhere, so the row it sits on must
+        // not navigate and the content must not be repainted.
+        event.stopPropagation();
+        const key = handle.dataset.twist;
+        this._collapsed[key] = !this._collapsed[key];
+        this._paintNav();
+      })
+    );
   }
 
   _paintMain() {
@@ -1861,8 +1981,9 @@ class BetterLightingPanel extends HTMLElement {
         });
       case "mode":
         return this._paintMode();
+      case "import":
+        return this._paintImport();
       case "scenes":
-        if (this._view.sub === "import") return this._paintImport();
         return this._paintScenes();
       case "switches":
         if (this._view.sub === "order") return this._paintSwitchOrder();
@@ -2580,9 +2701,9 @@ class BetterLightingPanel extends HTMLElement {
           )
           .join("")}</ul>
         <div class="bar">
-          <button id="new">${this._t("new_scene")}</button>
-          <button class="flat" id="capture">${this._t("capture_room")}</button>
-          <button class="flat" id="import">${this._t("import_scenes")}</button>
+          <button id="new">${this._icon("mdi:plus")}<span>${this._t(
+            "new_scene"
+          )}</span></button>
         </div>
       </div>`;
 
@@ -2595,15 +2716,6 @@ class BetterLightingPanel extends HTMLElement {
     );
     main.querySelector("#new").addEventListener("click", () => {
       this._scene = { name: this._t("new_scene"), lights: {} };
-      this._selectedLight = room.lights[0] || null;
-      this._paint();
-    });
-    main.querySelector("#import").addEventListener("click", () => {
-      this._view = { kind: "scenes", sub: "import" };
-      this._paint();
-    });
-    main.querySelector("#capture").addEventListener("click", () => {
-      this._scene = { name: this._t("captured"), lights: this._captureRoom() };
       this._selectedLight = room.lights[0] || null;
       this._paint();
     });
@@ -2638,19 +2750,20 @@ class BetterLightingPanel extends HTMLElement {
     return entry;
   }
 
-  /** Read the whole room's current state into per-light scene entries. */
-  _captureRoom() {
-    const lights = {};
-    for (const entityId of this._room.lights) {
-      const captured = this._captureOne(entityId);
-      if (captured) lights[entityId] = captured;
-    }
-    return lights;
-  }
-
+  /**
+   * One light's entry in the scene, made if it has none yet.
+   *
+   * A light added to a scene is taken as it is now -- its brightness, its
+   * colour, or off if that is what it is. Which is what the "take the room as
+   * it is" button did to the whole room at once, and is more useful one light
+   * at a time: build a scene by adding the lights that are already right.
+   */
   _spec(entityId) {
     if (!this._scene.lights[entityId]) {
-      this._scene.lights[entityId] = { action: "apply", color_format: "inherit" };
+      this._scene.lights[entityId] = this._captureOne(entityId) || {
+        action: "apply",
+        color_format: "inherit",
+      };
     }
     return this._scene.lights[entityId];
   }
@@ -2718,7 +2831,6 @@ class BetterLightingPanel extends HTMLElement {
         <div class="bar">
           <button id="save">${this._t("save")}</button>
           <button class="flat" id="cancel">${this._t("cancel")}</button>
-          <button class="flat" id="recapture">${this._t("capture_room")}</button>
           ${this._scene.scene_id ? `<button class="danger" id="delete">${this._t("delete")}</button>` : ""}
         </div>
       </div>`;
@@ -2744,10 +2856,6 @@ class BetterLightingPanel extends HTMLElement {
       this._scene = null;
       this._view = { kind: "scenes" };
       this._load();
-    });
-    main.querySelector("#recapture").addEventListener("click", () => {
-      this._scene.lights = this._captureRoom();
-      this._paintEditor();
     });
     main.querySelector("#delete")?.addEventListener("click", async () => {
       await this._call("delete_scene", {

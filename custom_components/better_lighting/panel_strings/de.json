@@ -13,8 +13,6 @@
   "none": "—",
   "scene": "Szene",
   "new_scene": "Neue Szene",
-  "captured": "Übernommen",
-  "capture_room": "Raum so übernehmen, wie er gerade ist",
   "lights": "Lampen",
   "add_light": "Lampe hinzufügen …",
   "every_light": "Jede Lampe in diesem Raum",
@@ -90,5 +88,6 @@
   "n_scenes": "{count} Szenen",
   "n_rules": "{count} Regeln",
   "brightness": "Helligkeit",
-  "colour_temperature": "Farbtemperatur"
+  "colour_temperature": "Farbtemperatur",
+  "more": "Mehr"
 }

@@ -261,7 +261,7 @@ def test_the_panel_covers_every_settings_surface() -> None:
         "room settings": "_paintRoomSection",
         "delete a room": "delete_zone",
         "scenes": "_paintEditor",
-        "capture a scene": "_captureRoom",
+        "a light taken as it is": "_captureOne",
         "switches": '"switch"',
         "what a switch cycles": "_paintSwitchOrder",
         "light calibration": '"calibration"',

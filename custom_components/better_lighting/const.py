@@ -250,6 +250,7 @@ CONF_TIME_DARK = "brightness_mode_time_dark"
 CONF_TIME_LIGHT = "brightness_mode_time_light"
 CONF_SUNRISE_OFFSET = "sunrise_offset"
 CONF_SUNSET_OFFSET = "sunset_offset"
+CONF_NIGHT_SOURCE = "night_source_entity"
 CONF_NIGHT_BRIGHTNESS_PCT = "night_brightness_pct"
 CONF_NIGHT_COLOR_TEMP_K = "night_color_temp_k"
 CONF_PREFER_RGB_COLOR = "prefer_rgb_color"
@@ -286,12 +287,25 @@ HUB_SPECS: tuple[FieldSpec, ...] = (
         validator=VALID_TRANSITION,
         section=Section.ADVANCED,
     ),
+    # One helper for the whole house: "everyone is asleep" is a fact about the
+    # household, not about a room. What each room *does* about it stays per
+    # zone, because a bedroom and a hallway should not react the same way.
+    FieldSpec(
+        CONF_NIGHT_SOURCE,
+        None,
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["binary_sensor", "input_boolean", "schedule", "switch"]
+            )
+        ),
+        section=Section.NIGHT,
+    ),
+    FieldSpec(CONF_NIGHT_BRIGHTNESS_PCT, 1, _pct(), section=Section.NIGHT),
+    FieldSpec(CONF_NIGHT_COLOR_TEMP_K, 1800, _kelvin(), section=Section.NIGHT),
     FieldSpec(CONF_TIME_DARK, 5400, _seconds(0, 14400), section=Section.ADVANCED),
     FieldSpec(CONF_TIME_LIGHT, 2700, _seconds(0, 14400), section=Section.ADVANCED),
     FieldSpec(CONF_SUNRISE_OFFSET, 0, _seconds(-7200, 7200), section=Section.ADVANCED),
     FieldSpec(CONF_SUNSET_OFFSET, 0, _seconds(-7200, 7200), section=Section.ADVANCED),
-    FieldSpec(CONF_NIGHT_BRIGHTNESS_PCT, 1, _pct(), section=Section.ADVANCED),
-    FieldSpec(CONF_NIGHT_COLOR_TEMP_K, 1800, _kelvin(), section=Section.ADVANCED),
     FieldSpec(CONF_PREFER_RGB_COLOR, False, _boolean(), section=Section.ADVANCED),
     FieldSpec(CONF_TAKE_OVER_CONTROL, True, _boolean(), section=Section.ADVANCED),
     FieldSpec(
@@ -377,7 +391,6 @@ CONF_ADAPTIVE_COLOR_ON = "adaptive_color_default_on"
 
 # --- zone night mode ---------------------------------------------------------
 
-CONF_NIGHT_SOURCE = "night_source_entity"
 CONF_NIGHT_BEHAVIOR = "night_behavior"
 CONF_NIGHT_SCENE = "night_scene_id"
 CONF_NIGHT_IGNORE_PRESENCE = "night_ignore_presence"
@@ -438,16 +451,6 @@ ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
 ZONE_NIGHT_SPECS: tuple[FieldSpec, ...] = (
     # Night mode follows an existing helper rather than a schedule of its own,
     # so the user keeps one source of truth for "the house is asleep".
-    FieldSpec(
-        CONF_NIGHT_SOURCE,
-        None,
-        selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["binary_sensor", "input_boolean", "schedule", "switch"]
-            )
-        ),
-        section=Section.NIGHT,
-    ),
     FieldSpec(
         CONF_NIGHT_BEHAVIOR,
         NightBehavior.MIN_SETTINGS.value,

@@ -203,7 +203,7 @@ class TestDanglingReferences:
             "light", "turn_on", {"entity_id": "light.kitchen"}, blocking=True
         )
         await hass.async_block_till_done()
-        assert hass.states.get("select.kitchen_mode").state == "Adaptive"
+        assert hass.states.get("select.kitchen_scenes").state == "Adaptive"
 
 
 def _our_issues(hass: HomeAssistant) -> list[str]:
@@ -241,7 +241,7 @@ class TestSerialisation:
         await hass.async_block_till_done()
 
         # Whatever order they landed in, the room ends in exactly one mode.
-        select = hass.states.get("select.kitchen_mode")
+        select = hass.states.get("select.kitchen_scenes")
         assert select.state in select.attributes["options"]
         assert controller.mode.value in ("adaptive", "scene", "off")
 

@@ -204,7 +204,7 @@ class ZoneController:
 
     async def async_setup(self) -> None:
         """Start the tick and follow the night-mode source entity."""
-        if source := self.zone.night_source_entity:
+        if source := self.night_source:
             self.night_active = self._read_night_source(source)
             self._unsubscribers.append(
                 async_track_state_change_event(
@@ -308,6 +308,16 @@ class ZoneController:
                 self._lock_owner = None
 
     # -- inputs ------------------------------------------------------------
+
+    @property
+    def night_source(self) -> str | None:
+        """The helper this zone follows for night mode.
+
+        House-wide, because "everyone is asleep" is a fact about the household.
+        A zone configured before the helper moved to the hub keeps its own
+        until the global one is set, so an upgrade changes nothing on its own.
+        """
+        return self.hub.night_source_entity or self.zone.night_source_entity
 
     def _read_night_source(self, entity_id: str) -> bool:
         state = self.hass.states.get(entity_id)

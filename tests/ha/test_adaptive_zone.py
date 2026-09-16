@@ -186,6 +186,43 @@ class TestNightMode:
         # step 5 of the resolution order.
         assert night["color_temp_kelvin"] == 2000
 
+    async def test_the_helper_can_live_on_the_hub(self, hass: HomeAssistant) -> None:
+        """One helper for the house; each room decides what to do about it."""
+        hass.states.async_set("input_boolean.asleep", "off")
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = hub_entry(
+            options={"night_source_entity": "input_boolean.asleep"},
+            subentries_data=[zone_subentry()],
+        )
+        await setup_hub(hass, entry)
+        assert hass.states.get(NIGHT).state == "off"
+
+        hass.states.async_set("input_boolean.asleep", "on")
+        await hass.async_block_till_done()
+
+        assert hass.states.get(NIGHT).state == "on"
+
+    async def test_night_mode_does_not_light_a_dark_room(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Adaptive Lighting's oldest complaint: the house lights up at bedtime."""
+        hass.states.async_set("input_boolean.asleep", "off")
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(
+            hass,
+            hub_entry(
+                options={"night_source_entity": "input_boolean.asleep"},
+                subentries_data=[zone_subentry()],
+            ),
+        )
+        assert hass.states.get("light.one").state == "off"
+
+        hass.states.async_set("input_boolean.asleep", "on")
+        await hass.async_block_till_done()
+
+        assert hass.states.get("light.one").state == "off"
+        assert hass.states.get("light.two").state == "off"
+
 
 class TestTick:
     async def test_tick_corrects_a_light_that_has_drifted(
@@ -351,7 +388,7 @@ class TestAdaptiveAxes:
         await hass.services.async_call(
             "select",
             "select_option",
-            {"entity_id": "select.kitchen_mode", "option": "Cosy"},
+            {"entity_id": "select.kitchen_scenes", "option": "Cosy"},
             blocking=True,
         )
         await hass.async_block_till_done()

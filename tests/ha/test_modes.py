@@ -360,7 +360,7 @@ class TestOptOut:
         await hass.async_block_till_done()
 
         assert hass.states.get("light.kitchen_main").state == "on"
-        assert hass.states.get("select.kitchen_mode").state == "Adaptive"
+        assert hass.states.get("select.kitchen_scenes").state == "Adaptive"
         assert hass.states.get(CINEMA).attributes["bl_opted_out"]
 
     async def test_an_opted_out_room_ignores_later_states(
@@ -499,7 +499,7 @@ class TestTheFullTrace:
             "light", "turn_on", {"entity_id": "light.kitchen"}, blocking=True
         )
         await hass.async_block_till_done()
-        assert hass.states.get("select.kitchen_mode").state == "Adaptive"
+        assert hass.states.get("select.kitchen_scenes").state == "Adaptive"
 
         # The film ends. The lounge returns; the kitchen is left as they left it.
         await set_state(hass, "off")

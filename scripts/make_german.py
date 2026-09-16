@@ -89,6 +89,7 @@ DE: dict[str, str] = {
     # --- zone night -------------------------------------------------------
     "Night mode": "Nachtmodus",
     "Night mode follows": "Nachtmodus folgt",
+    "The helper that says the house is asleep. Each room decides for itself whether that dims it, darkens it or does nothing.": "Der Helfer, der meldet, dass das Haus schläft. Jeder Raum entscheidet selbst, ob er dadurch gedimmt, dunkel geschaltet wird oder unverändert bleibt.",
     "What night mode does": "Was der Nachtmodus tut",
     "Night transition": "Übergangsdauer im Nachtmodus",
     "Ignore presence while in night mode": "Anwesenheit im Nachtmodus ignorieren",
@@ -270,6 +271,7 @@ DE |= {
     "Night": "Nacht",
     "Enabled": "Aktiviert",
     "Mode ": "Modus ",
+    "Scenes": "Szenen",
     "State": "Zustand",
     "Cycle": "nächster Modus",
     "Cycle back": "vorheriger Modus",

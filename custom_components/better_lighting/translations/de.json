@@ -79,14 +79,21 @@
               "brightness_mode_time_light": "Dauer des Übergangs zur hellen Seite",
               "sunrise_offset": "Versatz zum Sonnenaufgang",
               "sunset_offset": "Versatz zum Sonnenuntergang",
-              "night_brightness_pct": "Helligkeit im Nachtmodus",
-              "night_color_temp_k": "Farbtemperatur im Nachtmodus",
               "prefer_rgb_color": "RGB gegenüber Farbtemperatur bevorzugen",
               "take_over_control": "Manuelle Änderungen erkennen",
               "autoreset_manual_seconds": "Manuelle Änderung vergessen nach",
               "separate_turn_on_commands": "Helligkeit und Farbe getrennt senden",
               "send_split_delay_ms": "Wartezeit zwischen getrennten Befehlen",
               "intercept_member_calls": "Aufrufe direkt an einzelne Lampen abfangen"
+            }
+          },
+          "night": {
+            "name": "Nachtmodus",
+            "description": "Der Helfer, der meldet, dass das Haus schläft. Jeder Raum entscheidet selbst, ob er dadurch gedimmt, dunkel geschaltet wird oder unverändert bleibt.",
+            "data": {
+              "night_source_entity": "Nachtmodus folgt",
+              "night_brightness_pct": "Helligkeit im Nachtmodus",
+              "night_color_temp_k": "Farbtemperatur im Nachtmodus"
             }
           }
         }
@@ -155,7 +162,6 @@
             "night": {
               "name": "Nachtmodus",
               "data": {
-                "night_source_entity": "Nachtmodus folgt",
                 "night_behavior": "Was der Nachtmodus tut",
                 "night_brightness_pct": "Helligkeit im Nachtmodus",
                 "night_color_temp_k": "Farbtemperatur im Nachtmodus",
@@ -164,7 +170,6 @@
                 "night_scene_id": "Nachtszene"
               },
               "data_description": {
-                "night_source_entity": "Ein vorhandener Helfer oder Sensor, der an ist, wenn das Haus schläft. Der Nachtschalter dieses Raums spiegelt ihn.",
                 "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
                 "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist.",
                 "night_behavior": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht — der Nachtschalter des Raums dimmt immer, statt zu verdunkeln."
@@ -265,7 +270,6 @@
             "night": {
               "name": "Nachtmodus",
               "data": {
-                "night_source_entity": "Nachtmodus folgt",
                 "night_behavior": "Was der Nachtmodus tut",
                 "night_brightness_pct": "Helligkeit im Nachtmodus",
                 "night_color_temp_k": "Farbtemperatur im Nachtmodus",
@@ -274,7 +278,6 @@
                 "night_scene_id": "Nachtszene"
               },
               "data_description": {
-                "night_source_entity": "Ein vorhandener Helfer oder Sensor, der an ist, wenn das Haus schläft. Der Nachtschalter dieses Raums spiegelt ihn.",
                 "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
                 "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist.",
                 "night_behavior": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht — der Nachtschalter des Raums dimmt immer, statt zu verdunkeln."
@@ -991,7 +994,7 @@
     },
     "select": {
       "zone_mode": {
-        "name": "Modus"
+        "name": "Szenen"
       },
       "mode_state": {
         "name": "Zustand"

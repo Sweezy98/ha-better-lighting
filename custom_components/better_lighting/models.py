@@ -191,6 +191,10 @@ class HubConfig:
     min_color_temp_k: int
     max_color_temp_k: int
     brightness_mode: BrightnessMode
+    # The house-wide "everyone is asleep" helper. Each zone decides what to do
+    # about it; a zone that still carries its own from an older version keeps
+    # using that until this one is set.
+    night_source_entity: str | None
     time_dark: int
     time_light: int
     sunrise_offset: int
@@ -218,6 +222,7 @@ class HubConfig:
             min_color_temp_k=int(raw[CONF_MIN_COLOR_TEMP_K]),
             max_color_temp_k=int(raw[CONF_MAX_COLOR_TEMP_K]),
             brightness_mode=BrightnessMode(raw[CONF_BRIGHTNESS_MODE]),
+            night_source_entity=raw.get(CONF_NIGHT_SOURCE) or None,
             time_dark=int(raw[CONF_TIME_DARK]),
             time_light=int(raw[CONF_TIME_LIGHT]),
             sunrise_offset=int(raw[CONF_SUNRISE_OFFSET]),

@@ -79,14 +79,21 @@
               "brightness_mode_time_light": "Fade duration on the light side",
               "sunrise_offset": "Sunrise offset",
               "sunset_offset": "Sunset offset",
-              "night_brightness_pct": "Night brightness",
-              "night_color_temp_k": "Night colour temperature",
               "prefer_rgb_color": "Prefer RGB over colour temperature",
               "take_over_control": "Detect manual changes",
               "autoreset_manual_seconds": "Forget a manual change after",
               "separate_turn_on_commands": "Send brightness and colour separately",
               "send_split_delay_ms": "Delay between split commands",
               "intercept_member_calls": "Intercept calls made directly to member lights"
+            }
+          },
+          "night": {
+            "name": "Night mode",
+            "description": "The helper that says the house is asleep. Each room decides for itself whether that dims it, darkens it or does nothing.",
+            "data": {
+              "night_source_entity": "Night mode follows",
+              "night_brightness_pct": "Night brightness",
+              "night_color_temp_k": "Night colour temperature"
             }
           }
         }
@@ -155,7 +162,6 @@
             "night": {
               "name": "Night mode",
               "data": {
-                "night_source_entity": "Night mode follows",
                 "night_behavior": "What night mode does",
                 "night_brightness_pct": "Night brightness",
                 "night_color_temp_k": "Night colour temperature",
@@ -164,7 +170,6 @@
                 "night_scene_id": "Night scene"
               },
               "data_description": {
-                "night_source_entity": "An existing helper or sensor that is on when the house is asleep. This zone's night switch mirrors it.",
                 "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
                 "night_scene_id": "Used when 'What night mode does' is set to apply a scene.",
                 "night_behavior": "'Switch the room off' waits until the room is empty before darkening it, and only when the helper above turns on — the zone's own night switch always dims rather than darkens."
@@ -265,7 +270,6 @@
             "night": {
               "name": "Night mode",
               "data": {
-                "night_source_entity": "Night mode follows",
                 "night_behavior": "What night mode does",
                 "night_brightness_pct": "Night brightness",
                 "night_color_temp_k": "Night colour temperature",
@@ -274,7 +278,6 @@
                 "night_scene_id": "Night scene"
               },
               "data_description": {
-                "night_source_entity": "An existing helper or sensor that is on when the house is asleep. This zone's night switch mirrors it.",
                 "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
                 "night_scene_id": "Used when 'What night mode does' is set to apply a scene.",
                 "night_behavior": "'Switch the room off' waits until the room is empty before darkening it, and only when the helper above turns on — the zone's own night switch always dims rather than darkens."
@@ -991,7 +994,7 @@
     },
     "select": {
       "zone_mode": {
-        "name": "Mode"
+        "name": "Scenes"
       },
       "mode_state": {
         "name": "State"

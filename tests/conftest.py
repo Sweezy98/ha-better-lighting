@@ -127,11 +127,11 @@ def zone_subentry(
 def hub_entry(**kwargs) -> MockConfigEntry:
     """A hub entry with one two-light zone unless told otherwise."""
     kwargs.setdefault("subentries_data", [zone_subentry()])
+    kwargs.setdefault("options", {})
     return MockConfigEntry(
         domain=DOMAIN,
         title="Better Lighting",
         data={},
-        options={},
         unique_id=DOMAIN,
         **kwargs,
     )

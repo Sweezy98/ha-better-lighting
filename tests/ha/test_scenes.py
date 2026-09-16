@@ -18,7 +18,7 @@ from tests.conftest import (
 )
 
 ZONE = "light.kitchen"
-SELECT = "select.kitchen_mode"
+SELECT = "select.kitchen_scenes"
 
 
 def scene_subentry(
@@ -410,7 +410,7 @@ class TestPerLightScene:
         await hass.services.async_call(
             "select",
             "select_option",
-            {"entity_id": "select.living_room_mode", "option": "Movie"},
+            {"entity_id": "select.living_room_scenes", "option": "Movie"},
             blocking=True,
         )
         await hass.async_block_till_done()
@@ -451,7 +451,7 @@ class TestPerLightScene:
         await hass.services.async_call(
             "select",
             "select_option",
-            {"entity_id": "select.living_room_mode", "option": "Movie"},
+            {"entity_id": "select.living_room_scenes", "option": "Movie"},
             blocking=True,
         )
         await hass.async_block_till_done()
@@ -551,14 +551,14 @@ class TestSceneScope:
         await hass.services.async_call(
             "select",
             "select_option",
-            {"entity_id": "select.living_room_mode", "option": "Reading"},
+            {"entity_id": "select.living_room_scenes", "option": "Reading"},
             blocking=True,
         )
         await hass.async_block_till_done()
 
         assert hass.states.get("light.lr").attributes["brightness"] < before
         assert hass.states.get("light.kt").attributes["brightness"] == before
-        assert hass.states.get("select.kitchen_mode").state == "Adaptive"
+        assert hass.states.get("select.kitchen_scenes").state == "Adaptive"
 
     async def test_an_unscoped_scene_is_offered_everywhere(
         self, hass: HomeAssistant
@@ -566,7 +566,7 @@ class TestSceneScope:
         """Right for a Night or Movie scene."""
         await self._two_rooms(hass)
         for room in ("living_room", "kitchen"):
-            options = hass.states.get(f"select.{room}_mode").attributes["options"]
+            options = hass.states.get(f"select.{room}_scenes").attributes["options"]
             assert "Reading" in options
 
     async def test_a_scoped_scene_is_only_offered_there(
@@ -576,11 +576,11 @@ class TestSceneScope:
 
         assert (
             "Reading"
-            in hass.states.get("select.living_room_mode").attributes["options"]
+            in hass.states.get("select.living_room_scenes").attributes["options"]
         )
         assert (
             "Reading"
-            not in hass.states.get("select.kitchen_mode").attributes["options"]
+            not in hass.states.get("select.kitchen_scenes").attributes["options"]
         )
 
     async def test_a_scene_can_be_scoped_to_several_rooms(
@@ -590,7 +590,7 @@ class TestSceneScope:
         for room in ("living_room", "kitchen"):
             assert (
                 "Reading"
-                in hass.states.get(f"select.{room}_mode").attributes["options"]
+                in hass.states.get(f"select.{room}_scenes").attributes["options"]
             )
 
     async def test_an_active_scene_is_still_reported(self, hass: HomeAssistant) -> None:
@@ -599,7 +599,7 @@ class TestSceneScope:
         await hass.services.async_call(
             "select",
             "select_option",
-            {"entity_id": "select.kitchen_mode", "option": "Reading"},
+            {"entity_id": "select.kitchen_scenes", "option": "Reading"},
             blocking=True,
         )
         await hass.async_block_till_done()
@@ -617,7 +617,7 @@ class TestSceneScope:
 
         # The kitchen no longer offers it, but if it is somehow showing it the
         # select must still be able to say so rather than reporting nothing.
-        kitchen = hass.states.get("select.kitchen_mode")
+        kitchen = hass.states.get("select.kitchen_scenes")
         assert kitchen.state in kitchen.attributes["options"]
 
 
@@ -704,6 +704,6 @@ class TestSceneTitles:
         await self._add_scene(hass, entry, "Reading", ["Living Room"])
         await hass.async_block_till_done()
 
-        options = hass.states.get("select.living_room_mode").attributes["options"]
+        options = hass.states.get("select.living_room_scenes").attributes["options"]
         assert "Reading" in options
         assert "Living Room · Reading" not in options

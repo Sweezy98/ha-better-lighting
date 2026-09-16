@@ -20,7 +20,7 @@ from tests.conftest import (
 from tests.ha.test_scenes import scene_subentry
 
 ZONE = "light.kitchen"
-SELECT = "select.kitchen_mode"
+SELECT = "select.kitchen_scenes"
 
 
 def controller_subentry(

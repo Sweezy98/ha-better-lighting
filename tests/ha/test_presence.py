@@ -17,7 +17,7 @@ from tests.conftest import (
 from tests.ha.test_scenes import scene_subentry
 
 ZONE = "light.kitchen"
-SELECT = "select.kitchen_mode"
+SELECT = "select.kitchen_scenes"
 SENSOR = "binary_sensor.kitchen_presence"
 BLIND = "cover.kitchen_blind"
 WINDOW = "binary_sensor.kitchen_window"

@@ -14,6 +14,7 @@ whatever the curve produced.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self
 
@@ -146,6 +147,7 @@ from .const import (
     CONF_WINDOW_ENTITIES,
     CONF_WRAP_AROUND,
     CONF_ZONE_ID,
+    CONF_ZONE_PROFILES,
     CONF_ZONE_SCENES,
     CONTROLLER_SPECS,
     HUB_SPECS,
@@ -311,6 +313,10 @@ class ZoneConfig:
     # the bedroom are different lists of different lights, and pretending they
     # are one house-wide recipe only ever produced a very long picker.
     scenes: tuple[Scene, ...]
+    # Calibration for this room's lights, keyed by entity id. A calibration is
+    # about one bulb in one room, so it belongs to the room rather than to a
+    # list of its own halfway down the hub page.
+    light_profiles: Mapping[str, LightProfile]
 
     # Requirement 4: a window is open, so stop attracting everything outside.
     window_entities: tuple[str, ...]
@@ -361,6 +367,11 @@ class ZoneConfig:
                 zone_scene(entry, subentry.subentry_id)
                 for entry in (raw.get(CONF_ZONE_SCENES) or ())
             ),
+            light_profiles={
+                entry[CONF_LIGHT_ENTITY]: zone_light_profile(entry)
+                for entry in (raw.get(CONF_ZONE_PROFILES) or ())
+                if entry.get(CONF_LIGHT_ENTITY)
+            },
             restore_on_power_cycle=RestoreOnPowerCycle(
                 raw[CONF_RESTORE_ON_POWER_CYCLE]
             ),
@@ -801,6 +812,25 @@ def _scene_light_color(raw: dict[str, Any]) -> dict[str, Any] | None:
                 )
             }
     return None
+
+
+def zone_light_profile(raw: dict[str, Any]) -> LightProfile:
+    """One light's calibration, as stored inside its room."""
+    merged = {**_PROFILE_DEFAULTS, **raw}
+    return LightProfile(
+        enabled=bool(merged[CONF_ENABLED]),
+        min_brightness_pct=float(merged[CONF_MIN_BRIGHTNESS_PCT]),
+        max_brightness_pct=float(merged[CONF_MAX_BRIGHTNESS_PCT]),
+        brightness_offset_pct=float(merged[CONF_BRIGHTNESS_OFFSET_PCT]),
+        brightness_multiplier=float(merged[CONF_BRIGHTNESS_MULTIPLIER]),
+        min_color_temp_k=int(merged[CONF_MIN_COLOR_TEMP_K]),
+        max_color_temp_k=int(merged[CONF_MAX_COLOR_TEMP_K]),
+        color_temp_offset_k=int(merged[CONF_COLOR_TEMP_OFFSET_K]),
+        adapt_brightness=bool(merged[CONF_ADAPT_BRIGHTNESS]),
+        adapt_color=bool(merged[CONF_ADAPT_COLOR]),
+        prefer_rgb=bool(merged[CONF_PREFER_RGB_COLOR]),
+        clamp_to_device_limits=bool(merged[CONF_CLAMP_TO_DEVICE]),
+    )
 
 
 def zone_scene(raw: dict[str, Any], zone_id: str) -> Scene:

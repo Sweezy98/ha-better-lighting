@@ -29,14 +29,18 @@ from .const import (
     CONF_ADAPTIVE_POSITION,
     CONF_BINDING_ENTITY,
     CONF_BINDING_TYPE,
+    CONF_BRIGHTNESS_OFFSET_PCT,
     CONF_BRIGHTNESS_PCT,
     CONF_COLOR_FORMAT,
     CONF_COLOR_TEMP_KELVIN,
+    CONF_COLOR_TEMP_OFFSET_K,
     CONF_ICON,
     CONF_IGNORE_PRESENCE,
     CONF_LIGHT_ACTION,
     CONF_LIGHT_ENTITY,
     CONF_LIGHTS,
+    CONF_MAX_BRIGHTNESS_PCT,
+    CONF_MIN_BRIGHTNESS_PCT,
     CONF_NAME,
     CONF_OFF_AT_END,
     CONF_ON_LIGHTS_ONLY,
@@ -56,6 +60,7 @@ from .const import (
     CONF_STATES,
     CONF_TRANSITION,
     CONF_ZONE_ID,
+    CONF_ZONE_PROFILES,
     CONF_ZONE_SCENES,
     CONTROLLER_SPECS,
     DOMAIN,
@@ -189,7 +194,6 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
         """The kinds of object that can be added to the hub."""
         return {
             SubentryType.ZONE.value: ZoneSubentryFlow,
-            SubentryType.LIGHT_PROFILE.value: LightProfileSubentryFlow,
             SubentryType.CONTROLLER.value: ControllerSubentryFlow,
             SubentryType.MODE.value: ModeSubentryFlow,
         }
@@ -234,6 +238,8 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         self._scene: dict[str, Any] = {}
         self._editing: int | None = None
         self._pending_light: tuple[str, dict[str, Any]] = ("", {})
+        self._profiles: list[dict[str, Any]] = []
+        self._editing_profile: int | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -264,6 +270,15 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             )
             if not errors:
                 self._data = cleaned
+                if not self._profiles:
+                    self._profiles = [
+                        dict(profile)
+                        for profile in (
+                            (subentry.data.get(CONF_ZONE_PROFILES) or [])
+                            if subentry
+                            else []
+                        )
+                    ]
                 if not self._scenes:
                     self._scenes = [
                         dict(scene)
@@ -294,7 +309,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         return self.async_show_menu(
             step_id="menu",
-            menu_options=["scenes", "finish"],
+            menu_options=["scenes", "calibrations", "finish"],
             description_placeholders={"scenes": self._scenes_summary()},
         )
 
@@ -702,12 +717,146 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         self._editing = None
         return await self.async_step_scenes()
 
+    # -- calibrating individual lights ------------------------------------
+
+    async def async_step_calibrations(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_calibration"]
+        if self._profiles:
+            options += ["edit_calibration", "remove_calibration"]
+        options.append("menu")
+        return self.async_show_menu(
+            step_id="calibrations",
+            menu_options=options,
+            description_placeholders={"calibrations": self._calibrations_summary()},
+        )
+
+    def _calibrations_summary(self) -> str:
+        if not self._profiles:
+            return "(none: every light follows the room own limits)"
+        lines = []
+        for profile in self._profiles:
+            parts = []
+            if profile.get(CONF_BRIGHTNESS_OFFSET_PCT):
+                parts.append(f"{profile[CONF_BRIGHTNESS_OFFSET_PCT]:+g}%")
+            if profile.get(CONF_COLOR_TEMP_OFFSET_K):
+                parts.append(f"{profile[CONF_COLOR_TEMP_OFFSET_K]:+g} K")
+            parts.append(
+                f"{profile.get(CONF_MIN_BRIGHTNESS_PCT, 1):g}"
+                f" to {profile.get(CONF_MAX_BRIGHTNESS_PCT, 100):g}%"
+            )
+            lines.append(f"{profile.get(CONF_LIGHT_ENTITY)}: {', '.join(parts)}")
+        return "\n".join(lines)
+
+    def _calibration_picker(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required("calibration"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {
+                                "value": str(index),
+                                "label": str(profile.get(CONF_LIGHT_ENTITY)),
+                            }
+                            for index, profile in enumerate(self._profiles)
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        sort=False,
+                    )
+                )
+            }
+        )
+
+    async def async_step_add_calibration(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_calibration_form(
+            "add_calibration", user_input, index=None
+        )
+
+    async def async_step_edit_calibration(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            self._editing_profile = int(user_input["calibration"])
+            return await self.async_step_calibration_form()
+        return self.async_show_form(
+            step_id="edit_calibration",
+            data_schema=self._calibration_picker(),
+            description_placeholders={"calibrations": self._calibrations_summary()},
+        )
+
+    async def async_step_calibration_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_calibration_form(
+            "calibration_form", user_input, index=self._editing_profile
+        )
+
+    async def _async_calibration_form(
+        self, step_id: str, user_input: dict[str, Any] | None, *, index: int | None
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            flat = flatten_sections(LIGHT_PROFILE_SPECS, user_input)
+            cleaned, errors = post_validate(LIGHT_PROFILE_SPECS, flat)
+            entity_id = cleaned.get(CONF_LIGHT_ENTITY)
+            if not entity_id:
+                errors[CONF_LIGHT_ENTITY] = "light_required"
+            elif entity_id not in (self._data.get(CONF_LIGHTS) or ()):
+                # A calibration belongs to the room that owns the light.
+                errors[CONF_LIGHT_ENTITY] = "light_in_other_zone"
+            if not errors:
+                if index is None:
+                    self._profiles.append(cleaned)
+                else:
+                    self._profiles[index] = cleaned
+                self._editing_profile = None
+                return await self.async_step_calibrations()
+
+        current = user_input
+        if current is None and index is not None:
+            current = dict(self._profiles[index])
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=build_schema(
+                LIGHT_PROFILE_SPECS,
+                current,
+                options={
+                    "lights": [
+                        SelectOptionDict(value=entity_id, label=entity_id)
+                        for entity_id in (self._data.get(CONF_LIGHTS) or ())
+                    ]
+                },
+            ),
+            errors=errors,
+        )
+
+    async def async_step_remove_calibration(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            index = int(user_input["calibration"])
+            if 0 <= index < len(self._profiles):
+                self._profiles.pop(index)
+            return await self.async_step_calibrations()
+        return self.async_show_form(
+            step_id="remove_calibration",
+            data_schema=self._calibration_picker(),
+            description_placeholders={"calibrations": self._calibrations_summary()},
+        )
+
     # -- done --------------------------------------------------------------
 
     async def async_step_finish(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        data = {**self._data, CONF_ZONE_SCENES: self._scenes}
+        data = {
+            **self._data,
+            CONF_ZONE_SCENES: self._scenes,
+            CONF_ZONE_PROFILES: self._profiles,
+        }
         title = data[CONF_NAME]
         if self._subentry is None:
             return self.async_create_entry(title=title, data=data)
@@ -733,57 +882,6 @@ def validate_light_profile(
         if subentry.data.get(CONF_LIGHT_ENTITY) == light_entity:
             return {CONF_LIGHT_ENTITY: "profile_exists"}
     return {}
-
-
-class LightProfileSubentryFlow(ConfigSubentryFlow):
-    """Add or reconfigure a per-light calibration."""
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        return await self._async_profile_form(user_input, subentry=None)
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        return await self._async_profile_form(
-            user_input, subentry=self._get_reconfigure_subentry()
-        )
-
-    async def _async_profile_form(
-        self, user_input: dict[str, Any] | None, *, subentry: Any
-    ) -> SubentryFlowResult:
-        entry = self._get_entry()
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            flat = flatten_sections(LIGHT_PROFILE_SPECS, user_input)
-            cleaned, errors = post_validate(LIGHT_PROFILE_SPECS, flat)
-            light_entity = cleaned.get(CONF_LIGHT_ENTITY)
-            if light_entity:
-                errors |= validate_light_profile(
-                    entry,
-                    light_entity,
-                    exclude_subentry_id=subentry.subentry_id if subentry else None,
-                )
-            if not errors:
-                title = _profile_title(self.hass, light_entity)
-                if subentry is None:
-                    return self.async_create_entry(
-                        title=title,
-                        data=cleaned,
-                        unique_id=f"profile:{light_entity}",
-                    )
-                return self.async_update_and_abort(
-                    entry, subentry, data=cleaned, title=title
-                )
-
-        existing = dict(subentry.data) if subentry else None
-        return self.async_show_form(
-            step_id="reconfigure" if subentry else "user",
-            data_schema=build_schema(LIGHT_PROFILE_SPECS, user_input or existing),
-            errors=errors,
-        )
 
 
 def _profile_title(hass, light_entity: str | None) -> str:

@@ -371,7 +371,8 @@
           "description": "Scenes in this room:\n\n{scenes}",
           "menu_options": {
             "scenes": "Scenes",
-            "finish": "Done"
+            "finish": "Done",
+            "calibrations": "Light calibration"
           }
         },
         "scenes": {
@@ -461,28 +462,8 @@
               }
             }
           }
-        }
-      },
-      "error": {
-        "invalid_value": "This value is not valid.",
-        "no_lights": "Pick at least one light.",
-        "light_in_other_zone": "One of these lights already belongs to another zone. A light can only be in one zone.",
-        "light_required": "Choose a light.",
-        "name_required": "Give the scene a name.",
-        "nothing_to_capture": "None of this room's lights are available to capture."
-      },
-      "abort": {
-        "reconfigure_successful": "Zone updated."
-      }
-    },
-    "light_profile": {
-      "entry_type": "Light profile",
-      "initiate_flow": {
-        "user": "Add light calibration",
-        "reconfigure": "Reconfigure light calibration"
-      },
-      "step": {
-        "user": {
+        },
+        "add_calibration": {
           "title": "Calibrate a light",
           "description": "Trim one light so it matches its neighbours. Offsets are a calibration and are applied first; the minimum and maximum are an operating limit and are applied afterwards, so a calibration can never push a light past a limit you set.",
           "data": {
@@ -513,8 +494,8 @@
             }
           }
         },
-        "reconfigure": {
-          "title": "Calibrate a light",
+        "calibration_form": {
+          "title": "Change a calibration",
           "description": "Trim one light so it matches its neighbours. Offsets are a calibration and are applied first; the minimum and maximum are an operating limit and are applied afterwards, so a calibration can never push a light past a limit you set.",
           "data": {
             "light_entity": "Light",
@@ -543,14 +524,43 @@
               }
             }
           }
+        },
+        "calibrations": {
+          "title": "Light calibration",
+          "description": "Calibration for this room's lights:\n\n{calibrations}",
+          "menu_options": {
+            "add_calibration": "Calibrate a light",
+            "edit_calibration": "Change a calibration",
+            "remove_calibration": "Remove a calibration",
+            "menu": "Back"
+          }
+        },
+        "edit_calibration": {
+          "title": "Change a calibration",
+          "description": "Calibration for this room's lights:\n\n{calibrations}",
+          "data": {
+            "calibration": "Light"
+          }
+        },
+        "remove_calibration": {
+          "title": "Remove a calibration",
+          "description": "Calibration for this room's lights:\n\n{calibrations}",
+          "data": {
+            "calibration": "Light"
+          }
         }
       },
       "error": {
         "invalid_value": "This value is not valid.",
+        "no_lights": "Pick at least one light.",
+        "light_in_other_zone": "One of these lights already belongs to another zone. A light can only be in one zone.",
+        "light_required": "Choose a light.",
+        "name_required": "Give the scene a name.",
+        "nothing_to_capture": "None of this room's lights are available to capture.",
         "profile_exists": "This light already has a calibration."
       },
       "abort": {
-        "reconfigure_successful": "Calibration updated."
+        "reconfigure_successful": "Zone updated."
       }
     },
     "controller": {

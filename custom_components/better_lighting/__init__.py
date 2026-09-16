@@ -23,7 +23,6 @@ from .controllers import ControllerRuntime
 from .models import (
     ControllerConfig,
     HubConfig,
-    LightProfileConfig,
     ModeConfig,
     ZoneConfig,
     synthetic_controller,
@@ -112,28 +111,34 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
         for subentry in entry.subentries.values()
         if subentry.subentry_type == SubentryType.ZONE.value
     }
+    # Calibration belongs to the room whose lights it calibrates, so the flat
+    # registry is assembled from the zones -- as the scene registry is.
     profiles = {
-        profile.light_entity: profile.profile
-        for subentry in entry.subentries.values()
-        if subentry.subentry_type == SubentryType.LIGHT_PROFILE.value
-        and (profile := LightProfileConfig.from_subentry(subentry)).light_entity
+        entity_id: profile
+        for zone in zones.values()
+        for entity_id, profile in zone.light_profiles.items()
     }
     # Scenes belong to rooms now, so the flat registry is assembled from the
     # zones rather than from subentries of its own. Keeping it flat means
     # repairs, diagnostics and the services still have one place to look.
     scenes = {scene.scene_id: scene for zone in zones.values() for scene in zone.scenes}
-    legacy = [
-        subentry
-        for subentry in entry.subentries.values()
-        if subentry.subentry_type == SubentryType.SCENE.value
-    ]
-    if legacy:
-        _LOGGER.warning(
-            "Ignoring %d scene(s) left over from before scenes belonged to rooms: "
-            "%s. Re-create them under their room, then delete the old entries",
-            len(legacy),
-            ", ".join(sorted(sub.title for sub in legacy)),
-        )
+    for kind, label in (
+        (SubentryType.SCENE.value, "scene"),
+        (SubentryType.LIGHT_PROFILE.value, "light calibration"),
+    ):
+        legacy = [
+            subentry
+            for subentry in entry.subentries.values()
+            if subentry.subentry_type == kind
+        ]
+        if legacy:
+            _LOGGER.warning(
+                "Ignoring %d %s(s) left over from before they belonged to rooms: "
+                "%s. Re-create them under their room, then delete the old entries",
+                len(legacy),
+                label,
+                ", ".join(sorted(sub.title for sub in legacy)),
+            )
     switches = {
         controller.subentry_id: controller
         for subentry in entry.subentries.values()

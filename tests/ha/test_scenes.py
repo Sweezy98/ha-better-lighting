@@ -510,3 +510,76 @@ class TestNightScene:
         await hass.async_block_till_done()
 
         assert hass.states.get("light.one").attributes["color_temp_kelvin"] == 2200
+
+
+class TestCalibrationsBelongToTheRoom:
+    async def test_a_calibration_is_added_under_its_room(
+        self, hass: HomeAssistant
+    ) -> None:
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+        )
+        result = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SubentryType.ZONE.value),
+            context={"source": config_entries.SOURCE_USER},
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "calibrations"}
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "add_calibration"}
+        )
+        assert result["step_id"] == "add_calibration"
+
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"],
+            {
+                "light_entity": "light.one",
+                "enabled": True,
+                "brightness_offset_pct": -15,
+                "advanced": {},
+            },
+        )
+        assert result["step_id"] == "calibrations"
+
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "menu"}
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "finish"}
+        )
+        profiles = result["data"]["light_profiles"]
+        assert profiles[0]["light_entity"] == "light.one"
+        assert profiles[0]["brightness_offset_pct"] == -15
+
+    async def test_a_light_from_another_room_is_refused(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Calibration is about one bulb in one room."""
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+        )
+        result = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SubentryType.ZONE.value),
+            context={"source": config_entries.SOURCE_USER},
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "calibrations"}
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "add_calibration"}
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"],
+            {"light_entity": "light.two", "enabled": True, "advanced": {}},
+        )
+
+        assert result["errors"] == {"light_entity": "light_in_other_zone"}

@@ -371,7 +371,8 @@
           "description": "Szenen in diesem Raum:\n\n{scenes}",
           "menu_options": {
             "scenes": "Szenen",
-            "finish": "Fertig"
+            "finish": "Fertig",
+            "calibrations": "Lampenabgleich"
           }
         },
         "scenes": {
@@ -461,28 +462,8 @@
               }
             }
           }
-        }
-      },
-      "error": {
-        "invalid_value": "Dieser Wert ist ungültig.",
-        "no_lights": "Mindestens eine Lampe auswählen.",
-        "light_in_other_zone": "Eine dieser Lampen gehört bereits zu einem anderen Raum. Eine Lampe kann nur in einem Raum sein.",
-        "light_required": "Eine Lampe auswählen.",
-        "name_required": "Der Szene einen Namen geben.",
-        "nothing_to_capture": "Keine Lampe dieses Raums ist verfügbar, um übernommen zu werden."
-      },
-      "abort": {
-        "reconfigure_successful": "Raum aktualisiert."
-      }
-    },
-    "light_profile": {
-      "entry_type": "Lampenabgleich",
-      "initiate_flow": {
-        "user": "Lampenabgleich hinzufügen",
-        "reconfigure": "Lampenabgleich neu konfigurieren"
-      },
-      "step": {
-        "user": {
+        },
+        "add_calibration": {
           "title": "Lampe abgleichen",
           "description": "Eine einzelne Lampe so anpassen, dass sie zu ihren Nachbarn passt. Versätze sind ein Abgleich und werden zuerst angewendet; Minimum und Maximum sind eine Betriebsgrenze und werden danach angewendet — ein Abgleich kann eine Lampe also nie über eine gesetzte Grenze hinaus treiben.",
           "data": {
@@ -513,8 +494,8 @@
             }
           }
         },
-        "reconfigure": {
-          "title": "Lampe abgleichen",
+        "calibration_form": {
+          "title": "Abgleich ändern",
           "description": "Eine einzelne Lampe so anpassen, dass sie zu ihren Nachbarn passt. Versätze sind ein Abgleich und werden zuerst angewendet; Minimum und Maximum sind eine Betriebsgrenze und werden danach angewendet — ein Abgleich kann eine Lampe also nie über eine gesetzte Grenze hinaus treiben.",
           "data": {
             "light_entity": "Lampe",
@@ -543,14 +524,43 @@
               }
             }
           }
+        },
+        "calibrations": {
+          "title": "Lampenabgleich",
+          "description": "Abgleich für die Lampen dieses Raums:\n\n{calibrations}",
+          "menu_options": {
+            "add_calibration": "Lampe abgleichen",
+            "edit_calibration": "Abgleich ändern",
+            "remove_calibration": "Abgleich entfernen",
+            "menu": "Zurück"
+          }
+        },
+        "edit_calibration": {
+          "title": "Abgleich ändern",
+          "description": "Abgleich für die Lampen dieses Raums:\n\n{calibrations}",
+          "data": {
+            "calibration": "Lampe"
+          }
+        },
+        "remove_calibration": {
+          "title": "Abgleich entfernen",
+          "description": "Abgleich für die Lampen dieses Raums:\n\n{calibrations}",
+          "data": {
+            "calibration": "Lampe"
+          }
         }
       },
       "error": {
         "invalid_value": "Dieser Wert ist ungültig.",
+        "no_lights": "Mindestens eine Lampe auswählen.",
+        "light_in_other_zone": "Eine dieser Lampen gehört bereits zu einem anderen Raum. Eine Lampe kann nur in einem Raum sein.",
+        "light_required": "Eine Lampe auswählen.",
+        "name_required": "Der Szene einen Namen geben.",
+        "nothing_to_capture": "Keine Lampe dieses Raums ist verfügbar, um übernommen zu werden.",
         "profile_exists": "Für diese Lampe gibt es bereits einen Abgleich."
       },
       "abort": {
-        "reconfigure_successful": "Abgleich aktualisiert."
+        "reconfigure_successful": "Raum aktualisiert."
       }
     },
     "controller": {

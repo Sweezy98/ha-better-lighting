@@ -129,7 +129,7 @@ def hub_entry(**kwargs) -> MockConfigEntry:
     """A hub entry with one two-light zone unless told otherwise."""
     kwargs.setdefault("subentries_data", [zone_subentry()])
     kwargs.setdefault("options", {})
-    kwargs["subentries_data"] = _fold_scenes_into_zones(kwargs["subentries_data"])
+    kwargs["subentries_data"] = _fold_into_zones(kwargs["subentries_data"])
     return MockConfigEntry(
         domain=DOMAIN,
         title="Better Lighting",
@@ -212,13 +212,19 @@ def scene_to_zone_scene(data: ConfigSubentryData) -> dict[str, Any]:
     }
 
 
-def _fold_scenes_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
-    """Attach scene payloads to the zones that should offer them."""
-    scenes = [s for s in subentries if s["subentry_type"] == SubentryType.SCENE.value]
-    if not scenes:
+def _fold_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
+    """Attach scene and calibration payloads to the zones that own them."""
+    moved = (SubentryType.SCENE.value, SubentryType.LIGHT_PROFILE.value)
+    if not any(s["subentry_type"] in moved for s in subentries):
         return list(subentries)
 
-    rest = [s for s in subentries if s["subentry_type"] != SubentryType.SCENE.value]
+    scenes = [s for s in subentries if s["subentry_type"] == SubentryType.SCENE.value]
+    profiles = [
+        dict(s["data"])
+        for s in subentries
+        if s["subentry_type"] == SubentryType.LIGHT_PROFILE.value
+    ]
+    rest = [s for s in subentries if s["subentry_type"] not in moved]
     converted = [scene_to_zone_scene(s) for s in scenes]
     out = []
     for sub in rest:
@@ -232,6 +238,14 @@ def _fold_scenes_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
             if not scene["_zones"] or sub["unique_id"] in scene["_zones"]
         ]
         data["scenes"] = list(data.get("scenes") or ()) + mine
+        # A calibration goes to whichever room owns that light.
+        lights = set(data.get("lights") or ())
+        data["light_profiles"] = list(data.get("light_profiles") or ()) + [
+            {k: v for k, v in profile.items() if k != "advanced"}
+            | (profile.get("advanced") or {})
+            for profile in profiles
+            if profile.get("light_entity") in lights
+        ]
         out.append(
             ConfigSubentryData(
                 data=data,

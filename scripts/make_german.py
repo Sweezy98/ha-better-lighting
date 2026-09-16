@@ -297,6 +297,10 @@ DE |= {
     "Dim step": "Dimmschritt",
     "brighten": "Heller",
     "dim": "Dunkler",
+    "Calibration for this room's lights:\n\n{calibrations}": "Abgleich für die Lampen dieses Raums:\n\n{calibrations}",
+    "Change a calibration": "Abgleich ändern",
+    "Light calibration": "Lampenabgleich",
+    "Remove a calibration": "Abgleich entfernen",
     "A mode needs at least one state.": "Ein Modus braucht mindestens einen Zustand.",
     "Choose the scene to apply.": "Die anzuwendende Szene auswählen.",
     # --- entities ---------------------------------------------------------

@@ -488,6 +488,72 @@ class TestEntityBinding:
         assert seen[0]["read_as"] == "nothing"
 
 
+class TestAnUnconfiguredList:
+    """A switch that has not been told what to cycle cycles the room.
+
+    An empty list used to mean an empty cycle, so a switch added without
+    walking into its scene-order screen pressed on and did nothing else --
+    which is indistinguishable, from the wall, from the integration being
+    broken.
+    """
+
+    async def _setup(self, hass: HomeAssistant, **overrides):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        hass.states.async_set("sensor.plate", "idle")
+        entry = hub_entry(
+            subentries_data=[
+                zone_subentry(),
+                scene_subentry("Cosy"),
+                scene_subentry("Bright", brightness=100),
+            ]
+        )
+        await setup_hub(hass, entry)
+        ids = subentry_ids(entry)
+        add_zone_switch(
+            hass,
+            entry,
+            controller_subentry(
+                "Plate",
+                zone_id=ids["Kitchen"],
+                scene_order=[],
+                binding_entity="sensor.plate",
+                press_attribute="",
+                press_states=["tap"],
+                **overrides,
+            ),
+            ids["Kitchen"],
+        )
+        await hass.async_block_till_done()
+        return entry, ids
+
+    async def _tap(self, hass: HomeAssistant) -> None:
+        hass.states.async_set("sensor.plate", "tap")
+        await hass.async_block_till_done()
+
+    async def test_it_cycles_every_scene_in_the_room(self, hass: HomeAssistant) -> None:
+        await self._setup(hass)
+        for expected in ("Adaptive", "Cosy", "Bright", "Adaptive"):
+            await self._tap(hass)
+            assert hass.states.get(SELECT).state == expected
+
+    async def test_a_scene_left_out_stays_out(self, hass: HomeAssistant) -> None:
+        entry, ids = await self._setup(hass)
+        # Written the way the panel writes it: the list this switch keeps, and
+        # the scenes it was told to drop.
+        zone = entry.subentries[ids["Kitchen"]]
+        switches = [dict(s) for s in zone.data["switches"]]
+        switches[0]["scene_order"] = [ids["Bright"]]
+        switches[0]["scene_order_excluded"] = [ids["Cosy"]]
+        hass.config_entries.async_update_subentry(
+            entry, zone, data={**zone.data, "switches": switches}
+        )
+        await hass.async_block_till_done()
+
+        for expected in ("Adaptive", "Bright", "Adaptive"):
+            await self._tap(hass)
+            assert hass.states.get(SELECT).state == expected
+
+
 class TestToggleSwitches:
     """A switch wired straight to the zone's light entity that toggles.
 

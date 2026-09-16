@@ -158,3 +158,47 @@ class TestDegenerateCycles:
         assert press(cycle, ZoneCycleState(current=COOKING), dismissed=True).step == (
             ADAPTIVE
         )
+
+
+class TestWhatASwitchCycles:
+    """A switch's list against the room's scenes.
+
+    The rule has to answer two questions with one piece of stored data: what
+    has this switch not been told about yet, and what has it been told to
+    leave out. Getting them the same way round is how a scene somebody
+    removed comes back on its own.
+    """
+
+    def test_a_switch_with_no_list_cycles_the_whole_room(self) -> None:
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert effective_scene_order((), (), ["a", "b", "c"]) == ("a", "b", "c")
+
+    def test_a_list_keeps_its_own_order(self) -> None:
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert effective_scene_order(["c", "a"], ["b"], ["a", "b", "c"]) == ("c", "a")
+
+    def test_a_new_scene_joins_the_end(self) -> None:
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert effective_scene_order(["c", "a"], ["b"], ["a", "b", "c", "d"]) == (
+            "c",
+            "a",
+            "d",
+        )
+
+    def test_a_removed_scene_stays_removed(self) -> None:
+        """The whole reason removals are remembered separately: otherwise the
+        next scene added to the room brings every removed one back with it."""
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert "b" not in effective_scene_order(["a", "c"], ["b"], ["a", "b", "c", "d"])
+
+    def test_a_deleted_scene_leaves_both_lists(self) -> None:
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert effective_scene_order(["a", "gone"], ["also_gone"], ["a", "b"]) == (
+            "a",
+            "b",
+        )

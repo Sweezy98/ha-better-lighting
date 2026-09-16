@@ -893,6 +893,11 @@ CONF_HOLD_RAMP = "hold_ramp"
 CONF_HOLD_INTERVAL_MS = "hold_interval_ms"
 CONF_RELEASE_STATES = "release_states"
 CONF_SCENE_ORDER = "scene_order"
+# Scenes deliberately taken out of a switch's list. Kept apart from the order
+# itself so that "not in the list" can mean two different things: a scene made
+# after the list was written joins the end of it, while one somebody removed
+# stays removed.
+CONF_SCENE_ORDER_EXCLUDED = "scene_order_excluded"
 
 # A rocker publishes a second vocabulary for its lower half. Configured as its
 # own set of words rather than a second controller, so one switch stays one
@@ -1051,6 +1056,12 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         section=Section.ADVANCED,
         depends_on=(CONF_HOLD_RAMP, (True,)),
     ),
+    FieldSpec(
+        CONF_PRESS_ATTRIBUTE,
+        "event_type",
+        selector.TextSelector(selector.TextSelectorConfig()),
+        section=Section.ADVANCED,
+    ),
     # --- the lower half of a rocker ---
     FieldSpec(
         CONF_DOWN_PRESS_ACTION,
@@ -1127,12 +1138,6 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
             )
         ),
         section=Section.DOWN,
-    ),
-    FieldSpec(
-        CONF_PRESS_ATTRIBUTE,
-        "event_type",
-        selector.TextSelector(selector.TextSelectorConfig()),
-        section=Section.ADVANCED,
     ),
 )
 

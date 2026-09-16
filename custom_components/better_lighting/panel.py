@@ -51,6 +51,8 @@ from .const import (
     CONF_RULES,
     CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
+    CONF_SCENE_ORDER,
+    CONF_SCENE_ORDER_EXCLUDED,
     CONF_STATES,
     CONF_SWITCH_ID,
     CONF_TRANSITION,
@@ -66,7 +68,7 @@ from .const import (
     ZONE_SPECS,
     SubentryType,
 )
-from .models import zone_scene
+from .models import effective_scene_order, zone_scene
 from .render import Trigger, ZoneMode
 from .schemas import post_validate
 
@@ -215,13 +217,27 @@ def websocket_config(
     modes = []
     for subentry in entry.subentries.values():
         if subentry.subentry_type == SubentryType.ZONE.value:
+            scenes = [dict(s) for s in (subentry.data.get(CONF_ZONE_SCENES) or ())]
+            scene_ids = [s.get(CONF_SCENE_ID) for s in scenes if s.get(CONF_SCENE_ID)]
             rooms.append(
                 {
                     "id": subentry.subentry_id,
                     "name": subentry.data.get(CONF_NAME) or subentry.title,
                     "lights": list(subentry.data.get("lights") or ()),
-                    "scenes": [
-                        dict(s) for s in (subentry.data.get(CONF_ZONE_SCENES) or ())
+                    "scenes": scenes,
+                    # What each switch actually cycles, worked out by the same
+                    # rule the runtime uses: a switch with no list of its own
+                    # cycles the whole room, and one with a list gains any
+                    # scene made since at the end of it.
+                    "switch_orders": [
+                        list(
+                            effective_scene_order(
+                                switch.get(CONF_SCENE_ORDER) or (),
+                                switch.get(CONF_SCENE_ORDER_EXCLUDED) or (),
+                                scene_ids,
+                            )
+                        )
+                        for switch in (subentry.data.get(CONF_ZONE_SWITCHES) or ())
                     ],
                     # Everything else the room stores, so the panel can edit
                     # any of it without a round trip per screen.

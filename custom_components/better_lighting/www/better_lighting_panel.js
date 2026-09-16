@@ -2340,8 +2340,10 @@ class BetterLightingPanel extends HTMLElement {
       extra:
         storageKey === "switches" && index < items.length
           ? {
+              // Counting adaptive, which is a step of every cycle and not a
+              // scene anybody put there.
               label: `${this._t("what_it_cycles")} (${
-                (items[index].scene_order || []).length + 1
+                ((room.switch_orders || [])[index] || []).length + 1
               })`,
               go: () => {
                 this._view = { ...this._view, sub: "order" };
@@ -2597,7 +2599,10 @@ class BetterLightingPanel extends HTMLElement {
     const switches = room.data.switches || [];
     const item = switches[this._view.index];
     if (!item) return;
-    const order = item.scene_order || [];
+    // What this switch cycles today, which is every scene in the room until
+    // somebody takes one out. Worked out by the backend, so the page and the
+    // press agree about what the list is.
+    const order = (room.switch_orders || [])[this._view.index] || [];
     const names = Object.fromEntries(
       (room.scenes || []).map((scene) => [scene.scene_id, scene.name])
     );
@@ -2608,7 +2613,16 @@ class BetterLightingPanel extends HTMLElement {
 
     const save = async (next) => {
       const list = [...switches];
-      list[this._view.index] = { ...item, scene_order: next };
+      list[this._view.index] = {
+        ...item,
+        scene_order: next,
+        // Everything the room has that this switch no longer lists was taken
+        // out on purpose, and has to stay out: without this, the next scene
+        // added to the room would bring the removed ones back with it.
+        scene_order_excluded: (room.scenes || [])
+          .map((scene) => scene.scene_id)
+          .filter((id) => !next.includes(id)),
+      };
       await this._call("save_zone_collection", {
         zone_id: room.id,
         key: "switches",
@@ -2678,12 +2692,19 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /** The one settings screen: a form, a Save, and sometimes a Delete. */
-  _paintSettings({ form, values, choices, save, remove }) {
+  _paintSettings({ form, values, choices, save, remove, extra }) {
     const main = this.shadowRoot.getElementById("main");
     main.innerHTML = `
       <div class="card">
         <div id="error" class="muted"></div>
         <div id="form"></div>
+        ${
+          extra
+            ? `<div class="bar"><button class="flat" id="extra">${this._icon(
+                "mdi:format-list-numbered"
+              )}<span>${extra.label}</span></button></div>`
+            : ""
+        }
         <div class="bar">
           <button id="save">${this._t("save")}</button>
           <button class="flat" id="cancel">${this._t("cancel")}</button>
@@ -2743,6 +2764,9 @@ class BetterLightingPanel extends HTMLElement {
       await remove();
       await this._load();
     });
+    // A screen of its own rather than a field: an ordered list of scenes is
+    // not something a form can hold.
+    main.querySelector("#extra")?.addEventListener("click", () => extra.go());
   }
 
   _paintScenes() {

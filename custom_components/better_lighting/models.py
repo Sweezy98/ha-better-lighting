@@ -14,7 +14,7 @@ whatever the curve produced.
 from __future__ import annotations
 
 import datetime
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self
 
@@ -141,6 +141,7 @@ from .const import (
     CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
     CONF_SCENE_ORDER,
+    CONF_SCENE_ORDER_EXCLUDED,
     CONF_SCENE_TRANSITION,
     CONF_SCENE_ZONES,
     CONF_SEND_SPLIT_DELAY_MS,
@@ -386,6 +387,13 @@ class ZoneConfig:
     @classmethod
     def from_subentry(cls, subentry: ConfigSubentry) -> Self:
         raw = {**_ZONE_DEFAULTS, **dict(subentry.data)}
+        # Built first because the switches are built from them: what a switch
+        # cycles is a question about the room's scenes.
+        scenes = tuple(
+            zone_scene(entry, subentry.subentry_id)
+            for entry in (raw.get(CONF_ZONE_SCENES) or ())
+        )
+        scene_ids = [scene.scene_id for scene in scenes]
         return cls(
             subentry_id=subentry.subentry_id,
             name=raw.get(CONF_NAME) or subentry.title,
@@ -415,17 +423,14 @@ class ZoneConfig:
             night_color_temp_k=int(raw[CONF_NIGHT_COLOR_TEMP_K]),
             night_transition=float(raw[CONF_NIGHT_TRANSITION]),
             night_ignore_presence=bool(raw[CONF_NIGHT_IGNORE_PRESENCE]),
-            scenes=tuple(
-                zone_scene(entry, subentry.subentry_id)
-                for entry in (raw.get(CONF_ZONE_SCENES) or ())
-            ),
+            scenes=scenes,
             light_profiles={
                 entry[CONF_LIGHT_ENTITY]: zone_light_profile(entry)
                 for entry in (raw.get(CONF_ZONE_PROFILES) or ())
                 if entry.get(CONF_LIGHT_ENTITY)
             },
             switches=tuple(
-                zone_switch(entry, subentry.subentry_id)
+                zone_switch(entry, subentry.subentry_id, scene_ids)
                 for entry in (raw.get(CONF_ZONE_SWITCHES) or ())
             ),
             restore_on_power_cycle=RestoreOnPowerCycle(
@@ -911,9 +916,44 @@ def _scene_light_color(raw: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def zone_switch(raw: dict[str, Any], zone_id: str) -> ControllerConfig:
+def effective_scene_order(
+    stored: Iterable[str], excluded: Iterable[str], scene_ids: Sequence[str]
+) -> tuple[str, ...]:
+    """Which of the room's scenes a switch cycles, in order.
+
+    A switch cycles the whole room unless it has been told otherwise. That is
+    the only defensible reading of an empty list: a switch nobody has
+    configured should cycle the scenes that exist, not sit there doing nothing
+    but adaptive -- which is what an empty order used to mean, and the
+    commonest way this integration looked broken.
+
+    So the stored order says what comes first, ``excluded`` remembers what was
+    deliberately taken out, and anything the room has gained since joins the
+    end. Scenes that no longer exist drop out of both.
+    """
+    known = set(scene_ids)
+    order = [scene_id for scene_id in stored if scene_id in known]
+    dropped = set(excluded)
+    order.extend(
+        scene_id
+        for scene_id in scene_ids
+        if scene_id not in order and scene_id not in dropped
+    )
+    return tuple(order)
+
+
+def zone_switch(
+    raw: dict[str, Any], zone_id: str, scene_ids: Sequence[str] = ()
+) -> ControllerConfig:
     """One of a room's switches, as stored inside the room."""
     merged = {**_CONTROLLER_DEFAULTS, **raw}
+    merged[CONF_SCENE_ORDER] = list(
+        effective_scene_order(
+            merged.get(CONF_SCENE_ORDER) or (),
+            merged.get(CONF_SCENE_ORDER_EXCLUDED) or (),
+            scene_ids,
+        )
+    )
     return ControllerConfig.from_mapping(
         merged,
         subentry_id=str(raw.get(CONF_SWITCH_ID) or ""),

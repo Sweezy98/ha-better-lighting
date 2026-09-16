@@ -247,6 +247,11 @@ A switch belongs to the room it drives, and cycles that room's scenes. Adaptive 
 first step, so a press on a dark room lights it adaptively and each further press moves one
 place down the list before wrapping back.
 
+A new switch cycles every scene in its room, and a scene added later joins the end of every
+switch's list. **What it cycles** on the switch's own screen reorders that list and takes
+scenes out of it; anything taken out stays out, including when the room gains a scene
+afterwards.
+
 Two-button switches are understood. The lower half gets its own words and its own actions, so
 the usual arrangement works out of the box:
 

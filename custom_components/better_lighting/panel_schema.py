@@ -58,8 +58,10 @@ ZONE_SECTIONS: tuple[Section, ...] = (
 HUB_SECTIONS: tuple[Section, ...] = (Section.BASIC, Section.NIGHT, Section.ADVANCED)
 SWITCH_SECTIONS: tuple[Section, ...] = (
     Section.BASIC,
-    Section.DOWN,
     Section.ADVANCED,
+    # Last, because a second button is the last thing anybody configures and
+    # most switches have none.
+    Section.DOWN,
 )
 
 

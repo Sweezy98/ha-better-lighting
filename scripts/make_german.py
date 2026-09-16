@@ -365,6 +365,9 @@ DE |= {
     "What this room does": "Was dieser Raum tut",
     "When a window or door opens, this room stops attracting whatever is outside. It goes back to normal once the opening is closed again.": "Wenn ein Fenster oder eine Tür geöffnet wird, hört dieser Raum auf, anzuziehen, was draußen ist. Sobald wieder geschlossen ist, kehrt er zum Normalzustand zurück.",
     "What a switch cycles": "Was ein Schalter durchschaltet",
+    "Leftovers from an older version": "Überbleibsel einer älteren Version",
+    "Remove them": "Entfernen",
+    "{count} object(s) from before scenes, switches and light calibration belonged to a room are still stored, doing nothing: {names}.\n\nRemoving them changes no behaviour — they have been ignored since the upgrade. Re-create what you still want under its room first.": "{count} Objekt(e) aus der Zeit, bevor Szenen, Schalter und Lampenabgleich zu einem Raum gehörten, sind noch gespeichert und tun nichts: {names}.\n\nDas Entfernen ändert nichts am Verhalten — sie werden seit dem Update ignoriert. Was noch gebraucht wird, vorher unter seinem Raum neu anlegen.",
     "A mode needs at least one state.": "Ein Modus braucht mindestens einen Zustand.",
     "Choose the scene to apply.": "Die anzuwendende Szene auswählen.",
     # --- entities ---------------------------------------------------------

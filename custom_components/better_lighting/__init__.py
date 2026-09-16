@@ -39,7 +39,7 @@ from .panel import (
 )
 from .presence import ZonePresence
 from .profiles import LightProfile
-from .repairs import async_check_references
+from .repairs import async_check_legacy, async_check_references
 from .scenes import Scene
 from .services import async_register_services, async_remove_services
 from .session import DeferredRegistry
@@ -319,6 +319,7 @@ async def async_setup_entry(
         _LOGGER.debug("Dropped %d stored session(s) for modes that are gone", dropped)
 
     async_check_references(hass, entry.entry_id, runtime)
+    async_check_legacy(hass, entry)
 
     async_register_services(hass)
 

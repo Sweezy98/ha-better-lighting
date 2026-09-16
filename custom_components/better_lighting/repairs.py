@@ -13,12 +13,16 @@ obvious rather than archaeological.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import voluptuous as vol
+from homeassistant import data_entry_flow
+from homeassistant.components.repairs import RepairsFlow
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
-from .const import DOMAIN
+from .const import DOMAIN, SubentryType
 
 if TYPE_CHECKING:
     from . import BetterLightingRuntime
@@ -131,3 +135,82 @@ def _async_clear_stale(
             (ISSUE_MISSING_SCENE, ISSUE_MISSING_ZONE, ISSUE_SHARED_LIGHT)
         ):
             ir.async_delete_issue(hass, DOMAIN, issue.issue_id)
+
+
+ISSUE_LEGACY_SUBENTRIES = "legacy_subentries"
+# The three kinds that moved inside a room in 0.10, and are inert wherever
+# they still exist.
+LEGACY_TYPES: tuple[tuple[str, str], ...] = (
+    (SubentryType.SCENE.value, "scene"),
+    (SubentryType.LIGHT_PROFILE.value, "light calibration"),
+    (SubentryType.CONTROLLER.value, "light switch"),
+)
+
+
+@callback
+def async_check_legacy(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Offer to clear out objects an upgrade left inert.
+
+    Scenes, calibrations and switches became part of a room in 0.10, and the
+    old ones are ignored rather than migrated. Ignored is not gone: they stay
+    in the config file and on the hub page, doing nothing, for as long as the
+    install lasts. Offered as a repair rather than swept away silently,
+    because deleting somebody's configuration without asking is not ours to
+    decide -- even configuration that no longer does anything.
+    """
+    leftovers = [
+        subentry
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type in {kind for kind, _ in LEGACY_TYPES}
+    ]
+    if not leftovers:
+        ir.async_delete_issue(hass, DOMAIN, ISSUE_LEGACY_SUBENTRIES)
+        return
+
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        ISSUE_LEGACY_SUBENTRIES,
+        is_fixable=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=ISSUE_LEGACY_SUBENTRIES,
+        translation_placeholders={
+            "count": str(len(leftovers)),
+            "names": ", ".join(sorted(sub.title for sub in leftovers)),
+        },
+        data={"entry_id": entry.entry_id},
+    )
+
+
+class LegacySubentriesRepair(RepairsFlow):
+    """Deletes the objects an upgrade left behind, once confirmed."""
+
+    def __init__(self, entry_id: str) -> None:
+        self._entry_id = entry_id
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> data_entry_flow.FlowResult:
+        return await self.async_step_confirm()
+
+    async def async_step_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> data_entry_flow.FlowResult:
+        if user_input is None:
+            return self.async_show_form(step_id="confirm", data_schema=vol.Schema({}))
+
+        entry = self.hass.config_entries.async_get_entry(self._entry_id)
+        if entry is not None:
+            kinds = {kind for kind, _ in LEGACY_TYPES}
+            for subentry_id, subentry in list(entry.subentries.items()):
+                if subentry.subentry_type in kinds:
+                    self.hass.config_entries.async_remove_subentry(entry, subentry_id)
+        ir.async_delete_issue(self.hass, DOMAIN, ISSUE_LEGACY_SUBENTRIES)
+        return self.async_create_entry(data={})
+
+
+async def async_create_fix_flow(
+    hass: HomeAssistant, issue_id: str, data: dict[str, Any] | None
+) -> RepairsFlow:
+    """Home Assistant asks for the flow that fixes one of our issues."""
+    return LegacySubentriesRepair((data or {}).get("entry_id", ""))

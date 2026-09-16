@@ -462,3 +462,66 @@ class TestNothingIsLeftBehind:
         teardown = source.split("def async_remove_services")[1]
         removed = set(re.findall(r"(SERVICE_\w+)", teardown))
         assert registered <= removed, f"never removed: {sorted(registered - removed)}"
+
+    async def test_leftovers_from_an_older_version_are_offered_for_removal(
+        self, hass: HomeAssistant
+    ) -> None:
+        """They are inert, but inert is not gone."""
+        from homeassistant.config_entries import ConfigSubentry
+
+        from custom_components.better_lighting.const import SubentryType
+
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry())
+        hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data={"name": "Old scene"},
+                subentry_type=SubentryType.SCENE.value,
+                title="Old scene",
+                unique_id=None,
+            ),
+        )
+        await hass.async_block_till_done()
+
+        issues = _our_issues(hass)
+        assert any("legacy_subentries" in issue for issue in issues), issues
+
+    async def test_fixing_it_removes_them(self, hass: HomeAssistant) -> None:
+        from homeassistant.config_entries import ConfigSubentry
+
+        from custom_components.better_lighting.const import SubentryType
+        from custom_components.better_lighting.repairs import async_create_fix_flow
+
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(hass, hub_entry())
+        hass.config_entries.async_add_subentry(
+            entry,
+            ConfigSubentry(
+                data={"name": "Old scene"},
+                subentry_type=SubentryType.SCENE.value,
+                title="Old scene",
+                unique_id=None,
+            ),
+        )
+        await hass.async_block_till_done()
+
+        flow = await async_create_fix_flow(
+            hass, "legacy_subentries", {"entry_id": entry.entry_id}
+        )
+        flow.hass = hass
+        await flow.async_step_confirm({})
+        await hass.async_block_till_done()
+
+        assert not [
+            sub
+            for sub in entry.subentries.values()
+            if sub.subentry_type == SubentryType.SCENE.value
+        ]
+        assert not any("legacy_subentries" in issue for issue in _our_issues(hass))
+
+    async def test_a_clean_install_is_not_nagged(self, hass: HomeAssistant) -> None:
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        await setup_hub(hass, hub_entry())
+
+        assert not any("legacy_subentries" in issue for issue in _our_issues(hass))

@@ -1239,6 +1239,17 @@
     "shared_light": {
       "title": "Eine Lampe gehört zu zwei Better-Lighting-Räumen",
       "description": "{light} ist sowohl in {first} als auch in {second} aufgeführt. Eine Lampe darf nur zu einem Raum gehören — nur so bleiben manuelle Änderungen, Szenensteuerung und Tastendrücke eindeutig. Aus einem der beiden entfernen."
+    },
+    "legacy_subentries": {
+      "title": "Überbleibsel einer älteren Version",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Entfernen",
+            "description": "{count} Objekt(e) aus der Zeit, bevor Szenen, Schalter und Lampenabgleich zu einem Raum gehörten, sind noch gespeichert und tun nichts: {names}.\n\nDas Entfernen ändert nichts am Verhalten — sie werden seit dem Update ignoriert. Was noch gebraucht wird, vorher unter seinem Raum neu anlegen."
+          }
+        }
+      }
     }
   }
 }

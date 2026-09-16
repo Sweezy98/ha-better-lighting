@@ -616,6 +616,15 @@ class BetterLightingPanel extends HTMLElement {
     return this._schema?.labels || { data: {}, descriptions: {}, options: {}, sections: {} };
   }
 
+  /** Home Assistant's own page for this integration, where its flows live. */
+  _openIntegrationPage() {
+    const path = "/config/integrations/integration/better_lighting";
+    history.pushState(null, "", path);
+    this.dispatchEvent(
+      new CustomEvent("location-changed", { bubbles: true, composed: true })
+    );
+  }
+
   /** The runtime choices a field may ask for, for the room in hand. */
   _choices(room) {
     return {
@@ -655,6 +664,15 @@ class BetterLightingPanel extends HTMLElement {
         ul.sub { margin:2px 0 8px 12px; border-left:2px solid var(--divider-color,#ddd); }
         ul.sub li { font-size:14px; padding:7px 10px; }
         h3 { margin:18px 0 10px; font-size:15px; font-weight:500; }
+        details { border-top:1px solid var(--divider-color,#e0e0e0); padding:4px 0; }
+        details:first-of-type { border-top:none; }
+        summary { cursor:pointer; padding:12px 4px; font-size:15px; font-weight:500;
+                  list-style:none; display:flex; align-items:center; gap:8px; }
+        summary::-webkit-details-marker { display:none; }
+        summary::before { content:"\u25B8"; transition:transform .15s;
+                          color:var(--secondary-text-color); }
+        details[open] > summary::before { transform:rotate(90deg); }
+        details > bl-form { padding:4px 4px 12px; }
         .light { display:flex; align-items:center; gap:12px; padding:8px 12px;
                  border-radius:8px; cursor:pointer; }
         .light[aria-selected="true"] { outline:2px solid var(--primary-color); }
@@ -779,16 +797,18 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "presets" };
       this._paint();
     });
-    nav.querySelector("#add-room").addEventListener("click", () => {
-      this._roomId = null;
-      this._view = { kind: "room", section: "basic", creating: true };
-      this._paint();
-    });
-    nav.querySelector("#add-mode").addEventListener("click", () => {
-      this._modeId = null;
-      this._view = { kind: "mode", creating: true };
-      this._paint();
-    });
+    // Adding one is Home Assistant's own flow, not an imitation of it: its
+    // dialog validates, names and creates the subentry, and it is the screen
+    // people already meet everywhere else. A custom panel cannot open that
+    // dialog in place -- doing so needs a dialogImport from the frontend's
+    // own module graph, which is not reachable from here -- so this goes to
+    // the page it lives on.
+    nav.querySelector("#add-room").addEventListener("click", () =>
+      this._openIntegrationPage()
+    );
+    nav.querySelector("#add-mode").addEventListener("click", () =>
+      this._openIntegrationPage()
+    );
 
     this._paintMain();
   }
@@ -1216,15 +1236,21 @@ class BetterLightingPanel extends HTMLElement {
     const holder = main.querySelector("#form");
     let pending = {};
     for (const group of form) {
+      let parent = holder;
       if (form.length > 1) {
-        const heading = document.createElement("h3");
-        heading.textContent =
-          this._labels.sections[group.section] || group.section;
-        heading.style.cssText = "margin:18px 0 10px;font-size:15px;font-weight:500";
-        holder.appendChild(heading);
+        // Folded, as the settings screens fold them. Everything but the first
+        // group starts closed: a page that opens on twelve advanced fields is
+        // the thing the menu was meant to fix.
+        const fold = document.createElement("details");
+        fold.open = group === form[0] || group.section === "basic";
+        fold.innerHTML = `<summary>${
+          this._labels.sections[group.section] || group.section
+        }</summary>`;
+        holder.appendChild(fold);
+        parent = fold;
       }
       const element = document.createElement("bl-form");
-      holder.appendChild(element);
+      parent.appendChild(element);
       element.configure({
         fields: group.fields,
         values,

@@ -1239,6 +1239,17 @@
     "shared_light": {
       "title": "A light belongs to two Better Lighting rooms",
       "description": "{light} is listed in both {first} and {second}. A light may belong to only one room -- that is what keeps manual changes, scene control and switch presses unambiguous. Remove it from one of them."
+    },
+    "legacy_subentries": {
+      "title": "Leftovers from an older version",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Remove them",
+            "description": "{count} object(s) from before scenes, switches and light calibration belonged to a room are still stored, doing nothing: {names}.\n\nRemoving them changes no behaviour — they have been ignored since the upgrade. Re-create what you still want under its room first."
+          }
+        }
+      }
     }
   }
 }

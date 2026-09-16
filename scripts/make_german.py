@@ -264,6 +264,9 @@ DE |= {
     "If somebody walks in": "Wenn jemand hereinkommt",
     "When they leave again": "Wenn sie wieder gehen",
     "The instruction waits rather than being dropped, and is re-checked when the room finally empties.": "Die Anweisung wartet, statt verworfen zu werden, und wird erneut geprüft, sobald der Raum leer ist.",
+    "Scene for somebody walking in": "Szene beim Hereinkommen",
+    "The same four choices as the state change itself. Applies the moment the room is entered, so a turn-off here happens immediately rather than waiting for the room to empty.": "Dieselben vier Möglichkeiten wie beim Zustandswechsel selbst. Wirkt sofort beim Betreten, ein Ausschalten wartet hier also nicht, bis der Raum leer ist.",
+    "Change a rule": "Regel ändern",
     "A mode needs at least one state.": "Ein Modus braucht mindestens einen Zustand.",
     "Choose the scene to apply.": "Die anzuwendende Szene auswählen.",
     # --- entities ---------------------------------------------------------

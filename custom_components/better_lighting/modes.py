@@ -427,12 +427,25 @@ class ModeGroupRuntime:
         if not self.active or zone_id in self.opted_out:
             return
         rule = self.config.rule_for(self.state, zone_id)
-        if rule is None or not rule.presence_entry_scene:
+        if rule is None:
             return
         controller = self.controllers.get(zone_id)
         if controller is None:
             return
-        await controller.async_set_mode(ZoneMode.SCENE, rule.presence_entry_scene)
+
+        match rule.presence_entry_action:
+            case ZoneAction.KEEP:
+                return
+            case ZoneAction.ADAPTIVE:
+                await controller.async_set_adaptive()
+            case ZoneAction.APPLY_SCENE if rule.presence_entry_scene:
+                await controller.async_set_mode(
+                    ZoneMode.SCENE, rule.presence_entry_scene
+                )
+            case ZoneAction.TURN_OFF:
+                # No deferral here: they are demonstrably in the room, so
+                # waiting for it to empty would mean waiting forever.
+                await controller.async_set_mode(ZoneMode.OFF)
 
     # -- opting out --------------------------------------------------------
 

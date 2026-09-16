@@ -48,6 +48,7 @@ def rule(states, zones, action, **kw) -> dict:
         "scene_id": kw.get("scene_id"),
         "respect_presence": kw.get("respect_presence", True),
         "defer_if_occupied": kw.get("defer_if_occupied", True),
+        "presence_entry_action": kw.get("presence_entry_action"),
         "presence_entry_scene": kw.get("presence_entry_scene"),
         "on_free_action": kw.get("on_free_action", "turn_off"),
     }
@@ -584,3 +585,64 @@ class TestEnableToggle:
         assert hass.states.get(CINEMA).state == "off"
         await self._set_enabled(hass, True)
         assert hass.states.get(CINEMA).attributes["bl_session_id"] is None
+
+
+class TestReEntryActions:
+    """Walking back in gets the same four choices as the state change."""
+
+    async def _build(self, hass: HomeAssistant, **entry):
+        def rules_for(ids):
+            return [
+                rule(
+                    ["playing"],
+                    [ids["Kitchen"]],
+                    entry.get("mode_action", "turn_off"),
+                    presence_entry_action=entry.get("action"),
+                    presence_entry_scene=(
+                        ids[entry["scene"]] if entry.get("scene") else None
+                    ),
+                )
+            ]
+
+        return await build(hass, presence=True, rules_for=rules_for)
+
+    async def _enter(self, hass: HomeAssistant) -> None:
+        hass.states.async_set("binary_sensor.kitchen_presence", "on")
+        await hass.async_block_till_done()
+
+    async def test_entering_can_apply_a_scene(self, hass: HomeAssistant) -> None:
+        await self._build(hass, action="apply_scene", scene="Path")
+        await set_state(hass, "playing")
+        assert hass.states.get("light.kitchen_main").state == "off"
+
+        await self._enter(hass)
+
+        assert hass.states.get("light.kitchen_main").state == "on"
+
+    async def test_entering_can_return_the_room_to_adaptive(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._build(hass, action="adaptive")
+        await set_state(hass, "playing")
+
+        await self._enter(hass)
+
+        assert hass.states.get("light.kitchen_main").state == "on"
+
+    async def test_entering_can_do_nothing(self, hass: HomeAssistant) -> None:
+        await self._build(hass, action="keep")
+        await set_state(hass, "playing")
+
+        await self._enter(hass)
+
+        assert hass.states.get("light.kitchen_main").state == "off"
+
+    async def test_entering_can_switch_the_room_off(self, hass: HomeAssistant) -> None:
+        """Odd for a cinema, but it is what a utility room might want."""
+        await self._build(hass, action="turn_off", mode_action="keep")
+        await set_state(hass, "playing")
+        assert hass.states.get("light.kitchen_main").state == "on"
+
+        await self._enter(hass)
+
+        assert hass.states.get("light.kitchen_main").state == "off"

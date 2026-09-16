@@ -756,7 +756,8 @@
           "menu_options": {
             "add_rule": "Regel hinzufügen",
             "remove_rule": "Regel entfernen",
-            "finish": "Fertig"
+            "finish": "Fertig",
+            "edit_rule": "Regel ändern"
           }
         },
         "add_rule": {
@@ -774,11 +775,13 @@
               "data": {
                 "respect_presence": "Belegten Raum nicht verdunkeln",
                 "defer_if_occupied": "Warten, bis der Raum leer ist",
-                "presence_entry_scene": "Wenn jemand hereinkommt",
-                "on_free_action": "Wenn sie wieder gehen"
+                "presence_entry_scene": "Szene beim Hereinkommen",
+                "on_free_action": "Wenn sie wieder gehen",
+                "presence_entry_action": "Wenn jemand hereinkommt"
               },
               "data_description": {
-                "defer_if_occupied": "Die Anweisung wartet, statt verworfen zu werden, und wird erneut geprüft, sobald der Raum leer ist."
+                "defer_if_occupied": "Die Anweisung wartet, statt verworfen zu werden, und wird erneut geprüft, sobald der Raum leer ist.",
+                "presence_entry_action": "Dieselben vier Möglichkeiten wie beim Zustandswechsel selbst. Wirkt sofort beim Betreten, ein Ausschalten wartet hier also nicht, bis der Raum leer ist."
               }
             }
           }
@@ -788,6 +791,39 @@
           "description": "Aktuelle Regeln:\n\n{rules}",
           "data": {
             "rule": "Regel"
+          }
+        },
+        "edit_rule": {
+          "title": "Regel ändern",
+          "description": "Aktuelle Regeln:\n\n{rules}",
+          "data": {
+            "rule": "Regel"
+          }
+        },
+        "rule_form": {
+          "title": "Regel ändern",
+          "description": "Aktuelle Regeln:\n\n{rules}",
+          "data": {
+            "mode_states": "In diesen Zuständen",
+            "zones": "Diese Räume",
+            "action": "Das tun",
+            "scene_id": "Szene"
+          },
+          "sections": {
+            "advanced": {
+              "name": "Anwesenheit",
+              "data": {
+                "respect_presence": "Belegten Raum nicht verdunkeln",
+                "defer_if_occupied": "Warten, bis der Raum leer ist",
+                "presence_entry_scene": "Szene beim Hereinkommen",
+                "on_free_action": "Wenn sie wieder gehen",
+                "presence_entry_action": "Wenn jemand hereinkommt"
+              },
+              "data_description": {
+                "defer_if_occupied": "Die Anweisung wartet, statt verworfen zu werden, und wird erneut geprüft, sobald der Raum leer ist.",
+                "presence_entry_action": "Dieselben vier Möglichkeiten wie beim Zustandswechsel selbst. Wirkt sofort beim Betreten, ein Ausschalten wartet hier also nicht, bis der Raum leer ist."
+              }
+            }
           }
         }
       },

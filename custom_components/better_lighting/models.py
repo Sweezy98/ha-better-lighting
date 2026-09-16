@@ -112,6 +112,7 @@ from .const import (
     CONF_RGB_COLOR,
     CONF_RULE_ACTION,
     CONF_RULE_DEFER_IF_OCCUPIED,
+    CONF_RULE_ENTRY_ACTION,
     CONF_RULE_ENTRY_SCENE,
     CONF_RULE_ON_FREE,
     CONF_RULE_RESPECT_PRESENCE,
@@ -611,6 +612,18 @@ def synthetic_controller(
     )
 
 
+def _entry_action(raw: dict[str, Any]) -> ZoneAction:
+    """What a room does when somebody walks back into it mid-session.
+
+    Rules written before this was a choice carry only a scene, and meant
+    "apply it", so a stored scene with no stored action still means that.
+    """
+    stored = raw.get(CONF_RULE_ENTRY_ACTION)
+    if stored:
+        return ZoneAction(stored)
+    return ZoneAction.APPLY_SCENE if raw.get(CONF_RULE_ENTRY_SCENE) else ZoneAction.KEEP
+
+
 @dataclass(frozen=True, slots=True)
 class ModeRule:
     """What one cross-zone mode does to one room, in one or more of its states."""
@@ -623,6 +636,7 @@ class ModeRule:
     respect_presence: bool = True
     defer_if_occupied: bool = True
     # What somebody walking in mid-session gets.
+    presence_entry_action: ZoneAction = ZoneAction.KEEP
     presence_entry_scene: str | None = None
     on_free_action: str = "turn_off"
 
@@ -635,6 +649,7 @@ class ModeRule:
             scene_id=raw.get(CONF_RULE_SCENE) or None,
             respect_presence=bool(raw.get(CONF_RULE_RESPECT_PRESENCE, True)),
             defer_if_occupied=bool(raw.get(CONF_RULE_DEFER_IF_OCCUPIED, True)),
+            presence_entry_action=_entry_action(raw),
             presence_entry_scene=raw.get(CONF_RULE_ENTRY_SCENE) or None,
             on_free_action=raw.get(CONF_RULE_ON_FREE, "turn_off"),
         )

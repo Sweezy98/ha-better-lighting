@@ -36,6 +36,8 @@ from .const import (
     CONF_OFF_AT_END,
     CONF_OVERRIDE_MODE,
     CONF_RULE_ACTION,
+    CONF_RULE_ENTRY_ACTION,
+    CONF_RULE_ENTRY_SCENE,
     CONF_RULE_SCENE,
     CONF_RULE_STATES,
     CONF_RULE_ZONES,
@@ -828,6 +830,8 @@ class ModeSubentryFlow(ConfigSubentryFlow):
         self._data: dict[str, Any] = {}
         self._rules: list[dict[str, Any]] = []
         self._subentry: Any = None
+        # Index of the rule being changed, while the edit form is open.
+        self._editing: int | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -896,7 +900,7 @@ class ModeSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         options = ["add_rule", "finish"]
         if self._rules:
-            options = ["add_rule", "remove_rule", "finish"]
+            options = ["add_rule", "edit_rule", "remove_rule", "finish"]
         return self.async_show_menu(
             step_id="rules",
             menu_options=options,
@@ -906,6 +910,40 @@ class ModeSubentryFlow(ConfigSubentryFlow):
     async def async_step_add_rule(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
+        return await self._async_rule_form("add_rule", user_input, index=None)
+
+    async def async_step_edit_rule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Pick a rule to change. The form then opens filled in.
+
+        Editing rather than delete-and-recreate: a rule carries eight fields,
+        and retyping all of them to move one room between two states is how
+        mistakes get made.
+        """
+        if user_input is not None:
+            self._editing = int(user_input["rule"])
+            return await self.async_step_rule_form()
+
+        return self.async_show_form(
+            step_id="edit_rule",
+            data_schema=self._rule_picker(),
+            description_placeholders={"rules": self._rules_summary()},
+        )
+
+    async def async_step_rule_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_rule_form("rule_form", user_input, index=self._editing)
+
+    async def _async_rule_form(
+        self,
+        step_id: str,
+        user_input: dict[str, Any] | None,
+        *,
+        index: int | None,
+    ) -> SubentryFlowResult:
+        """One rule form, used both to add a rule and to change one."""
         entry = self._get_entry()
         specs = mode_rule_specs(list(self._data.get(CONF_STATES) or ()))
         errors: dict[str, str] = {}
@@ -917,15 +955,27 @@ class ModeSubentryFlow(ConfigSubentryFlow):
                 CONF_RULE_SCENE
             ):
                 errors[CONF_RULE_SCENE] = "scene_required"
+            if cleaned.get(CONF_RULE_ENTRY_ACTION) == "apply_scene" and not cleaned.get(
+                CONF_RULE_ENTRY_SCENE
+            ):
+                errors[CONF_RULE_ENTRY_SCENE] = "scene_required"
             if not errors:
-                self._rules.append(cleaned)
+                if index is None:
+                    self._rules.append(cleaned)
+                elif 0 <= index < len(self._rules):
+                    self._rules[index] = cleaned
+                self._editing = None
                 return await self.async_step_rules()
 
+        current = user_input
+        if current is None and index is not None and 0 <= index < len(self._rules):
+            current = dict(self._rules[index])
+
         return self.async_show_form(
-            step_id="add_rule",
+            step_id=step_id,
             data_schema=build_schema(
                 specs,
-                user_input,
+                current,
                 options={
                     "zones": zone_options(entry),
                     "scenes": scene_options(entry),
@@ -933,6 +983,25 @@ class ModeSubentryFlow(ConfigSubentryFlow):
             ),
             errors=errors,
             description_placeholders={"rules": self._rules_summary()},
+        )
+
+    def _rule_picker(self) -> vol.Schema:
+        """A dropdown of the rules as they read in the summary."""
+        return vol.Schema(
+            {
+                vol.Required("rule"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": str(index), "label": line}
+                            for index, line in enumerate(
+                                self._rules_summary().split("\n")
+                            )
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        sort=False,
+                    )
+                )
+            }
         )
 
     async def async_step_remove_rule(
@@ -946,22 +1015,7 @@ class ModeSubentryFlow(ConfigSubentryFlow):
 
         return self.async_show_form(
             step_id="remove_rule",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("rule"): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                {"value": str(index), "label": line}
-                                for index, line in enumerate(
-                                    self._rules_summary().split("\n")
-                                )
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                            sort=False,
-                        )
-                    )
-                }
-            ),
+            data_schema=self._rule_picker(),
             description_placeholders={"rules": self._rules_summary()},
         )
 

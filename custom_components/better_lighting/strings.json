@@ -756,7 +756,8 @@
           "menu_options": {
             "add_rule": "Add a rule",
             "remove_rule": "Remove a rule",
-            "finish": "Done"
+            "finish": "Done",
+            "edit_rule": "Change a rule"
           }
         },
         "add_rule": {
@@ -774,11 +775,13 @@
               "data": {
                 "respect_presence": "Do not darken an occupied room",
                 "defer_if_occupied": "Wait until the room empties",
-                "presence_entry_scene": "If somebody walks in",
-                "on_free_action": "When they leave again"
+                "presence_entry_scene": "Scene for somebody walking in",
+                "on_free_action": "When they leave again",
+                "presence_entry_action": "If somebody walks in"
               },
               "data_description": {
-                "defer_if_occupied": "The instruction waits rather than being dropped, and is re-checked when the room finally empties."
+                "defer_if_occupied": "The instruction waits rather than being dropped, and is re-checked when the room finally empties.",
+                "presence_entry_action": "The same four choices as the state change itself. Applies the moment the room is entered, so a turn-off here happens immediately rather than waiting for the room to empty."
               }
             }
           }
@@ -788,6 +791,39 @@
           "description": "Current rules:\n\n{rules}",
           "data": {
             "rule": "Rule"
+          }
+        },
+        "edit_rule": {
+          "title": "Change a rule",
+          "description": "Current rules:\n\n{rules}",
+          "data": {
+            "rule": "Rule"
+          }
+        },
+        "rule_form": {
+          "title": "Change a rule",
+          "description": "Current rules:\n\n{rules}",
+          "data": {
+            "mode_states": "In these states",
+            "zones": "These rooms",
+            "action": "Do this",
+            "scene_id": "Scene"
+          },
+          "sections": {
+            "advanced": {
+              "name": "Presence",
+              "data": {
+                "respect_presence": "Do not darken an occupied room",
+                "defer_if_occupied": "Wait until the room empties",
+                "presence_entry_scene": "Scene for somebody walking in",
+                "on_free_action": "When they leave again",
+                "presence_entry_action": "If somebody walks in"
+              },
+              "data_description": {
+                "defer_if_occupied": "The instruction waits rather than being dropped, and is re-checked when the room finally empties.",
+                "presence_entry_action": "The same four choices as the state change itself. Applies the moment the room is entered, so a turn-off here happens immediately rather than waiting for the room to empty."
+              }
+            }
           }
         }
       },

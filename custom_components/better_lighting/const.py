@@ -1028,6 +1028,7 @@ CONF_RULE_SCENE = "scene_id"
 CONF_RULE_RESPECT_PRESENCE = "respect_presence"
 CONF_RULE_DEFER_IF_OCCUPIED = "defer_if_occupied"
 CONF_RULE_ENTRY_SCENE = "presence_entry_scene"
+CONF_RULE_ENTRY_ACTION = "presence_entry_action"
 CONF_RULE_ON_FREE = "on_free_action"
 
 IDLE_STATE = "off"
@@ -1122,6 +1123,14 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
         ),
         FieldSpec(
             CONF_RULE_DEFER_IF_OCCUPIED, True, _boolean(), section=Section.ADVANCED
+        ),
+        # Walking back in mid-session deserves the same four choices as the
+        # state change that emptied the room in the first place.
+        FieldSpec(
+            CONF_RULE_ENTRY_ACTION,
+            ZoneAction.KEEP.value,
+            _select(ZONE_ACTIONS, "zone_action"),
+            section=Section.ADVANCED,
         ),
         FieldSpec(
             CONF_RULE_ENTRY_SCENE,

@@ -303,7 +303,15 @@ class BetterLightingPanel extends HTMLElement {
     }
   }
 
+  connectedCallback() {
+    // A closed tab would otherwise leave the room showing a draft until
+    // somebody touched a switch. Not a disaster, but not ours to leave behind.
+    this._unload = () => this._stopPreview();
+    window.addEventListener("beforeunload", this._unload);
+  }
+
   disconnectedCallback() {
+    window.removeEventListener("beforeunload", this._unload);
     this._stopPreview();
   }
 

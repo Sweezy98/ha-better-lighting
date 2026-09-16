@@ -448,7 +448,7 @@ class TestButtons:
         await press_zone(hass)
 
         await hass.services.async_call(
-            "button", "press", {"entity_id": "button.kitchen_cycle"}, blocking=True
+            "button", "press", {"entity_id": "button.kitchen_next_scene"}, blocking=True
         )
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Cosy"
@@ -716,8 +716,8 @@ async def test_every_zone_button_is_available_without_hunting(
     await setup_hub(hass, hub_entry())
 
     for button in (
-        "button.kitchen_cycle",
-        "button.kitchen_cycle_back",
+        "button.kitchen_next_scene",
+        "button.kitchen_previous_scene",
         "button.kitchen_back_to_adaptive",
         "button.kitchen_clear_manual_override",
     ):

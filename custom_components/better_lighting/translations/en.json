@@ -1088,10 +1088,10 @@
     },
     "button": {
       "cycle_next": {
-        "name": "Cycle"
+        "name": "Next scene"
       },
       "cycle_previous": {
-        "name": "Cycle back"
+        "name": "Previous scene"
       },
       "reset_adaptive": {
         "name": "Back to adaptive"

@@ -575,6 +575,10 @@ class BetterLightingPanel extends HTMLElement {
     // somebody touched a switch. Not a disaster, but not ours to leave behind.
     this._unload = () => this._stopPreview();
     window.addEventListener("beforeunload", this._unload);
+    // Coming back from Home Assistant's own pages -- having just added a room
+    // there -- must show the room that was added, whether or not the frontend
+    // kept this element alive while we were away.
+    if (this._rendered) this._load();
   }
 
   disconnectedCallback() {
@@ -618,6 +622,10 @@ class BetterLightingPanel extends HTMLElement {
 
   /** Home Assistant's own page for this integration, where its flows live. */
   _openIntegrationPage() {
+    // There is no deep link that starts a subentry flow: the frontend's
+    // redirect table offers the integration page and the add-integration
+    // dialog, and nothing between. So this lands on the page the flow lives
+    // on, and the panel reloads when it is returned to.
     const path = "/config/integrations/integration/better_lighting";
     history.pushState(null, "", path);
     this.dispatchEvent(

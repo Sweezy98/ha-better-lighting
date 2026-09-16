@@ -1088,10 +1088,10 @@
     },
     "button": {
       "cycle_next": {
-        "name": "nächster Modus"
+        "name": "Nächste Szene"
       },
       "cycle_previous": {
-        "name": "vorheriger Modus"
+        "name": "Vorherige Szene"
       },
       "reset_adaptive": {
         "name": "Zurück zu adaptiv"
@@ -1129,7 +1129,7 @@
       }
     },
     "cycle": {
-      "name": "nächster Modus",
+      "name": "Durchschalten",
       "description": "Diesen Raum in seiner Abfolge weiterschalten.",
       "fields": {
         "zone": {

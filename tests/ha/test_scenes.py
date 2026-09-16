@@ -234,12 +234,6 @@ class TestTheZoneFlowOwnsScenes:
         "name": "Living Room",
         "lights": ["light.one"],
         "icon": "mdi:sofa",
-        "group": {},
-        "adaptive": {},
-        "night": {},
-        "power": {},
-        "presence": {},
-        "insect": {},
     }
 
     async def _open(self, hass: HomeAssistant):
@@ -645,3 +639,54 @@ class TestSwitchesBelongToTheRoom:
         switches = result["data"]["switches"]
         assert switches[0]["name"] == "Door"
         assert switches[0]["scene_order"] == [scene_id]
+
+
+class TestTheMenuIsTheHub:
+    """Every screen is one concern, reached from a menu, returning to it."""
+
+    async def _menu(self, hass: HomeAssistant):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+        )
+        result = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SubentryType.ZONE.value),
+            context={"source": config_entries.SOURCE_USER},
+        )
+        # Adding a room asks two questions, not nine sections' worth.
+        assert set(result["data_schema"].schema) >= {"name", "lights"}
+        return await hass.config_entries.subentries.async_configure(
+            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+        )
+
+    async def test_adding_a_room_lands_on_its_menu(self, hass: HomeAssistant) -> None:
+        result = await self._menu(hass)
+        assert result["type"] is FlowResultType.MENU
+        assert "night" in result["menu_options"]
+        assert "presence" in result["menu_options"]
+
+    async def test_each_screen_returns_to_the_menu(self, hass: HomeAssistant) -> None:
+        result = await self._menu(hass)
+        flow_id = result["flow_id"]
+
+        for step in ("group", "adaptive", "night", "power", "presence", "insect"):
+            result = await hass.config_entries.subentries.async_configure(
+                flow_id, {"next_step_id": step}
+            )
+            assert result["step_id"] == step, step
+            # Rendered flat: a menu has already said what this screen is about.
+            assert not any(
+                key.schema in ("group", "adaptive", "night", "power")
+                for key in result["data_schema"].schema
+            )
+            result = await hass.config_entries.subentries.async_configure(flow_id, {})
+            assert result["step_id"] == "menu", step
+
+    async def test_the_summary_reads_the_room_back(self, hass: HomeAssistant) -> None:
+        result = await self._menu(hass)
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": "summary"}
+        )
+        summary = result["description_placeholders"]["summary"]
+        assert "Lights: 1" in summary
+        assert "Scenes: 0" in summary

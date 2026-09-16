@@ -159,17 +159,23 @@ async def setup_hub(hass: HomeAssistant, entry: MockConfigEntry) -> MockConfigEn
     return entry
 
 
-def form_input(specs: tuple[FieldSpec, ...], **overrides) -> dict:
+def form_input(
+    specs: tuple[FieldSpec, ...], *, sections: bool = True, **overrides
+) -> dict:
     """A complete form submission for ``specs``.
 
     The frontend always submits every section, so the tests do too -- and
     deriving them from the spec table means adding a section to a form cannot
     quietly break every test that fills in a different part of it.
+
+    ``sections=False`` is the shape a menu-driven form takes: one concern per
+    screen, rendered flat, so there are no section wrappers to submit.
     """
     data: dict = {}
     for spec in specs:
         if spec.section is not Section.BASIC:
-            data.setdefault(spec.section.value, {})
+            if sections:
+                data.setdefault(spec.section.value, {})
         elif spec.default is not None:
             data[spec.key] = spec.default
     return {**data, **overrides}

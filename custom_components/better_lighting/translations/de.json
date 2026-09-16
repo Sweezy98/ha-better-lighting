@@ -61,51 +61,11 @@
         "title": "Better Lighting",
         "description": "Farbvorlagen:\n\n{presets}",
         "menu_options": {
-          "settings": "Globale Standardwerte",
-          "presets": "Farbvorlagen",
-          "finish": "Fertig"
-        }
-      },
-      "settings": {
-        "title": "Globale Standardwerte",
-        "description": "Änderungen wirken sich auf jeden Raum aus, der sie nicht überschrieben hat.",
-        "data": {
-          "interval": "Aktualisierungsintervall",
-          "transition": "Übergangsdauer",
-          "min_brightness_pct": "Minimale Helligkeit",
-          "max_brightness_pct": "Maximale Helligkeit",
-          "min_color_temp_k": "Wärmste Farbtemperatur",
-          "max_color_temp_k": "Kälteste Farbtemperatur",
-          "brightness_mode": "Helligkeitsverlauf"
-        },
-        "data_description": {},
-        "sections": {
-          "advanced": {
-            "name": "Erweitert",
-            "data": {
-              "initial_transition": "Übergangsdauer beim Einschalten",
-              "scene_transition": "Übergangsdauer beim Szenenwechsel",
-              "brightness_mode_time_dark": "Dauer des Übergangs zur dunklen Seite",
-              "brightness_mode_time_light": "Dauer des Übergangs zur hellen Seite",
-              "sunrise_offset": "Versatz zum Sonnenaufgang",
-              "sunset_offset": "Versatz zum Sonnenuntergang",
-              "prefer_rgb_color": "RGB gegenüber Farbtemperatur bevorzugen",
-              "take_over_control": "Manuelle Änderungen erkennen",
-              "autoreset_manual_seconds": "Manuelle Änderung vergessen nach",
-              "separate_turn_on_commands": "Helligkeit und Farbe getrennt senden",
-              "send_split_delay_ms": "Wartezeit zwischen getrennten Befehlen",
-              "intercept_member_calls": "Aufrufe direkt an einzelne Lampen abfangen"
-            }
-          },
-          "night": {
-            "name": "Nachtmodus",
-            "description": "Der Helfer, der meldet, dass das Haus schläft. Jeder Raum entscheidet selbst, ob er dadurch gedimmt, dunkel geschaltet wird oder unverändert bleibt.",
-            "data": {
-              "night_source_entity": "Nachtmodus folgt",
-              "night_brightness_pct": "Helligkeit im Nachtmodus",
-              "night_color_temp_k": "Farbtemperatur im Nachtmodus"
-            }
-          }
+          "defaults": "🌅 Adaptive Standardwerte",
+          "night": "🌙 Nachtmodus",
+          "presets": "🎨 Farbvorlagen",
+          "advanced": "⚙️ Erweitert",
+          "finish": "✅ Speichern und schließen"
         }
       },
       "presets": {
@@ -115,7 +75,7 @@
           "add_preset": "Vorlage hinzufügen",
           "edit_preset": "Vorlage ändern",
           "remove_preset": "Vorlage entfernen",
-          "init": "Zurück"
+          "init": "⬅️ Zurück"
         }
       },
       "add_preset": {
@@ -153,6 +113,49 @@
           "rgb_color": "Farbe",
           "color_temp_kelvin": "Farbtemperatur"
         }
+      },
+      "defaults": {
+        "title": "Adaptive Standardwerte",
+        "description": "Änderungen wirken sich auf jeden Raum aus, der sie nicht überschrieben hat.",
+        "data": {
+          "interval": "Aktualisierungsintervall",
+          "transition": "Übergangsdauer",
+          "min_brightness_pct": "Minimale Helligkeit",
+          "max_brightness_pct": "Maximale Helligkeit",
+          "min_color_temp_k": "Wärmste Farbtemperatur",
+          "max_color_temp_k": "Kälteste Farbtemperatur",
+          "brightness_mode": "Helligkeitsverlauf"
+        },
+        "data_description": {}
+      },
+      "night": {
+        "title": "Nachtmodus",
+        "description": "Der Helfer, der meldet, dass das Haus schläft. Jeder Raum entscheidet selbst, ob er dadurch gedimmt, dunkel geschaltet wird oder unverändert bleibt.",
+        "data": {
+          "night_source_entity": "Nachtmodus folgt",
+          "night_brightness_pct": "Helligkeit im Nachtmodus",
+          "night_color_temp_k": "Farbtemperatur im Nachtmodus"
+        },
+        "data_description": {}
+      },
+      "advanced": {
+        "title": "Erweitert",
+        "description": "",
+        "data": {
+          "initial_transition": "Übergangsdauer beim Einschalten",
+          "scene_transition": "Übergangsdauer beim Szenenwechsel",
+          "brightness_mode_time_dark": "Dauer des Übergangs zur dunklen Seite",
+          "brightness_mode_time_light": "Dauer des Übergangs zur hellen Seite",
+          "sunrise_offset": "Versatz zum Sonnenaufgang",
+          "sunset_offset": "Versatz zum Sonnenuntergang",
+          "prefer_rgb_color": "RGB gegenüber Farbtemperatur bevorzugen",
+          "take_over_control": "Manuelle Änderungen erkennen",
+          "autoreset_manual_seconds": "Manuelle Änderung vergessen nach",
+          "separate_turn_on_commands": "Helligkeit und Farbe getrennt senden",
+          "send_split_delay_ms": "Wartezeit zwischen getrennten Befehlen",
+          "intercept_member_calls": "Aufrufe direkt an einzelne Lampen abfangen"
+        },
+        "data_description": {}
       }
     },
     "error": {
@@ -169,7 +172,7 @@
       "step": {
         "user": {
           "title": "Raum hinzufügen",
-          "description": "Ein Raum sind die gemeinsam gesteuerten Lampen eines Zimmers. Jede Lampe kann nur zu einem Raum gehören.",
+          "description": "Dem Raum einen Namen geben und seine Lampen auswählen. Alles Weitere folgt auf dem nächsten Bildschirm.",
           "data": {
             "name": "Name",
             "lights": "Lampen",
@@ -178,215 +181,6 @@
           },
           "data_description": {
             "lights": "Die Lampen in diesem Zimmer. Eine Lampe darf nur zu einem Raum gehören, damit manuelle Änderungen und Szenensteuerung immer eindeutig bleiben."
-          },
-          "sections": {
-            "group": {
-              "name": "Gruppenverhalten",
-              "data": {
-                "all": "Nur als „an“ melden, wenn jede Lampe an ist",
-                "hide_members": "Einzelne Lampen ausblenden",
-                "remember_on_state": "Merken, welche Lampen an waren",
-                "brightness_strategy": "Gemeldete Helligkeit",
-                "expand_light_groups": "Verschachtelte Lichtgruppen auflösen",
-                "color_lights_dark_members": "Farbwechsel schaltet Lampen auch ein"
-              },
-              "data_description": {
-                "remember_on_state": "Beim Wiedereinschalten nur die Lampen einschalten, die beim Ausschalten an waren.",
-                "brightness_strategy": "Wie aus den eingeschalteten Lampen ein Helligkeitswert gebildet wird.",
-                "color_lights_dark_members": "Standardmäßig aus: Ein Farbwechsel passt das vorhandene Licht an, statt den Raum zu beleuchten. Einschalten, um sich wie die Lichtgruppen von Home Assistant zu verhalten."
-              }
-            },
-            "adaptive": {
-              "name": "Adaptives Licht",
-              "data": {
-                "adaptive_override_enabled": "Globale Standardwerte überschreiben",
-                "min_brightness_pct": "Minimale Helligkeit",
-                "max_brightness_pct": "Maximale Helligkeit",
-                "min_color_temp_k": "Wärmste Farbtemperatur",
-                "max_color_temp_k": "Kälteste Farbtemperatur",
-                "brightness_mode": "Helligkeitsverlauf",
-                "transition": "Übergangsdauer",
-                "interval": "Aktualisierungsintervall",
-                "adaptive_brightness_default_on": "Helligkeit der Sonne folgen",
-                "adaptive_color_default_on": "Farbe der Sonne folgen"
-              },
-              "data_description": {
-                "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist.",
-                "adaptive_brightness_default_on": "Helligkeit und Farbe sind getrennte Schalter — ein Raum kann also abends weiter wärmer werden, während seine Helligkeit dort bleibt, wo sie eingestellt wurde."
-              }
-            },
-            "night": {
-              "name": "Nachtmodus",
-              "data": {
-                "night_behavior": "Was der Nachtmodus tut",
-                "night_brightness_pct": "Helligkeit im Nachtmodus",
-                "night_color_temp_k": "Farbtemperatur im Nachtmodus",
-                "night_transition": "Übergangsdauer im Nachtmodus",
-                "night_ignore_presence": "Anwesenheit im Nachtmodus ignorieren",
-                "night_scene_id": "Nachtszene"
-              },
-              "data_description": {
-                "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
-                "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist.",
-                "night_behavior": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht — der Nachtschalter des Raums dimmt immer, statt zu verdunkeln."
-              }
-            },
-            "power": {
-              "name": "Wiedereinschalten",
-              "data": {
-                "restore_on_power_cycle": "Nachdem der Raum ausgeschaltet wurde",
-                "resume_max_age_minutes": "Letzte Szene vergessen nach"
-              },
-              "data_description": {
-                "resume_max_age_minutes": "Damit ein über Nacht ausgeschalteter Raum am nächsten Morgen adaptiv startet und nicht in der Abendessen-Szene von gestern."
-              }
-            },
-            "presence": {
-              "name": "Anwesenheit",
-              "data": {
-                "presence_entity": "Anwesenheitssensor",
-                "presence_clear_delay": "Raum als leer betrachten nach",
-                "presence_on_action": "Wenn jemand hereinkommt",
-                "presence_on_scene_id": "Anzuwendende Szene",
-                "presence_off_action": "Wenn der Raum leer wird",
-                "presence_covers": "Nur wenn diese Rollläden geschlossen sind",
-                "cover_condition": "Rollladen-Bedingung",
-                "presence_on_only_when_off": "Nur auf einen ausgeschalteten Raum wirken",
-                "presence_respects_manual": "Von Hand eingestellten Raum in Ruhe lassen",
-                "cover_unknown_blocks": "Nicht auslesbarer Rollladen blockiert"
-              },
-              "data_description": {
-                "presence_clear_delay": "Anwesenheitssensoren flackern. Die Wartezeit verhindert, dass ein Raum ausgeschaltet wird, während noch jemand darin ist.",
-                "presence_covers": "Damit das Licht nur angeht, wenn die Rollläden unten und der Raum wirklich dunkel ist. Ein Rollladen, der geschlossen wird, während jemand schon im Raum ist, zählt ebenfalls.",
-                "presence_on_only_when_off": "Wer einen bereits von Hand beleuchteten Raum betritt, soll ihn nicht umgestellt vorfinden.",
-                "presence_respects_manual": "Hinter jemandem auszuschalten, der den Raum von Hand eingestellt hat, ist die unfreundlichste Auslegung eines leeren Raums.",
-                "cover_unknown_blocks": "Die Bedingung steht für „hier ist es dunkel“, und ein nicht auslesbarer Rollladen ist dafür kein Beleg."
-              }
-            },
-            "insect": {
-              "name": "Offene Fenster",
-              "data": {
-                "window_entities": "Tür- und Fenstersensoren",
-                "insect_scene_id": "Anzuwendende Szene",
-                "insect_only_when_on": "Nur wenn der Raum bereits beleuchtet ist",
-                "insect_open_delay": "Wartezeit vor Reaktion auf ein offenes Fenster",
-                "insect_close_delay": "Wartezeit vor Reaktion auf ein geschlossenes Fenster",
-                "insect_overridable_by_press": "Ein Tastendruck setzt ihn außer Kraft"
-              },
-              "data_description": {
-                "insect_scene_id": "Üblicherweise ein tiefes Bernstein, das deutlich weniger Insekten anzieht als weißes Licht.",
-                "insect_only_when_on": "Ein offenes Fenster ist kein Grund, einen dunklen Raum zu beleuchten.",
-                "insect_close_delay": "Verhindert, dass ein zuschlagendes Fenster den Raum flackern lässt."
-              }
-            }
-          }
-        },
-        "reconfigure": {
-          "title": "Raum neu konfigurieren",
-          "data": {
-            "name": "Name",
-            "lights": "Lampen",
-            "icon": "Symbol",
-            "area_id": "Bereich"
-          },
-          "sections": {
-            "group": {
-              "name": "Gruppenverhalten",
-              "data": {
-                "all": "Nur als „an“ melden, wenn jede Lampe an ist",
-                "hide_members": "Einzelne Lampen ausblenden",
-                "remember_on_state": "Merken, welche Lampen an waren",
-                "brightness_strategy": "Gemeldete Helligkeit",
-                "expand_light_groups": "Verschachtelte Lichtgruppen auflösen",
-                "color_lights_dark_members": "Farbwechsel schaltet Lampen auch ein"
-              },
-              "data_description": {
-                "color_lights_dark_members": "Standardmäßig aus: Ein Farbwechsel passt das vorhandene Licht an, statt den Raum zu beleuchten. Einschalten, um sich wie die Lichtgruppen von Home Assistant zu verhalten."
-              }
-            },
-            "adaptive": {
-              "name": "Adaptives Licht",
-              "data": {
-                "adaptive_override_enabled": "Globale Standardwerte überschreiben",
-                "min_brightness_pct": "Minimale Helligkeit",
-                "max_brightness_pct": "Maximale Helligkeit",
-                "min_color_temp_k": "Wärmste Farbtemperatur",
-                "max_color_temp_k": "Kälteste Farbtemperatur",
-                "brightness_mode": "Helligkeitsverlauf",
-                "transition": "Übergangsdauer",
-                "interval": "Aktualisierungsintervall",
-                "adaptive_brightness_default_on": "Helligkeit der Sonne folgen",
-                "adaptive_color_default_on": "Farbe der Sonne folgen"
-              },
-              "data_description": {
-                "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist.",
-                "adaptive_brightness_default_on": "Helligkeit und Farbe sind getrennte Schalter — ein Raum kann also abends weiter wärmer werden, während seine Helligkeit dort bleibt, wo sie eingestellt wurde."
-              }
-            },
-            "night": {
-              "name": "Nachtmodus",
-              "data": {
-                "night_behavior": "Was der Nachtmodus tut",
-                "night_brightness_pct": "Helligkeit im Nachtmodus",
-                "night_color_temp_k": "Farbtemperatur im Nachtmodus",
-                "night_transition": "Übergangsdauer im Nachtmodus",
-                "night_ignore_presence": "Anwesenheit im Nachtmodus ignorieren",
-                "night_scene_id": "Nachtszene"
-              },
-              "data_description": {
-                "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
-                "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist.",
-                "night_behavior": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht — der Nachtschalter des Raums dimmt immer, statt zu verdunkeln."
-              }
-            },
-            "power": {
-              "name": "Wiedereinschalten",
-              "data": {
-                "restore_on_power_cycle": "Nachdem der Raum ausgeschaltet wurde",
-                "resume_max_age_minutes": "Letzte Szene vergessen nach"
-              },
-              "data_description": {
-                "resume_max_age_minutes": "Damit ein über Nacht ausgeschalteter Raum am nächsten Morgen adaptiv startet und nicht in der Abendessen-Szene von gestern."
-              }
-            },
-            "presence": {
-              "name": "Anwesenheit",
-              "data": {
-                "presence_entity": "Anwesenheitssensor",
-                "presence_clear_delay": "Raum als leer betrachten nach",
-                "presence_on_action": "Wenn jemand hereinkommt",
-                "presence_on_scene_id": "Anzuwendende Szene",
-                "presence_off_action": "Wenn der Raum leer wird",
-                "presence_covers": "Nur wenn diese Rollläden geschlossen sind",
-                "cover_condition": "Rollladen-Bedingung",
-                "presence_on_only_when_off": "Nur auf einen ausgeschalteten Raum wirken",
-                "presence_respects_manual": "Von Hand eingestellten Raum in Ruhe lassen",
-                "cover_unknown_blocks": "Nicht auslesbarer Rollladen blockiert"
-              },
-              "data_description": {
-                "presence_clear_delay": "Anwesenheitssensoren flackern. Die Wartezeit verhindert, dass ein Raum ausgeschaltet wird, während noch jemand darin ist.",
-                "presence_covers": "Damit das Licht nur angeht, wenn die Rollläden unten und der Raum wirklich dunkel ist. Ein Rollladen, der geschlossen wird, während jemand schon im Raum ist, zählt ebenfalls.",
-                "presence_on_only_when_off": "Wer einen bereits von Hand beleuchteten Raum betritt, soll ihn nicht umgestellt vorfinden.",
-                "presence_respects_manual": "Hinter jemandem auszuschalten, der den Raum von Hand eingestellt hat, ist die unfreundlichste Auslegung eines leeren Raums.",
-                "cover_unknown_blocks": "Die Bedingung steht für „hier ist es dunkel“, und ein nicht auslesbarer Rollladen ist dafür kein Beleg."
-              }
-            },
-            "insect": {
-              "name": "Offene Fenster",
-              "data": {
-                "window_entities": "Tür- und Fenstersensoren",
-                "insect_scene_id": "Anzuwendende Szene",
-                "insect_only_when_on": "Nur wenn der Raum bereits beleuchtet ist",
-                "insect_open_delay": "Wartezeit vor Reaktion auf ein offenes Fenster",
-                "insect_close_delay": "Wartezeit vor Reaktion auf ein geschlossenes Fenster",
-                "insect_overridable_by_press": "Ein Tastendruck setzt ihn außer Kraft"
-              },
-              "data_description": {
-                "insect_scene_id": "Üblicherweise ein tiefes Bernstein, das deutlich weniger Insekten anzieht als weißes Licht.",
-                "insect_only_when_on": "Ein offenes Fenster ist kein Grund, einen dunklen Raum zu beleuchten.",
-                "insect_close_delay": "Verhindert, dass ein zuschlagendes Fenster den Raum flackern lässt."
-              }
-            }
           }
         },
         "add_light": {
@@ -423,13 +217,21 @@
           }
         },
         "menu": {
-          "title": "Raum",
-          "description": "Szenen in diesem Raum:\n\n{scenes}",
+          "title": "{name}",
+          "description": "",
           "menu_options": {
-            "scenes": "Szenen",
-            "finish": "Fertig",
-            "calibrations": "Lampenabgleich",
-            "switches": "Lichtschalter"
+            "lights": "💡 Lampen",
+            "group": "🧩 Gruppenverhalten",
+            "adaptive": "🌅 Adaptives Licht",
+            "night": "🌙 Nachtmodus",
+            "power": "🔌 Aus- und Einschalten",
+            "presence": "🚶 Anwesenheit",
+            "insect": "🪟 Offene Fenster",
+            "scenes": "🎨 Szenen",
+            "switches": "🎚️ Lichtschalter",
+            "calibrations": "📐 Lampenabgleich",
+            "summary": "📋 Übersicht",
+            "finish": "✅ Speichern und schließen"
           }
         },
         "scenes": {
@@ -441,7 +243,7 @@
             "edit_scene": "Szene ändern",
             "remove_scene": "Szene entfernen",
             "move_scene": "Reihenfolge ändern",
-            "menu": "Zurück"
+            "menu": "⬅️ Zurück"
           }
         },
         "add_scene": {
@@ -589,7 +391,7 @@
             "add_calibration": "Lampe abgleichen",
             "edit_calibration": "Abgleich ändern",
             "remove_calibration": "Abgleich entfernen",
-            "menu": "Zurück"
+            "menu": "⬅️ Zurück"
           }
         },
         "edit_calibration": {
@@ -748,7 +550,7 @@
             "add_switch": "Schalter hinzufügen",
             "edit_switch": "Schalter ändern",
             "remove_switch": "Schalter entfernen",
-            "menu": "Zurück"
+            "menu": "⬅️ Zurück"
           }
         },
         "edit_switch": {
@@ -774,6 +576,131 @@
             "remove_step": "Szene entfernen",
             "save_switch": "Diesen Schalter speichern"
           }
+        },
+        "lights": {
+          "title": "Lampen",
+          "description": "Ein Raum sind die gemeinsam gesteuerten Lampen eines Zimmers. Jede Lampe kann nur zu einem Raum gehören.",
+          "data": {
+            "name": "Name",
+            "lights": "Lampen",
+            "icon": "Symbol",
+            "area_id": "Bereich"
+          },
+          "data_description": {
+            "lights": "Die Lampen in diesem Zimmer. Eine Lampe darf nur zu einem Raum gehören, damit manuelle Änderungen und Szenensteuerung immer eindeutig bleiben."
+          }
+        },
+        "group": {
+          "title": "Gruppenverhalten",
+          "description": "",
+          "data": {
+            "all": "Nur als „an“ melden, wenn jede Lampe an ist",
+            "hide_members": "Einzelne Lampen ausblenden",
+            "remember_on_state": "Merken, welche Lampen an waren",
+            "brightness_strategy": "Gemeldete Helligkeit",
+            "expand_light_groups": "Verschachtelte Lichtgruppen auflösen",
+            "color_lights_dark_members": "Farbwechsel schaltet Lampen auch ein"
+          },
+          "data_description": {
+            "remember_on_state": "Beim Wiedereinschalten nur die Lampen einschalten, die beim Ausschalten an waren.",
+            "brightness_strategy": "Wie aus den eingeschalteten Lampen ein Helligkeitswert gebildet wird.",
+            "color_lights_dark_members": "Standardmäßig aus: Ein Farbwechsel passt das vorhandene Licht an, statt den Raum zu beleuchten. Einschalten, um sich wie die Lichtgruppen von Home Assistant zu verhalten."
+          }
+        },
+        "adaptive": {
+          "title": "Adaptives Licht",
+          "description": "",
+          "data": {
+            "adaptive_override_enabled": "Globale Standardwerte überschreiben",
+            "min_brightness_pct": "Minimale Helligkeit",
+            "max_brightness_pct": "Maximale Helligkeit",
+            "min_color_temp_k": "Wärmste Farbtemperatur",
+            "max_color_temp_k": "Kälteste Farbtemperatur",
+            "brightness_mode": "Helligkeitsverlauf",
+            "transition": "Übergangsdauer",
+            "interval": "Aktualisierungsintervall",
+            "adaptive_brightness_default_on": "Helligkeit der Sonne folgen",
+            "adaptive_color_default_on": "Farbe der Sonne folgen"
+          },
+          "data_description": {
+            "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist.",
+            "adaptive_brightness_default_on": "Helligkeit und Farbe sind getrennte Schalter — ein Raum kann also abends weiter wärmer werden, während seine Helligkeit dort bleibt, wo sie eingestellt wurde."
+          }
+        },
+        "night": {
+          "title": "Nachtmodus",
+          "description": "",
+          "data": {
+            "night_behavior": "Was der Nachtmodus tut",
+            "night_brightness_pct": "Helligkeit im Nachtmodus",
+            "night_color_temp_k": "Farbtemperatur im Nachtmodus",
+            "night_transition": "Übergangsdauer im Nachtmodus",
+            "night_ignore_presence": "Anwesenheit im Nachtmodus ignorieren",
+            "night_scene_id": "Nachtszene"
+          },
+          "data_description": {
+            "night_ignore_presence": "Für Schlafzimmer: verhindert, dass ein Anwesenheitssensor nachts das Licht einschaltet.",
+            "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist.",
+            "night_behavior": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht — der Nachtschalter des Raums dimmt immer, statt zu verdunkeln."
+          }
+        },
+        "power": {
+          "title": "Aus- und Einschalten",
+          "description": "",
+          "data": {
+            "restore_on_power_cycle": "Nachdem der Raum ausgeschaltet wurde",
+            "resume_max_age_minutes": "Letzte Szene vergessen nach"
+          },
+          "data_description": {
+            "resume_max_age_minutes": "Damit ein über Nacht ausgeschalteter Raum am nächsten Morgen adaptiv startet und nicht in der Abendessen-Szene von gestern."
+          }
+        },
+        "presence": {
+          "title": "Anwesenheit",
+          "description": "",
+          "data": {
+            "presence_entity": "Anwesenheitssensor",
+            "presence_clear_delay": "Raum als leer betrachten nach",
+            "presence_on_action": "Wenn jemand hereinkommt",
+            "presence_on_scene_id": "Anzuwendende Szene",
+            "presence_off_action": "Wenn der Raum leer wird",
+            "presence_covers": "Nur wenn diese Rollläden geschlossen sind",
+            "cover_condition": "Rollladen-Bedingung",
+            "presence_on_only_when_off": "Nur auf einen ausgeschalteten Raum wirken",
+            "presence_respects_manual": "Von Hand eingestellten Raum in Ruhe lassen",
+            "cover_unknown_blocks": "Nicht auslesbarer Rollladen blockiert"
+          },
+          "data_description": {
+            "presence_clear_delay": "Anwesenheitssensoren flackern. Die Wartezeit verhindert, dass ein Raum ausgeschaltet wird, während noch jemand darin ist.",
+            "presence_covers": "Damit das Licht nur angeht, wenn die Rollläden unten und der Raum wirklich dunkel ist. Ein Rollladen, der geschlossen wird, während jemand schon im Raum ist, zählt ebenfalls.",
+            "presence_on_only_when_off": "Wer einen bereits von Hand beleuchteten Raum betritt, soll ihn nicht umgestellt vorfinden.",
+            "presence_respects_manual": "Hinter jemandem auszuschalten, der den Raum von Hand eingestellt hat, ist die unfreundlichste Auslegung eines leeren Raums.",
+            "cover_unknown_blocks": "Die Bedingung steht für „hier ist es dunkel“, und ein nicht auslesbarer Rollladen ist dafür kein Beleg."
+          }
+        },
+        "insect": {
+          "title": "Offene Fenster",
+          "description": "",
+          "data": {
+            "window_entities": "Tür- und Fenstersensoren",
+            "insect_scene_id": "Anzuwendende Szene",
+            "insect_only_when_on": "Nur wenn der Raum bereits beleuchtet ist",
+            "insect_open_delay": "Wartezeit vor Reaktion auf ein offenes Fenster",
+            "insect_close_delay": "Wartezeit vor Reaktion auf ein geschlossenes Fenster",
+            "insect_overridable_by_press": "Ein Tastendruck setzt ihn außer Kraft"
+          },
+          "data_description": {
+            "insect_scene_id": "Üblicherweise ein tiefes Bernstein, das deutlich weniger Insekten anzieht als weißes Licht.",
+            "insect_only_when_on": "Ein offenes Fenster ist kein Grund, einen dunklen Raum zu beleuchten.",
+            "insect_close_delay": "Verhindert, dass ein zuschlagendes Fenster den Raum flackern lässt."
+          }
+        },
+        "summary": {
+          "title": "Übersicht",
+          "description": "{summary}",
+          "menu_options": {
+            "menu": "⬅️ Zurück"
+          }
         }
       },
       "error": {
@@ -798,7 +725,7 @@
       },
       "step": {
         "user": {
-          "title": "Raumübergreifender Modus",
+          "title": "Modus hinzufügen",
           "description": "Ein Modus umfasst mehrere Räume und hat benannte Zustände, zwischen denen eine Automatisierung wechselt — etwa „playing“, „paused“, „credits“. Der nächste Schritt legt fest, was jeder Raum in welchem Zustand tut.",
           "data": {
             "name": "Name",
@@ -807,58 +734,16 @@
           },
           "data_description": {
             "states": "Die Zustände, die die Automatisierung auswählt. „off“ existiert immer und beendet die Sitzung."
-          },
-          "sections": {
-            "advanced": {
-              "name": "Erweitert",
-              "data": {
-                "snapshot_on_enter": "Räume beim Start des Modus merken",
-                "restore_mode": "Wenn der Modus endet",
-                "opted_out_on_exit": "Räume, die zurückgenommen wurden",
-                "deferred_ttl_minutes": "Wartende Anweisung aufgeben nach"
-              },
-              "data_description": {
-                "restore_mode": "Standardmäßig wird nur wieder eingeschaltet, was vorher an war — mit dem Wert, den der Verlauf jetzt vorgibt.",
-                "deferred_ttl_minutes": "Ein Raum, der nie leer wird — etwa wegen eines hängenden Sensors — darf eine Anweisung nicht endlos scharf lassen."
-              }
-            }
-          }
-        },
-        "reconfigure": {
-          "title": "Raumübergreifender Modus",
-          "description": "Ein Modus umfasst mehrere Räume und hat benannte Zustände, zwischen denen eine Automatisierung wechselt — etwa „playing“, „paused“, „credits“. Der nächste Schritt legt fest, was jeder Raum in welchem Zustand tut.",
-          "data": {
-            "name": "Name",
-            "icon": "Symbol",
-            "states": "Zustände"
-          },
-          "data_description": {
-            "states": "Die Zustände, die die Automatisierung auswählt. „off“ existiert immer und beendet die Sitzung."
-          },
-          "sections": {
-            "advanced": {
-              "name": "Erweitert",
-              "data": {
-                "snapshot_on_enter": "Räume beim Start des Modus merken",
-                "restore_mode": "Wenn der Modus endet",
-                "opted_out_on_exit": "Räume, die zurückgenommen wurden",
-                "deferred_ttl_minutes": "Wartende Anweisung aufgeben nach"
-              },
-              "data_description": {
-                "restore_mode": "Standardmäßig wird nur wieder eingeschaltet, was vorher an war — mit dem Wert, den der Verlauf jetzt vorgibt.",
-                "deferred_ttl_minutes": "Ein Raum, der nie leer wird — etwa wegen eines hängenden Sensors — darf eine Anweisung nicht endlos scharf lassen."
-              }
-            }
           }
         },
         "rules": {
           "title": "Regeln",
           "description": "Aktuelle Regeln:\n\n{rules}",
           "menu_options": {
-            "add_rule": "Regel hinzufügen",
-            "remove_rule": "Regel entfernen",
-            "finish": "Fertig",
-            "edit_rule": "Regel ändern"
+            "add_rule": "🆕 Regel hinzufügen",
+            "edit_rule": "✏️ Regel ändern",
+            "remove_rule": "🗑️ Regel entfernen",
+            "menu": "⬅️ Zurück"
           }
         },
         "add_rule": {
@@ -925,6 +810,42 @@
                 "presence_entry_action": "Dieselben vier Möglichkeiten wie beim Zustandswechsel selbst. Wirkt sofort beim Betreten, ein Ausschalten wartet hier also nicht, bis der Raum leer ist."
               }
             }
+          }
+        },
+        "settings": {
+          "title": "Name und Zustände",
+          "description": "Ein Modus umfasst mehrere Räume und hat benannte Zustände, zwischen denen eine Automatisierung wechselt — etwa „playing“, „paused“, „credits“. Der nächste Schritt legt fest, was jeder Raum in welchem Zustand tut.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "states": "Zustände"
+          },
+          "data_description": {
+            "states": "Die Zustände, die die Automatisierung auswählt. „off“ existiert immer und beendet die Sitzung."
+          }
+        },
+        "behaviour": {
+          "title": "Zwischenstand und Beenden",
+          "description": "",
+          "data": {
+            "snapshot_on_enter": "Räume beim Start des Modus merken",
+            "restore_mode": "Wenn der Modus endet",
+            "opted_out_on_exit": "Räume, die zurückgenommen wurden",
+            "deferred_ttl_minutes": "Wartende Anweisung aufgeben nach"
+          },
+          "data_description": {
+            "restore_mode": "Standardmäßig wird nur wieder eingeschaltet, was vorher an war — mit dem Wert, den der Verlauf jetzt vorgibt.",
+            "deferred_ttl_minutes": "Ein Raum, der nie leer wird — etwa wegen eines hängenden Sensors — darf eine Anweisung nicht endlos scharf lassen."
+          }
+        },
+        "menu": {
+          "title": "Modus",
+          "description": "Regeln:\n\n{rules}",
+          "menu_options": {
+            "settings": "🎬 Name und Zustände",
+            "rules": "📜 Regeln",
+            "behaviour": "⚙️ Zwischenstand und Beenden",
+            "finish": "✅ Speichern und schließen"
           }
         }
       },

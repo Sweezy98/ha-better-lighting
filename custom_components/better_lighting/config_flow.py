@@ -42,9 +42,11 @@ from .const import (
     CONF_MAX_BRIGHTNESS_PCT,
     CONF_MIN_BRIGHTNESS_PCT,
     CONF_NAME,
+    CONF_NIGHT_BEHAVIOR,
     CONF_ON_LIGHTS_ONLY,
     CONF_ON_UNSUPPORTED_COLOR,
     CONF_OTHERS,
+    CONF_PRESENCE_ENTITY,
     CONF_PRESET_NAME,
     CONF_RGB_COLOR,
     CONF_RULE_ACTION,
@@ -60,6 +62,7 @@ from .const import (
     CONF_STATES,
     CONF_SWITCH_ID,
     CONF_TRANSITION,
+    CONF_WINDOW_ENTITIES,
     CONF_ZONE_ID,
     CONF_ZONE_PROFILES,
     CONF_ZONE_SCENES,
@@ -72,6 +75,7 @@ from .const import (
     ZONE_SCENE_SPECS,
     ZONE_SPECS,
     FieldSpec,
+    Section,
     SubentryType,
     mode_rule_specs,
     scene_light_color_specs,
@@ -179,7 +183,9 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=build_schema(HUB_SPECS, user_input),
+            data_schema=build_schema(
+                HUB_SPECS, user_input, include=(Section.BASIC,), flat=True
+            ),
             errors=errors,
         )
 
@@ -224,26 +230,46 @@ class BetterLightingOptionsFlow(OptionsFlow):
             self._loaded = True
         return self.async_show_menu(
             step_id="init",
-            menu_options=["settings", "presets", "finish"],
+            menu_options=["defaults", "night", "presets", "advanced", "finish"],
             description_placeholders={"presets": self._presets_summary()},
         )
 
-    async def async_step_settings(
-        self, user_input: dict[str, Any] | None = None
+    async def _async_section(
+        self, step_id: str, section: Section, user_input: dict[str, Any] | None
     ) -> ConfigFlowResult:
+        """One group of the global settings, on a screen of its own."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            flat = flatten_sections(HUB_SPECS, user_input)
-            cleaned, errors = post_validate(HUB_SPECS, flat)
+            cleaned, errors = post_validate(HUB_SPECS, user_input)
             if not errors:
                 self._options |= cleaned
                 return await self.async_step_init()
 
         return self.async_show_form(
-            step_id="settings",
-            data_schema=build_schema(HUB_SPECS, user_input or self._options),
+            step_id=step_id,
+            data_schema=build_schema(
+                HUB_SPECS,
+                user_input or self._options,
+                include=(section,),
+                flat=True,
+            ),
             errors=errors,
         )
+
+    async def async_step_defaults(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._async_section("defaults", Section.BASIC, user_input)
+
+    async def async_step_night(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._async_section("night", Section.NIGHT, user_input)
+
+    async def async_step_advanced(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._async_section("advanced", Section.ADVANCED, user_input)
 
     # -- colour presets ----------------------------------------------------
 
@@ -403,76 +429,168 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         self._switches: list[dict[str, Any]] = []
         self._switch: dict[str, Any] = {}
         self._editing_switch: int | None = None
+        self._loaded = False
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        return await self._async_zone_form(user_input, subentry=None)
+        """Name the room and say which lights are in it. Everything else waits.
+
+        Two fields to add a room, and the rest reached from a menu afterwards.
+        A single long form with nine collapsed sections asks somebody adding
+        their first room to scroll past presence, insect mode and power-cycle
+        behaviour before they can press Submit.
+        """
+        return await self._async_essentials(user_input, subentry=None)
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        return await self._async_zone_form(
-            user_input, subentry=self._get_reconfigure_subentry()
-        )
+        subentry = self._get_reconfigure_subentry()
+        self._load(subentry)
+        return await self.async_step_menu()
 
-    async def _async_zone_form(
+    def _load(self, subentry: Any) -> None:
+        """Take a copy of what is stored, to edit through the menu."""
+        self._subentry = subentry
+        if self._loaded:
+            return
+        self._loaded = True
+        if subentry is None:
+            return
+        self._data = dict(subentry.data)
+        self._scenes = [dict(s) for s in (subentry.data.get(CONF_ZONE_SCENES) or [])]
+        self._switches = [
+            dict(s) for s in (subentry.data.get(CONF_ZONE_SWITCHES) or [])
+        ]
+        self._profiles = [
+            dict(s) for s in (subentry.data.get(CONF_ZONE_PROFILES) or [])
+        ]
+
+    async def _async_essentials(
         self, user_input: dict[str, Any] | None, *, subentry: Any
     ) -> SubentryFlowResult:
         entry = self._get_entry()
-        self._subentry = subentry
+        self._load(subentry)
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            flat = flatten_sections(ZONE_SPECS, user_input)
-            cleaned, errors = post_validate(ZONE_SPECS, flat)
+            cleaned, errors = post_validate(ZONE_SPECS, user_input)
             errors |= validate_zone_lights(
                 entry,
                 cleaned.get(CONF_LIGHTS) or [],
                 exclude_subentry_id=subentry.subentry_id if subentry else None,
             )
             if not errors:
-                self._data = cleaned
-                if not self._switches:
-                    self._switches = [
-                        dict(switch)
-                        for switch in (
-                            (subentry.data.get(CONF_ZONE_SWITCHES) or [])
-                            if subentry
-                            else []
-                        )
-                    ]
-                if not self._profiles:
-                    self._profiles = [
-                        dict(profile)
-                        for profile in (
-                            (subentry.data.get(CONF_ZONE_PROFILES) or [])
-                            if subentry
-                            else []
-                        )
-                    ]
-                if not self._scenes:
-                    self._scenes = [
-                        dict(scene)
-                        for scene in (
-                            (subentry.data.get(CONF_ZONE_SCENES) or [])
-                            if subentry
-                            else []
-                        )
-                    ]
+                self._data |= cleaned
                 return await self.async_step_menu()
 
-        existing = dict(subentry.data) if subentry else None
         return self.async_show_form(
-            step_id="reconfigure" if subentry else "user",
+            step_id="user",
             data_schema=build_schema(
                 ZONE_SPECS,
-                user_input or existing,
+                user_input or self._data,
+                include=(Section.BASIC,),
+                flat=True,
+            ),
+            errors=errors,
+        )
+
+    # -- one screen per concern, all reached from the menu -----------------
+
+    async def _async_section(
+        self, step_id: str, section: Section, user_input: dict[str, Any] | None
+    ) -> SubentryFlowResult:
+        """One group of the room's settings, on a screen of its own."""
+        entry = self._get_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            cleaned, errors = post_validate(ZONE_SPECS, user_input)
+            if section is Section.BASIC:
+                errors |= validate_zone_lights(
+                    entry,
+                    cleaned.get(CONF_LIGHTS) or [],
+                    exclude_subentry_id=(
+                        self._subentry.subentry_id if self._subentry else None
+                    ),
+                )
+            if not errors:
+                self._data |= cleaned
+                return await self.async_step_menu()
+
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=build_schema(
+                ZONE_SPECS,
+                user_input or self._data,
+                include=(section,),
+                flat=True,
                 options={"scenes": self._scene_options()},
             ),
             errors=errors,
-            description_placeholders={"scene_hint": ""},
         )
+
+    async def async_step_lights(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_section("lights", Section.BASIC, user_input)
+
+    async def async_step_group(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_section("group", Section.GROUP, user_input)
+
+    async def async_step_adaptive(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_section("adaptive", Section.ADAPTIVE, user_input)
+
+    async def async_step_night(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_section("night", Section.NIGHT, user_input)
+
+    async def async_step_power(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_section("power", Section.POWER, user_input)
+
+    async def async_step_presence(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_section("presence", Section.PRESENCE, user_input)
+
+    async def async_step_insect(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_section("insect", Section.INSECT, user_input)
+
+    async def async_step_summary(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Read the whole room back, without changing anything."""
+        return self.async_show_menu(
+            step_id="summary",
+            menu_options=["menu"],
+            description_placeholders={"summary": self._summary()},
+        )
+
+    def _summary(self) -> str:
+        lights = self._data.get(CONF_LIGHTS) or ()
+        night = self._data.get(CONF_NIGHT_BEHAVIOR, "min_settings")
+        lines = [
+            f"Lights: {len(lights)}",
+            f"Scenes: {len(self._scenes)}",
+            f"Switches: {len(self._switches)}",
+            f"Calibrated lights: {len(self._profiles)}",
+            f"Night mode: {night}",
+        ]
+        if presence := self._data.get(CONF_PRESENCE_ENTITY):
+            lines.append(f"Presence: {presence}")
+        if windows := self._data.get(CONF_WINDOW_ENTITIES):
+            lines.append(f"Windows watched: {len(windows)}")
+        return "\n".join(lines)
 
     # -- the room's own menu ----------------------------------------------
 
@@ -481,8 +599,26 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         return self.async_show_menu(
             step_id="menu",
-            menu_options=["scenes", "switches", "calibrations", "finish"],
-            description_placeholders={"scenes": self._scenes_summary()},
+            menu_options=[
+                # What the room is.
+                "lights",
+                "group",
+                # What it does by itself.
+                "adaptive",
+                "night",
+                "power",
+                # What it does about people and windows.
+                "presence",
+                "insect",
+                # What belongs to it.
+                "scenes",
+                "switches",
+                "calibrations",
+                # Read back, then leave.
+                "summary",
+                "finish",
+            ],
+            description_placeholders={"name": str(self._data.get(CONF_NAME, ""))},
         )
 
     async def async_step_scenes(
@@ -1405,30 +1541,73 @@ class ModeSubentryFlow(ConfigSubentryFlow):
     async def _async_settings(
         self, user_input: dict[str, Any] | None, *, subentry: Any
     ) -> SubentryFlowResult:
+        """Name the mode and its states, then open its menu."""
         self._subentry = subentry
-        errors: dict[str, str] = {}
+        if subentry is not None and not self._data:
+            self._data = dict(subentry.data)
+            self._rules = [dict(r) for r in (subentry.data.get(CONF_RULES) or [])]
+            return await self.async_step_menu()
 
+        errors: dict[str, str] = {}
         if user_input is not None:
-            flat = flatten_sections(MODE_SPECS, user_input)
-            cleaned, errors = post_validate(MODE_SPECS, flat)
+            cleaned, errors = post_validate(MODE_SPECS, user_input)
             if not cleaned.get(CONF_STATES):
                 errors[CONF_STATES] = "no_states"
             if not errors:
-                self._data = cleaned
+                self._data |= cleaned
                 known = set(cleaned[CONF_STATES])
-                existing = list(subentry.data.get(CONF_RULES) or []) if subentry else []
                 # Drop rules naming states that no longer exist.
                 self._rules = [
                     rule
-                    for rule in existing
+                    for rule in self._rules
                     if set(rule.get(CONF_RULE_STATES) or ()) & known
                 ]
-                return await self.async_step_rules()
+                return await self.async_step_menu()
 
-        existing = dict(subentry.data) if subentry else None
         return self.async_show_form(
-            step_id="reconfigure" if subentry else "user",
-            data_schema=build_schema(MODE_SPECS, user_input or existing),
+            step_id="user",
+            data_schema=build_schema(
+                MODE_SPECS,
+                user_input or self._data,
+                include=(Section.BASIC,),
+                flat=True,
+            ),
+            errors=errors,
+        )
+
+    async def async_step_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return self.async_show_menu(
+            step_id="menu",
+            menu_options=["settings", "rules", "behaviour", "finish"],
+            description_placeholders={"rules": self._rules_summary()},
+        )
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_settings(user_input, subentry=self._subentry)
+
+    async def async_step_behaviour(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Snapshots and what happens when the mode ends."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors = post_validate(MODE_SPECS, user_input)
+            if not errors:
+                self._data |= cleaned
+                return await self.async_step_menu()
+
+        return self.async_show_form(
+            step_id="behaviour",
+            data_schema=build_schema(
+                MODE_SPECS,
+                user_input or self._data,
+                include=(Section.ADVANCED,),
+                flat=True,
+            ),
             errors=errors,
         )
 
@@ -1455,9 +1634,10 @@ class ModeSubentryFlow(ConfigSubentryFlow):
     async def async_step_rules(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        options = ["add_rule", "finish"]
+        options = ["add_rule"]
         if self._rules:
-            options = ["add_rule", "edit_rule", "remove_rule", "finish"]
+            options += ["edit_rule", "remove_rule"]
+        options.append("menu")
         return self.async_show_menu(
             step_id="rules",
             menu_options=options,

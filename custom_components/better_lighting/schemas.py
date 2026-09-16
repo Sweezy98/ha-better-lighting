@@ -28,6 +28,7 @@ def build_schema(
     *,
     include: tuple[Section, ...] | None = None,
     options: Mapping[str, list[SelectOptionDict]] | None = None,
+    flat: bool = False,
 ) -> vol.Schema:
     """Render ``specs`` as a voluptuous schema, pre-filled from ``values``.
 
@@ -35,6 +36,11 @@ def build_schema(
     subset of a table without touching it. ``options`` supplies the choices for
     fields whose possible values only exist at runtime -- which scenes have been
     defined, for instance.
+
+    ``flat`` renders every included field at the top level instead of grouping
+    the non-basic ones into collapsed sections. That is what a form reached
+    from a menu wants: the menu has already said what this screen is about, so
+    a collapsed section named the same thing is a fold to open for no reason.
     """
     current = dict(values or {})
     basic: dict[Any, Any] = {}
@@ -73,7 +79,7 @@ def build_schema(
 
         target = (
             basic
-            if spec.section is Section.BASIC
+            if flat or spec.section is Section.BASIC
             else grouped.setdefault(spec.section, {})
         )
         target[key] = widget

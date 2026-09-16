@@ -20,12 +20,14 @@ from tests.conftest import (
     setup_members,
 )
 
-HUB_INPUT = form_input(HUB_SPECS)
-ZONE_INPUT = form_input(ZONE_SPECS, name="Living Room", lights=["light.three"])
+HUB_INPUT = form_input(HUB_SPECS, sections=False)
+ZONE_INPUT = form_input(
+    ZONE_SPECS, sections=False, name="Living Room", lights=["light.three"]
+)
 
 
 async def finish_zone(hass: HomeAssistant, result):
-    """Walk a zone flow from its menu to the end without touching scenes."""
+    """Walk a zone flow from its menu to the end, changing nothing else."""
     assert result["step_id"] == "menu"
     return await hass.config_entries.subentries.async_configure(
         result["flow_id"], {"next_step_id": "finish"}
@@ -65,7 +67,7 @@ async def test_options_flow_updates_defaults(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.MENU
 
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": "settings"}
+        result["flow_id"], {"next_step_id": "defaults"}
     )
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {**HUB_INPUT, "min_brightness_pct": 12}
@@ -174,8 +176,12 @@ async def test_reconfigure_keeps_its_own_lights(hass: HomeAssistant) -> None:
         (entry.entry_id, SubentryType.ZONE.value),
         context={"source": "reconfigure", "subentry_id": subentry_id},
     )
-    assert result["type"] is FlowResultType.FORM
+    # Reconfiguring opens the room's menu rather than a wall of fields.
+    assert result["type"] is FlowResultType.MENU
 
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"next_step_id": "lights"}
+    )
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         {

@@ -28,12 +28,14 @@ async def async_setup_entry(
 ) -> None:
     """Create one event entity per configured controller."""
     runtime = entry.runtime_data
-    for subentry_id, controller in runtime.switches.items():
+    for controller in runtime.switches.values():
         if controller.zone_id not in runtime.zones:
             continue
+        # Registered against the *room's* subentry, so the switch appears
+        # inside that room's group rather than as a card of its own.
         async_add_entities(
             [ControllerPressEvent(controller, runtime.zones[controller.zone_id].name)],
-            config_subentry_id=subentry_id,
+            config_subentry_id=controller.zone_id,
         )
 
 
@@ -55,6 +57,9 @@ class ControllerPressEvent(EventEntity):
             manufacturer="Better Lighting",
             model="Controller",
             entry_type=DeviceEntryType.SERVICE,
+            # Nested under the room's own device, so the switch reads as part
+            # of the room rather than as something standing beside it.
+            via_device=(DOMAIN, controller.zone_id),
         )
 
     async def async_added_to_hass(self) -> None:

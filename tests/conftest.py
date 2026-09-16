@@ -214,7 +214,11 @@ def scene_to_zone_scene(data: ConfigSubentryData) -> dict[str, Any]:
 
 def _fold_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
     """Attach scene and calibration payloads to the zones that own them."""
-    moved = (SubentryType.SCENE.value, SubentryType.LIGHT_PROFILE.value)
+    moved = (
+        SubentryType.SCENE.value,
+        SubentryType.LIGHT_PROFILE.value,
+        SubentryType.CONTROLLER.value,
+    )
     if not any(s["subentry_type"] in moved for s in subentries):
         return list(subentries)
 
@@ -223,6 +227,11 @@ def _fold_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
         dict(s["data"])
         for s in subentries
         if s["subentry_type"] == SubentryType.LIGHT_PROFILE.value
+    ]
+    switches = [
+        dict(s["data"]) | {"switch_id": f"switch_{slugify(s['title'])}"}
+        for s in subentries
+        if s["subentry_type"] == SubentryType.CONTROLLER.value
     ]
     rest = [s for s in subentries if s["subentry_type"] not in moved]
     converted = [scene_to_zone_scene(s) for s in scenes]
@@ -245,6 +254,11 @@ def _fold_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
             | (profile.get("advanced") or {})
             for profile in profiles
             if profile.get("light_entity") in lights
+        ]
+        data["switches"] = list(data.get("switches") or ()) + [
+            switch
+            for switch in switches
+            if switch.get("zone_id") in (None, "", sub["unique_id"])
         ]
         out.append(
             ConfigSubentryData(
@@ -304,3 +318,24 @@ def remove_zone_scene(
             hass.config_entries.async_update_subentry(
                 entry, sub, data={**sub.data, "scenes": remaining}
             )
+
+
+def add_zone_switch(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    switch: ConfigSubentryData,
+    zone_id: str,
+) -> str:
+    """Attach a switch to a room after the hub is already running."""
+    data = dict(switch["data"])
+    switch_id = f"switch_{slugify(switch['title'])}"
+    data["switch_id"] = switch_id
+    for sub in entry.subentries.values():
+        if sub.subentry_id != zone_id:
+            continue
+        hass.config_entries.async_update_subentry(
+            entry,
+            sub,
+            data={**sub.data, "switches": [*(sub.data.get("switches") or ()), data]},
+        )
+    return switch_id

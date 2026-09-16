@@ -428,7 +428,8 @@
           "menu_options": {
             "scenes": "Szenen",
             "finish": "Fertig",
-            "calibrations": "Lampenabgleich"
+            "calibrations": "Lampenabgleich",
+            "switches": "Lichtschalter"
           }
         },
         "scenes": {
@@ -611,34 +612,12 @@
           "data": {
             "preset_name": "Vorlage"
           }
-        }
-      },
-      "error": {
-        "invalid_value": "Dieser Wert ist ungültig.",
-        "no_lights": "Mindestens eine Lampe auswählen.",
-        "light_in_other_zone": "Eine dieser Lampen gehört bereits zu einem anderen Raum. Eine Lampe kann nur in einem Raum sein.",
-        "light_required": "Eine Lampe auswählen.",
-        "name_required": "Der Szene einen Namen geben.",
-        "nothing_to_capture": "Keine Lampe dieses Raums ist verfügbar, um übernommen zu werden.",
-        "profile_exists": "Für diese Lampe gibt es bereits einen Abgleich."
-      },
-      "abort": {
-        "reconfigure_successful": "Raum aktualisiert."
-      }
-    },
-    "controller": {
-      "entry_type": "Lichtschalter",
-      "initiate_flow": {
-        "user": "Lichtschalter hinzufügen",
-        "reconfigure": "Lichtschalter neu konfigurieren"
-      },
-      "step": {
-        "user": {
-          "title": "Lichtschalter",
+        },
+        "add_switch": {
+          "title": "Schalter hinzufügen",
           "description": "Ein Schalter und die Reihenfolge, die er durchschaltet. Zwei Schalter in einem Raum können unterschiedliche Reihenfolgen haben — der am Herd erreicht also zuerst „Kochen“, während der an der Tür etwas anderes tut.",
           "data": {
             "name": "Name",
-            "zone_id": "Raum",
             "binding_type": "Wie dieser Schalter erkannt wird",
             "binding_entity": "Schalter-Entität",
             "is_default": "Einfaches Ein/Aus des Raumlichts übernehmen"
@@ -687,12 +666,11 @@
             }
           }
         },
-        "reconfigure": {
-          "title": "Lichtschalter",
+        "switch_form": {
+          "title": "Schalter ändern",
           "description": "Ein Schalter und die Reihenfolge, die er durchschaltet. Zwei Schalter in einem Raum können unterschiedliche Reihenfolgen haben — der am Herd erreicht also zuerst „Kochen“, während der an der Tür etwas anderes tut.",
           "data": {
             "name": "Name",
-            "zone_id": "Raum",
             "binding_type": "Wie dieser Schalter erkannt wird",
             "binding_entity": "Schalter-Entität",
             "is_default": "Einfaches Ein/Aus des Raumlichts übernehmen"
@@ -739,16 +717,6 @@
                 "dim_step_pct": "Dimmschritt"
               }
             }
-          }
-        },
-        "order": {
-          "title": "Abfolge",
-          "description": "Aktuelle Abfolge:\n\n{order}",
-          "menu_options": {
-            "add_step": "Szene hinzufügen",
-            "move_step": "Szene verschieben",
-            "remove_step": "Szene entfernen",
-            "finish": "Fertig"
           }
         },
         "add_step": {
@@ -772,14 +740,54 @@
             "scene": "Szene",
             "position": "Neue Position"
           }
+        },
+        "switches": {
+          "title": "Lichtschalter",
+          "description": "Schalter an den Wänden dieses Raums:\n\n{switches}",
+          "menu_options": {
+            "add_switch": "Schalter hinzufügen",
+            "edit_switch": "Schalter ändern",
+            "remove_switch": "Schalter entfernen",
+            "menu": "Zurück"
+          }
+        },
+        "edit_switch": {
+          "title": "Schalter ändern",
+          "description": "Schalter an den Wänden dieses Raums:\n\n{switches}",
+          "data": {
+            "switch": "Schalter"
+          }
+        },
+        "remove_switch": {
+          "title": "Schalter entfernen",
+          "description": "Schalter an den Wänden dieses Raums:\n\n{switches}",
+          "data": {
+            "switch": "Schalter"
+          }
+        },
+        "order": {
+          "title": "Was dieser Schalter durchschaltet",
+          "description": "Jeder Druck geht einen Schritt weiter in dieser Liste und beginnt danach von vorn:\n\n{order}",
+          "menu_options": {
+            "add_step": "Szene hinzufügen",
+            "move_step": "Reihenfolge ändern",
+            "remove_step": "Szene entfernen",
+            "save_switch": "Diesen Schalter speichern"
+          }
         }
       },
       "error": {
         "invalid_value": "Dieser Wert ist ungültig.",
+        "no_lights": "Mindestens eine Lampe auswählen.",
+        "light_in_other_zone": "Eine dieser Lampen gehört bereits zu einem anderen Raum. Eine Lampe kann nur in einem Raum sein.",
+        "light_required": "Eine Lampe auswählen.",
+        "name_required": "Der Szene einen Namen geben.",
+        "nothing_to_capture": "Keine Lampe dieses Raums ist verfügbar, um übernommen zu werden.",
+        "profile_exists": "Für diese Lampe gibt es bereits einen Abgleich.",
         "binding_entity_required": "Die Entität auswählen, auf die der Schalter meldet."
       },
       "abort": {
-        "reconfigure_successful": "Lichtschalter aktualisiert."
+        "reconfigure_successful": "Raum aktualisiert."
       }
     },
     "mode": {

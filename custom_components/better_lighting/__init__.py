@@ -125,6 +125,7 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
     for kind, label in (
         (SubentryType.SCENE.value, "scene"),
         (SubentryType.LIGHT_PROFILE.value, "light calibration"),
+        (SubentryType.CONTROLLER.value, "light switch"),
     ):
         legacy = [
             subentry
@@ -139,11 +140,11 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
                 label,
                 ", ".join(sorted(sub.title for sub in legacy)),
             )
+    # Switches belong to the room they drive, as scenes and calibration do.
     switches = {
-        controller.subentry_id: controller
-        for subentry in entry.subentries.values()
-        if subentry.subentry_type == SubentryType.CONTROLLER.value
-        and (controller := ControllerConfig.from_subentry(subentry))
+        switch.subentry_id: switch
+        for zone in zones.values()
+        for switch in zone.switches
     }
 
     # One controller per zone owns bare turn-ons. An explicitly flagged one

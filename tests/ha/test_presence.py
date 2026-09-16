@@ -306,9 +306,7 @@ class TestInsectMode:
     ) -> None:
         entry = await self._build(hass)
 
-        add_zone_scene(
-            hass, entry, scene_subentry("Cosy", brightness=20)
-        )
+        add_zone_scene(hass, entry, scene_subentry("Cosy", brightness=20))
         await hass.async_block_till_done()
         await hass.services.async_call(
             "select",

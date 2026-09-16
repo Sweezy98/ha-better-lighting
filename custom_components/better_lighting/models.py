@@ -139,6 +139,7 @@ from .const import (
     CONF_STATES,
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
+    CONF_SWITCH_ID,
     CONF_TAKE_OVER_CONTROL,
     CONF_TIME_DARK,
     CONF_TIME_LIGHT,
@@ -149,6 +150,7 @@ from .const import (
     CONF_ZONE_ID,
     CONF_ZONE_PROFILES,
     CONF_ZONE_SCENES,
+    CONF_ZONE_SWITCHES,
     CONTROLLER_SPECS,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
@@ -317,6 +319,10 @@ class ZoneConfig:
     # about one bulb in one room, so it belongs to the room rather than to a
     # list of its own halfway down the hub page.
     light_profiles: Mapping[str, LightProfile]
+    # The switches on this room's walls. A switch drives exactly one room, so
+    # it belongs to the room rather than to a flat list that had to name the
+    # room in every entry.
+    switches: tuple[ControllerConfig, ...]
 
     # Requirement 4: a window is open, so stop attracting everything outside.
     window_entities: tuple[str, ...]
@@ -372,6 +378,10 @@ class ZoneConfig:
                 for entry in (raw.get(CONF_ZONE_PROFILES) or ())
                 if entry.get(CONF_LIGHT_ENTITY)
             },
+            switches=tuple(
+                zone_switch(entry, subentry.subentry_id)
+                for entry in (raw.get(CONF_ZONE_SWITCHES) or ())
+            ),
             restore_on_power_cycle=RestoreOnPowerCycle(
                 raw[CONF_RESTORE_ON_POWER_CYCLE]
             ),
@@ -596,10 +606,26 @@ class ControllerConfig:
     @classmethod
     def from_subentry(cls, subentry: ConfigSubentry) -> Self:
         raw = {**_CONTROLLER_DEFAULTS, **dict(subentry.data)}
-        return cls(
+        return cls.from_mapping(
+            raw,
             subentry_id=subentry.subentry_id,
-            name=raw.get(CONF_NAME) or subentry.title,
             zone_id=raw.get(CONF_ZONE_ID) or "",
+            fallback_name=subentry.title,
+        )
+
+    @classmethod
+    def from_mapping(
+        cls,
+        raw: dict[str, Any],
+        *,
+        subentry_id: str,
+        zone_id: str,
+        fallback_name: str = "Switch",
+    ) -> Self:
+        return cls(
+            subentry_id=subentry_id,
+            name=raw.get(CONF_NAME) or fallback_name,
+            zone_id=zone_id,
             binding_type=BindingType(raw[CONF_BINDING_TYPE]),
             binding_entity=raw.get(CONF_BINDING_ENTITY) or None,
             is_default=bool(raw[CONF_IS_DEFAULT]),
@@ -812,6 +838,16 @@ def _scene_light_color(raw: dict[str, Any]) -> dict[str, Any] | None:
                 )
             }
     return None
+
+
+def zone_switch(raw: dict[str, Any], zone_id: str) -> ControllerConfig:
+    """One of a room's switches, as stored inside the room."""
+    merged = {**_CONTROLLER_DEFAULTS, **raw}
+    return ControllerConfig.from_mapping(
+        merged,
+        subentry_id=str(raw.get(CONF_SWITCH_ID) or ""),
+        zone_id=zone_id,
+    )
 
 
 def zone_light_profile(raw: dict[str, Any]) -> LightProfile:

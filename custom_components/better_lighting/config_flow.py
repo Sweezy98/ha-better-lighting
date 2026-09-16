@@ -28,9 +28,6 @@ from .const import (
     COLOR_FORMAT_NONE,
     COLOR_FORMAT_PRESET,
     COLOR_PRESET_SPECS,
-    CONF_ADAPTIVE_POSITION,
-    CONF_BINDING_ENTITY,
-    CONF_BINDING_TYPE,
     CONF_BRIGHTNESS_OFFSET_PCT,
     CONF_BRIGHTNESS_PCT,
     CONF_COLOR_FORMAT,
@@ -45,7 +42,6 @@ from .const import (
     CONF_MAX_BRIGHTNESS_PCT,
     CONF_MIN_BRIGHTNESS_PCT,
     CONF_NAME,
-    CONF_OFF_AT_END,
     CONF_ON_LIGHTS_ONLY,
     CONF_ON_UNSUPPORTED_COLOR,
     CONF_OTHERS,
@@ -62,10 +58,12 @@ from .const import (
     CONF_SCENE_LIGHTS,
     CONF_SCENE_ORDER,
     CONF_STATES,
+    CONF_SWITCH_ID,
     CONF_TRANSITION,
     CONF_ZONE_ID,
     CONF_ZONE_PROFILES,
     CONF_ZONE_SCENES,
+    CONF_ZONE_SWITCHES,
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
@@ -73,7 +71,7 @@ from .const import (
     MODE_SPECS,
     ZONE_SCENE_SPECS,
     ZONE_SPECS,
-    BindingType,
+    FieldSpec,
     SubentryType,
     mode_rule_specs,
     scene_light_color_specs,
@@ -198,7 +196,6 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
         """The kinds of object that can be added to the hub."""
         return {
             SubentryType.ZONE.value: ZoneSubentryFlow,
-            SubentryType.CONTROLLER.value: ControllerSubentryFlow,
             SubentryType.MODE.value: ModeSubentryFlow,
         }
 
@@ -403,6 +400,9 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         self._pending_light: tuple[str, dict[str, Any]] = ("", {})
         self._profiles: list[dict[str, Any]] = []
         self._editing_profile: int | None = None
+        self._switches: list[dict[str, Any]] = []
+        self._switch: dict[str, Any] = {}
+        self._editing_switch: int | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -433,6 +433,15 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             )
             if not errors:
                 self._data = cleaned
+                if not self._switches:
+                    self._switches = [
+                        dict(switch)
+                        for switch in (
+                            (subentry.data.get(CONF_ZONE_SWITCHES) or [])
+                            if subentry
+                            else []
+                        )
+                    ]
                 if not self._profiles:
                     self._profiles = [
                         dict(profile)
@@ -472,7 +481,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         return self.async_show_menu(
             step_id="menu",
-            menu_options=["scenes", "calibrations", "finish"],
+            menu_options=["scenes", "switches", "calibrations", "finish"],
             description_placeholders={"scenes": self._scenes_summary()},
         )
 
@@ -1068,6 +1077,275 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             description_placeholders={"calibrations": self._calibrations_summary()},
         )
 
+    # -- the switches on this room's walls --------------------------------
+
+    async def async_step_switches(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_switch"]
+        if self._switches:
+            options += ["edit_switch", "remove_switch"]
+        options.append("menu")
+        return self.async_show_menu(
+            step_id="switches",
+            menu_options=options,
+            description_placeholders={"switches": self._switches_summary()},
+        )
+
+    def _switches_summary(self) -> str:
+        if not self._switches:
+            return "(none: a plain wall switch still cycles this room)"
+        names = {
+            str(scene.get(CONF_SCENE_ID)): str(scene.get(CONF_NAME))
+            for scene in self._scenes
+        }
+        lines = []
+        for switch in self._switches:
+            order = [
+                names.get(scene_id, scene_id)
+                for scene_id in (switch.get(CONF_SCENE_ORDER) or ())
+            ]
+            lines.append(
+                f"{switch.get(CONF_NAME)}: "
+                + (" -> ".join(["Adaptive", *order]) if order else "Adaptive only")
+            )
+        return "\n".join(lines)
+
+    def _switch_picker(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required("switch"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": str(index), "label": str(switch.get(CONF_NAME))}
+                            for index, switch in enumerate(self._switches)
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        sort=False,
+                    )
+                )
+            }
+        )
+
+    @staticmethod
+    def _switch_specs() -> tuple[FieldSpec, ...]:
+        """The controller form, minus the room it is in and its scene list.
+
+        The room is implicit now that a switch lives inside one, and the list
+        is built in a loop of its own rather than as a field.
+        """
+        return tuple(
+            spec
+            for spec in CONTROLLER_SPECS
+            if spec.key not in (CONF_ZONE_ID, CONF_SCENE_ORDER)
+        )
+
+    async def async_step_add_switch(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_switch_form("add_switch", user_input, index=None)
+
+    async def async_step_edit_switch(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            self._editing_switch = int(user_input["switch"])
+            self._switch = dict(self._switches[self._editing_switch])
+            return await self.async_step_switch_form()
+        return self.async_show_form(
+            step_id="edit_switch",
+            data_schema=self._switch_picker(),
+            description_placeholders={"switches": self._switches_summary()},
+        )
+
+    async def async_step_switch_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_switch_form(
+            "switch_form", user_input, index=self._editing_switch
+        )
+
+    async def _async_switch_form(
+        self, step_id: str, user_input: dict[str, Any] | None, *, index: int | None
+    ) -> SubentryFlowResult:
+        specs = self._switch_specs()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            flat = flatten_sections(specs, user_input)
+            cleaned, errors = post_validate(specs, flat)
+            if not errors:
+                self._switch = {
+                    **cleaned,
+                    CONF_SWITCH_ID: self._switch.get(CONF_SWITCH_ID)
+                    or ulid_util.ulid_now(),
+                    CONF_SCENE_ORDER: list(self._switch.get(CONF_SCENE_ORDER) or ()),
+                }
+                self._editing_switch = index
+                return await self.async_step_order()
+
+        current = user_input
+        if current is None and index is not None:
+            current = dict(self._switches[index])
+        return self.async_show_form(
+            step_id=step_id, data_schema=build_schema(specs, current), errors=errors
+        )
+
+    async def async_step_remove_switch(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            index = int(user_input["switch"])
+            if 0 <= index < len(self._switches):
+                self._switches.pop(index)
+            return await self.async_step_switches()
+        return self.async_show_form(
+            step_id="remove_switch",
+            data_schema=self._switch_picker(),
+            description_placeholders={"switches": self._switches_summary()},
+        )
+
+    # -- what this switch cycles through ----------------------------------
+
+    @property
+    def _order(self) -> list[str]:
+        return self._switch.setdefault(CONF_SCENE_ORDER, [])
+
+    def _order_summary(self) -> str:
+        names = {
+            str(scene.get(CONF_SCENE_ID)): str(scene.get(CONF_NAME))
+            for scene in self._scenes
+        }
+        lines = ["1. Adaptive"]
+        for index, scene_id in enumerate(self._order, start=2):
+            lines.append(f"{index}. {names.get(scene_id, scene_id)}")
+        return "\n".join(lines)
+
+    def _unused_scenes(self) -> list[SelectOptionDict]:
+        return [
+            SelectOptionDict(
+                value=str(scene[CONF_SCENE_ID]), label=str(scene.get(CONF_NAME))
+            )
+            for scene in self._scenes
+            if scene.get(CONF_SCENE_ID) and scene[CONF_SCENE_ID] not in self._order
+        ]
+
+    def _ordered_selector(self) -> Any:
+        names = {
+            str(scene.get(CONF_SCENE_ID)): str(scene.get(CONF_NAME))
+            for scene in self._scenes
+        }
+        return selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    {
+                        "value": scene_id,
+                        "label": f"{index}. {names.get(scene_id, scene_id)}",
+                    }
+                    for index, scene_id in enumerate(self._order, start=2)
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+                sort=False,
+            )
+        )
+
+    async def async_step_order(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = []
+        if self._unused_scenes():
+            options.append("add_step")
+        if self._order:
+            options += ["move_step", "remove_step"]
+        options.append("save_switch")
+        return self.async_show_menu(
+            step_id="order",
+            menu_options=options,
+            description_placeholders={"order": self._order_summary()},
+        )
+
+    async def async_step_add_step(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        available = self._unused_scenes()
+        if not available:
+            return await self.async_step_order()
+        if user_input is not None:
+            self._order.append(user_input["scene"])
+            return await self.async_step_order()
+        return self.async_show_form(
+            step_id="add_step",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("scene"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=available,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            sort=False,
+                        )
+                    )
+                }
+            ),
+            description_placeholders={"order": self._order_summary()},
+        )
+
+    async def async_step_remove_step(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            if user_input["scene"] in self._order:
+                self._order.remove(user_input["scene"])
+            return await self.async_step_order()
+        return self.async_show_form(
+            step_id="remove_step",
+            data_schema=vol.Schema({vol.Required("scene"): self._ordered_selector()}),
+            description_placeholders={"order": self._order_summary()},
+        )
+
+    async def async_step_move_step(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            scene_id = user_input["scene"]
+            # Positions are shown counting Adaptive as 1, so the list index is
+            # two behind what the user typed.
+            position = int(user_input["position"]) - 2
+            if scene_id in self._order:
+                self._order.remove(scene_id)
+                self._order.insert(max(0, min(position, len(self._order))), scene_id)
+            return await self.async_step_order()
+
+        return self.async_show_form(
+            step_id="move_step",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("scene"): self._ordered_selector(),
+                    vol.Required("position", default=2): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=2,
+                            max=max(len(self._order) + 1, 2),
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
+            description_placeholders={"order": self._order_summary()},
+        )
+
+    async def async_step_save_switch(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        switch = dict(self._switch)
+        if self._editing_switch is not None and 0 <= self._editing_switch < len(
+            self._switches
+        ):
+            self._switches[self._editing_switch] = switch
+        else:
+            self._switches.append(switch)
+        self._switch = {}
+        self._editing_switch = None
+        return await self.async_step_switches()
+
     # -- done --------------------------------------------------------------
 
     async def async_step_finish(
@@ -1077,6 +1355,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             **self._data,
             CONF_ZONE_SCENES: self._scenes,
             CONF_ZONE_PROFILES: self._profiles,
+            CONF_ZONE_SWITCHES: self._switches,
         }
         title = data[CONF_NAME]
         if self._subentry is None:
@@ -1163,203 +1442,6 @@ def zone_options(entry: ConfigEntry) -> list[dict[str, str]]:
         for sub in entry.subentries.values()
         if sub.subentry_type == SubentryType.ZONE.value
     ]
-
-
-class ControllerSubentryFlow(ConfigSubentryFlow):
-    """Add or reconfigure a light switch and its ordered list of scenes.
-
-    The ordering is a menu loop rather than a single multi-select, because
-    Home Assistant's SelectSelector has no reorder support -- only the entity,
-    area and floor selectors do -- and the order of a multi-select's returned
-    value is not something to rely on. A loop is more clicks but the resulting
-    order is exactly what the user built.
-    """
-
-    def __init__(self) -> None:
-        self._data: dict[str, Any] = {}
-        self._order: list[str] = []
-        self._subentry: Any = None
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        return await self._async_settings(user_input, subentry=None)
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        return await self._async_settings(
-            user_input, subentry=self._get_reconfigure_subentry()
-        )
-
-    async def _async_settings(
-        self, user_input: dict[str, Any] | None, *, subentry: Any
-    ) -> SubentryFlowResult:
-        self._subentry = subentry
-        entry = self._get_entry()
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            flat = flatten_sections(CONTROLLER_SPECS, user_input)
-            cleaned, errors = post_validate(CONTROLLER_SPECS, flat)
-            if cleaned.get(CONF_BINDING_TYPE) == BindingType.ENTITY_STATE.value and (
-                not cleaned.get(CONF_BINDING_ENTITY)
-            ):
-                errors[CONF_BINDING_ENTITY] = "binding_entity_required"
-            if not errors:
-                self._data = cleaned
-                existing_order = (
-                    list(subentry.data.get(CONF_SCENE_ORDER) or []) if subentry else []
-                )
-                known = {s["value"] for s in scene_options(entry, self._zone_id)}
-                # Drop positions whose scene has been deleted, or which is no
-                # longer offered in this room.
-                self._order = [s for s in existing_order if s in known]
-                return await self.async_step_order()
-
-        existing = dict(subentry.data) if subentry else None
-        return self.async_show_form(
-            step_id="reconfigure" if subentry else "user",
-            data_schema=build_schema(
-                CONTROLLER_SPECS,
-                user_input or existing,
-                options={"zones": zone_options(entry)},
-            ),
-            errors=errors,
-        )
-
-    # -- the ordering loop -------------------------------------------------
-
-    @property
-    def _zone_id(self) -> str | None:
-        return self._data.get(CONF_ZONE_ID)
-
-    def _order_summary(self) -> str:
-        entry = self._get_entry()
-        names = {s["value"]: s["label"] for s in scene_options(entry)}
-        adaptive = self._data.get(CONF_ADAPTIVE_POSITION, "first")
-        lines: list[str] = []
-        if adaptive == "first":
-            lines.append("1. Adaptive")
-        for index, scene_id in enumerate(self._order, start=len(lines) + 1):
-            lines.append(f"{index}. {names.get(scene_id, scene_id)}")
-        if adaptive == "last":
-            lines.append(f"{len(lines) + 1}. Adaptive")
-        if self._data.get(CONF_OFF_AT_END):
-            lines.append(f"{len(lines) + 1}. Off")
-        return "\n".join(lines) or "(nothing yet)"
-
-    async def async_step_order(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        options = ["add_step", "finish"]
-        if self._order:
-            options = ["add_step", "move_step", "remove_step", "finish"]
-        return self.async_show_menu(
-            step_id="order",
-            menu_options=options,
-            description_placeholders={"order": self._order_summary()},
-        )
-
-    async def async_step_add_step(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        entry = self._get_entry()
-        available = [
-            option
-            for option in scene_options(entry, self._zone_id)
-            if option["value"] not in self._order
-        ]
-        if not available:
-            return await self.async_step_order()
-
-        if user_input is not None:
-            self._order.append(user_input["scene"])
-            return await self.async_step_order()
-
-        return self.async_show_form(
-            step_id="add_step",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("scene"): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=available,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                            sort=False,
-                        )
-                    )
-                }
-            ),
-            description_placeholders={"order": self._order_summary()},
-        )
-
-    async def async_step_remove_step(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        if user_input is not None:
-            self._order.remove(user_input["scene"])
-            return await self.async_step_order()
-        return self.async_show_form(
-            step_id="remove_step",
-            data_schema=vol.Schema({vol.Required("scene"): self._current_selector()}),
-            description_placeholders={"order": self._order_summary()},
-        )
-
-    async def async_step_move_step(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        if user_input is not None:
-            scene_id = user_input["scene"]
-            position = int(user_input["position"]) - 1
-            self._order.remove(scene_id)
-            self._order.insert(max(0, min(position, len(self._order))), scene_id)
-            return await self.async_step_order()
-
-        return self.async_show_form(
-            step_id="move_step",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("scene"): self._current_selector(),
-                    vol.Required("position", default=1): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=1,
-                            max=max(len(self._order), 1),
-                            step=1,
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                }
-            ),
-            description_placeholders={"order": self._order_summary()},
-        )
-
-    def _current_selector(self) -> Any:
-        entry = self._get_entry()
-        names = {s["value"]: s["label"] for s in scene_options(entry)}
-        return selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    {
-                        "value": scene_id,
-                        "label": f"{index}. {names.get(scene_id, scene_id)}",
-                    }
-                    for index, scene_id in enumerate(self._order, start=1)
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-                sort=False,
-            )
-        )
-
-    async def async_step_finish(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        data = {**self._data, CONF_SCENE_ORDER: self._order}
-        title = data[CONF_NAME]
-        if self._subentry is None:
-            return self.async_create_entry(title=title, data=data)
-        return self.async_update_and_abort(
-            self._get_entry(), self._subentry, data=data, title=title
-        )
 
 
 class ModeSubentryFlow(ConfigSubentryFlow):

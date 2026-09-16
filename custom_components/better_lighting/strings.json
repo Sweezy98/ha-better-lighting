@@ -428,7 +428,8 @@
           "menu_options": {
             "scenes": "Scenes",
             "finish": "Done",
-            "calibrations": "Light calibration"
+            "calibrations": "Light calibration",
+            "switches": "Light switches"
           }
         },
         "scenes": {
@@ -611,34 +612,12 @@
           "data": {
             "preset_name": "Preset"
           }
-        }
-      },
-      "error": {
-        "invalid_value": "This value is not valid.",
-        "no_lights": "Pick at least one light.",
-        "light_in_other_zone": "One of these lights already belongs to another zone. A light can only be in one zone.",
-        "light_required": "Choose a light.",
-        "name_required": "Give the scene a name.",
-        "nothing_to_capture": "None of this room's lights are available to capture.",
-        "profile_exists": "This light already has a calibration."
-      },
-      "abort": {
-        "reconfigure_successful": "Zone updated."
-      }
-    },
-    "controller": {
-      "entry_type": "Light switch",
-      "initiate_flow": {
-        "user": "Add light switch",
-        "reconfigure": "Reconfigure light switch"
-      },
-      "step": {
-        "user": {
-          "title": "Light switch",
+        },
+        "add_switch": {
+          "title": "Add a switch",
           "description": "A switch, and the order it cycles through. Two switches in one room can carry different orders, so the one by the oven can reach Cooking first while the one by the door does something else.",
           "data": {
             "name": "Name",
-            "zone_id": "Room",
             "binding_type": "How this switch is heard",
             "binding_entity": "Switch entity",
             "is_default": "Handle plain on/off of this room's light"
@@ -687,12 +666,11 @@
             }
           }
         },
-        "reconfigure": {
-          "title": "Light switch",
+        "switch_form": {
+          "title": "Change a switch",
           "description": "A switch, and the order it cycles through. Two switches in one room can carry different orders, so the one by the oven can reach Cooking first while the one by the door does something else.",
           "data": {
             "name": "Name",
-            "zone_id": "Room",
             "binding_type": "How this switch is heard",
             "binding_entity": "Switch entity",
             "is_default": "Handle plain on/off of this room's light"
@@ -739,16 +717,6 @@
                 "dim_step_pct": "Dim step"
               }
             }
-          }
-        },
-        "order": {
-          "title": "Cycle order",
-          "description": "Current order:\n\n{order}",
-          "menu_options": {
-            "add_step": "Add a scene",
-            "move_step": "Move a scene",
-            "remove_step": "Remove a scene",
-            "finish": "Done"
           }
         },
         "add_step": {
@@ -772,14 +740,54 @@
             "scene": "Scene",
             "position": "New position"
           }
+        },
+        "switches": {
+          "title": "Light switches",
+          "description": "Switches on this room's walls:\n\n{switches}",
+          "menu_options": {
+            "add_switch": "Add a switch",
+            "edit_switch": "Change a switch",
+            "remove_switch": "Remove a switch",
+            "menu": "Back"
+          }
+        },
+        "edit_switch": {
+          "title": "Change a switch",
+          "description": "Switches on this room's walls:\n\n{switches}",
+          "data": {
+            "switch": "Switch"
+          }
+        },
+        "remove_switch": {
+          "title": "Remove a switch",
+          "description": "Switches on this room's walls:\n\n{switches}",
+          "data": {
+            "switch": "Switch"
+          }
+        },
+        "order": {
+          "title": "What this switch cycles",
+          "description": "Each press moves one place down this list, then wraps:\n\n{order}",
+          "menu_options": {
+            "add_step": "Add a scene",
+            "move_step": "Reorder",
+            "remove_step": "Remove a scene",
+            "save_switch": "Save this switch"
+          }
         }
       },
       "error": {
         "invalid_value": "This value is not valid.",
+        "no_lights": "Pick at least one light.",
+        "light_in_other_zone": "One of these lights already belongs to another zone. A light can only be in one zone.",
+        "light_required": "Choose a light.",
+        "name_required": "Give the scene a name.",
+        "nothing_to_capture": "None of this room's lights are available to capture.",
+        "profile_exists": "This light already has a calibration.",
         "binding_entity_required": "Pick the entity your switch publishes to."
       },
       "abort": {
-        "reconfigure_successful": "Light switch updated."
+        "reconfigure_successful": "Zone updated."
       }
     },
     "mode": {

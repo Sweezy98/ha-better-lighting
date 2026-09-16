@@ -583,3 +583,65 @@ class TestCalibrationsBelongToTheRoom:
         )
 
         assert result["errors"] == {"light_entity": "light_in_other_zone"}
+
+
+class TestSwitchesBelongToTheRoom:
+    async def test_a_switch_is_added_with_its_own_scene_order(
+        self, hass: HomeAssistant
+    ) -> None:
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+        )
+        result = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SubentryType.ZONE.value),
+            context={"source": config_entries.SOURCE_USER},
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+        )
+
+        async def menu(step: str):
+            return await hass.config_entries.subentries.async_configure(
+                result["flow_id"], {"next_step_id": step}
+            )
+
+        # A scene first, so the switch has something to cycle to.
+        result = await menu("scenes")
+        result = await menu("add_scene")
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"],
+            {"name": "Reading", "icon": "mdi:book", "transition": 1, "advanced": {}},
+        )
+        result = await menu("save_scene")
+        result = await menu("menu")
+
+        result = await menu("switches")
+        result = await menu("add_switch")
+        assert result["step_id"] == "add_switch"
+
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"],
+            {
+                "name": "Door",
+                "binding_type": "service_only",
+                "is_default": False,
+                "advanced": {},
+                "down": {},
+            },
+        )
+        # Straight into the list this switch cycles.
+        assert result["step_id"] == "order"
+
+        result = await menu("add_step")
+        scene_id = result["data_schema"].schema["scene"].config["options"][0]["value"]
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"scene": scene_id}
+        )
+        result = await menu("save_switch")
+        result = await menu("menu")
+        result = await menu("finish")
+
+        switches = result["data"]["switches"]
+        assert switches[0]["name"] == "Door"
+        assert switches[0]["scene_order"] == [scene_id]

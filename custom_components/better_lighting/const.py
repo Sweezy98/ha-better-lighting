@@ -670,6 +670,9 @@ SCENE_COLOR_SPECS: dict[str, FieldSpec] = {
 # whatever colour the sun says" can be said at all. Which axes the scene takes
 # over follows from what each light actually names.
 CONF_ZONE_SCENES = "scenes"
+# The light switches that drive this room.
+CONF_ZONE_SWITCHES = "switches"
+CONF_SWITCH_ID = "switch_id"
 # Per-light calibration lives with the room whose lights it calibrates.
 CONF_ZONE_PROFILES = "light_profiles"
 

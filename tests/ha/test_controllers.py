@@ -13,6 +13,7 @@ from custom_components.better_lighting.const import DOMAIN, SubentryType
 from custom_components.better_lighting.render import ZoneMode
 from tests.conftest import (
     MemberLight,
+    add_zone_switch,
     hub_entry,
     setup_hub,
     setup_members,
@@ -132,21 +133,17 @@ class TestPerSwitchOrders:
 
         ids = subentry_ids(entry)
         zone_id = ids["Kitchen"]
-        hass.config_entries.async_add_subentry(
+        add_zone_switch(
+            hass,
             entry,
-            _make(
-                controller_subentry(
-                    "Oven", zone_id=zone_id, scene_order=[ids["Cooking"]]
-                )
-            ),
+            controller_subentry("Oven", zone_id=zone_id, scene_order=[ids["Cooking"]]),
+            zone_id,
         )
-        hass.config_entries.async_add_subentry(
+        add_zone_switch(
+            hass,
             entry,
-            _make(
-                controller_subentry(
-                    "Door", zone_id=zone_id, scene_order=[ids["Dining"]]
-                )
-            ),
+            controller_subentry("Door", zone_id=zone_id, scene_order=[ids["Dining"]]),
+            zone_id,
         )
         await hass.async_block_till_done()
         return entry
@@ -227,17 +224,17 @@ class TestEntityBinding:
         )
         await setup_hub(hass, entry)
         ids = subentry_ids(entry)
-        hass.config_entries.async_add_subentry(
+        add_zone_switch(
+            hass,
             entry,
-            _make(
-                controller_subentry(
-                    "Wall",
-                    zone_id=ids["Kitchen"],
-                    scene_order=[ids[name] for name in scenes],
-                    binding_entity="event.button",
-                    **overrides,
-                )
+            controller_subentry(
+                "Wall",
+                zone_id=ids["Kitchen"],
+                scene_order=[ids[name] for name in scenes],
+                binding_entity="event.button",
+                **overrides,
             ),
+            ids["Kitchen"],
         )
         await hass.async_block_till_done()
         return entry
@@ -639,26 +636,26 @@ class TestTwoButtonSwitches:
         entry = hub_entry(subentries_data=[zone_subentry()])
         await setup_hub(hass, entry)
         ids = subentry_ids(entry)
-        hass.config_entries.async_add_subentry(
+        add_zone_switch(
+            hass,
             entry,
-            _make(
-                controller_subentry(
-                    "Rocker",
-                    zone_id=ids["Kitchen"],
-                    scene_order=[],
-                    binding_entity="sensor.rocker",
-                    press_attribute="",
-                    press_states=["up"],
-                    long_press_states=["up_hold"],
-                    long_press_action="brighten",
-                    dim_step_pct=10,
-                    **{
-                        "down_press_states": ["down"],
-                        "down_long_press_states": ["down_hold"],
-                        **overrides,
-                    },
-                )
+            controller_subentry(
+                "Rocker",
+                zone_id=ids["Kitchen"],
+                scene_order=[],
+                binding_entity="sensor.rocker",
+                press_attribute="",
+                press_states=["up"],
+                long_press_states=["up_hold"],
+                long_press_action="brighten",
+                dim_step_pct=10,
+                **{
+                    "down_press_states": ["down"],
+                    "down_long_press_states": ["down_hold"],
+                    **overrides,
+                },
             ),
+            ids["Kitchen"],
         )
         await hass.async_block_till_done()
         return entry.runtime_data.controllers[ids["Kitchen"]]
@@ -702,7 +699,7 @@ class TestTwoButtonSwitches:
     async def test_down_is_not_mistaken_for_an_ordinary_press(
         self, hass: HomeAssistant
     ) -> None:
-        """"off" is in both vocabularies, so the lower half is matched first."""
+        """ "off" is in both vocabularies, so the lower half is matched first."""
         controller = await self._setup(hass, down_press_states=["off"])
         await self._push(hass, "up")
 

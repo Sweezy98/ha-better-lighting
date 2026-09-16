@@ -226,3 +226,47 @@ def test_the_panel_only_calls_commands_that_exist() -> None:
     assert called <= registered, (
         f"panel calls unknown commands: {sorted(called - registered)}"
     )
+
+
+def test_the_panel_and_the_backend_agree_on_the_wildcard() -> None:
+    """The "every light in this room" key must be the same string in both."""
+    from custom_components.better_lighting.scenes import ALL_LIGHTS
+
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    match = re.search(r'^const ALL = "(.*)";', panel_js, re.M)
+    assert match, "the panel does not define the wildcard"
+    assert match.group(1) == ALL_LIGHTS
+
+
+def test_the_scene_editor_uses_home_assistants_own_light_dialog() -> None:
+    """Its colour wheel is the one people already know; ours would not be."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    assert "hass-more-info" in panel_js
+
+
+def test_the_panel_covers_every_settings_surface() -> None:
+    """The panel is meant to replace the flows, not shadow most of them.
+
+    Marker-based rather than behavioural: this cannot prove a screen works,
+    only that one exists, which is exactly the regression worth catching --
+    a surface added to the flows and forgotten on the page.
+    """
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    surfaces = {
+        "global settings": '"hub"',
+        "colour presets": "_paintPresets",
+        "add a room": "add-room",
+        "room settings": "_paintRoomSection",
+        "delete a room": "delete_zone",
+        "scenes": "_paintEditor",
+        "capture a scene": "_captureRoom",
+        "switches": '"switch"',
+        "what a switch cycles": "_paintSwitchOrder",
+        "light calibration": '"calibration"',
+        "modes": "_paintMode",
+        "mode rules": "_paintRules",
+    }
+    missing = sorted(
+        name for name, marker in surfaces.items() if marker not in panel_js
+    )
+    assert not missing, f"the panel cannot reach: {missing}"

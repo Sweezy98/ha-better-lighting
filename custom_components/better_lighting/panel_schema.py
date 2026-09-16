@@ -22,6 +22,7 @@ from typing import Any
 
 from .const import (
     COLOR_PRESET_SPECS,
+    CONF_RULE_STATES,
     CONF_SCENE_ORDER,
     CONF_ZONE_ID,
     CONTROLLER_SPECS,
@@ -192,6 +193,18 @@ def labels(language: str) -> dict[str, Any]:
     }
 
 
+def _runtime_choices(
+    table: list[dict[str, Any]], keys: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Mark fields whose choices only exist once something is selected."""
+    for group in table:
+        for field in group["fields"]:
+            if field["key"] in keys:
+                field["options_key"] = keys[field["key"]]
+                field.pop("options", None)
+    return table
+
+
 def schema(language: str = "en") -> dict[str, Any]:
     """Every form the panel can draw, plus the words to draw it with."""
     return {
@@ -215,7 +228,12 @@ def schema(language: str = "en") -> dict[str, Any]:
             "scene": _table(ZONE_SCENE_SPECS),
             "preset": _table(COLOR_PRESET_SPECS),
             # Rules are built per mode, since their state picker depends on
-            # the states that mode defines. The panel fills the choices in.
-            "rule": _table(mode_rule_specs([])),
+            # the states that mode defines, and their scene picker on the room
+            # the rule names. Both are marked as runtime choices so the panel
+            # fills them from the mode and room in hand.
+            "rule": _runtime_choices(
+                _table(mode_rule_specs([])),
+                {CONF_RULE_STATES: "mode_states"},
+            ),
         },
     }

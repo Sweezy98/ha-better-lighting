@@ -44,7 +44,6 @@ async def async_setup_entry(
                     "cycle_previous",
                     "mdi:skip-previous",
                     lambda c=controller, s=switch: c.async_cycle(s, direction=-1),
-                    enabled=False,
                 ),
                 ZoneButton(
                     zone,
@@ -60,7 +59,6 @@ async def async_setup_entry(
                     "mdi:hand-back-left-off",
                     _clear_manual(controller),
                     category=EntityCategory.DIAGNOSTIC,
-                    enabled=False,
                 ),
             ],
             config_subentry_id=subentry_id,

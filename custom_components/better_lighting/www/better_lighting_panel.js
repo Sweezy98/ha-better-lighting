@@ -13,6 +13,10 @@
  * worse than one that owns three hundred lines of canvas.
  */
 
+// The entry that stands for every light in the room, matching ALL_LIGHTS on
+// the Python side.
+const ALL = "*";
+
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 /** Kelvin to an approximate sRGB triplet, for painting the temperature slider. */
@@ -666,6 +670,12 @@ class BetterLightingPanel extends HTMLElement {
         @media (max-width:1000px) { .editor { grid-template-columns:1fr; } }
         .pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px;
                 background:var(--secondary-background-color); }
+        .banner { display:flex; align-items:center; gap:16px; margin-bottom:16px;
+                  border-left:4px solid var(--info-color,#3f9bd4); }
+        .banner.live { border-left-color:var(--success-color,#43a047); }
+        .light select { font:inherit; padding:5px 8px; border-radius:8px;
+                        border:1px solid var(--divider-color,#ccc);
+                        background:var(--card-background-color); color:inherit; }
         .live { background:var(--success-color,#43a047); }
       </style>
       <header><span>Better Lighting</span></header>
@@ -723,6 +733,9 @@ class BetterLightingPanel extends HTMLElement {
       <div class="bar"><button class="flat" id="add-mode">Add a mode</button></div>
       <ul style="margin-top:20px">
         <li data-hub="1" aria-selected="${this._view.kind === "hub"}">⚙️ Global settings</li>
+        <li data-presets="1" aria-selected="${
+          this._view.kind === "presets"
+        }">${labels.sections.presets || "🎨 Colour presets"}</li>
       </ul>`;
 
     nav.querySelectorAll("li.room").forEach((item) =>
@@ -757,6 +770,10 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "hub" };
       this._paint();
     });
+    nav.querySelector("li[data-presets]").addEventListener("click", () => {
+      this._view = { kind: "presets" };
+      this._paint();
+    });
     nav.querySelector("#add-room").addEventListener("click", () => {
       this._roomId = null;
       this._view = { kind: "room", section: "basic", creating: true };
@@ -774,6 +791,10 @@ class BetterLightingPanel extends HTMLElement {
   _paintMain() {
     if (this._scene) return this._paintEditor();
     switch (this._view.kind) {
+      case "presets":
+        return this._paintPresets();
+      case "rules":
+        return this._paintRules();
       case "hub":
         return this._paintSettings({
           title: "Global settings",
@@ -786,6 +807,7 @@ class BetterLightingPanel extends HTMLElement {
       case "scenes":
         return this._paintScenes();
       case "switches":
+        if (this._view.sub === "order") return this._paintSwitchOrder();
         return this._paintCollection("switches", "switch", "Light switches");
       case "calibrations":
         return this._paintCollection("light_profiles", "calibration", "Light calibration");
@@ -850,6 +872,17 @@ class BetterLightingPanel extends HTMLElement {
             await this._call("delete_mode", { mode_id: mode.id });
             this._modeId = null;
           },
+      extra: creating
+        ? null
+        : {
+            label: `${this._labels.sections.rules || "Rules"} (${
+              (mode.data.rules || []).length
+            })`,
+            go: () => {
+              this._view = { kind: "rules" };
+              this._paint();
+            },
+          },
     });
   }
 
@@ -911,11 +944,257 @@ class BetterLightingPanel extends HTMLElement {
         });
         this._view = { kind: this._view.kind };
       },
+      extra:
+        storageKey === "switches" && index < items.length
+          ? {
+              label: `What it cycles (${
+                (items[index].scene_order || []).length + 1
+              })`,
+              go: () => {
+                this._view = { ...this._view, sub: "order" };
+                this._paint();
+              },
+            }
+          : null,
+    });
+  }
+
+  /**
+   * A list of things, each edited by a form.
+   *
+   * Presets, rules and a switch's running order are all this shape, so they
+   * share one implementation: show the list, or show the form for the item
+   * whose index the view carries.
+   */
+  _paintListEditor({ title, items, formKey, choices, describe, onSave, reorder }) {
+    const main = this.shadowRoot.getElementById("main");
+    const index = this._view.index;
+
+    if (index === undefined) {
+      main.innerHTML = `
+        <div class="card">
+          <h2>${title}</h2>
+          <ul id="items">${items
+            .map(
+              (item, i) => `<li data-index="${i}">
+                  <span class="grow">${describe(item, i)}</span>
+                  ${
+                    reorder
+                      ? `<span class="moves">
+                           <button class="flat" data-up="${i}" ${
+                             i === 0 ? "disabled" : ""
+                           }>↑</button>
+                           <button class="flat" data-down="${i}" ${
+                             i === items.length - 1 ? "disabled" : ""
+                           }>↓</button>
+                         </span>`
+                      : ""
+                  }
+                </li>`
+            )
+            .join("")}</ul>
+          ${items.length ? "" : '<p class="muted">—</p>'}
+          <div class="bar"><button id="add">Add</button>
+            <button class="flat" id="back">⬅️ Back</button></div>
+        </div>`;
+
+      main.querySelectorAll("li").forEach((row) =>
+        row.addEventListener("click", (event) => {
+          if (event.target.dataset.up || event.target.dataset.down) return;
+          this._view = { ...this._view, index: Number(row.dataset.index) };
+          this._paint();
+        })
+      );
+      main.querySelectorAll("[data-up],[data-down]").forEach((button) =>
+        button.addEventListener("click", async (event) => {
+          event.stopPropagation();
+          const from = Number(event.target.dataset.up ?? event.target.dataset.down);
+          const to = event.target.dataset.up ? from - 1 : from + 1;
+          const next = [...items];
+          [next[from], next[to]] = [next[to], next[from]];
+          await onSave(next);
+          await this._load();
+        })
+      );
+      main.querySelector("#add").addEventListener("click", () => {
+        this._view = { ...this._view, index: items.length, adding: true };
+        this._paint();
+      });
+      main.querySelector("#back").addEventListener("click", () => {
+        this._view = { ...this._view, index: undefined, sub: undefined };
+        this._paint();
+      });
+      return;
+    }
+
+    const current = items[index] || {};
+    this._paintSettings({
+      title,
+      form: this._schema?.forms[formKey] || [],
+      values: { ...current },
+      choices,
+      save: async (changed) => {
+        const next = [...items];
+        next[index] = { ...current, ...changed };
+        await onSave(next);
+        this._view = { ...this._view, index: undefined, adding: false };
+      },
+      remove:
+        index < items.length
+          ? async () => {
+              await onSave(items.filter((_, i) => i !== index));
+              this._view = { ...this._view, index: undefined };
+            }
+          : null,
+    });
+  }
+
+  /** The house's named colours, stored with the global settings. */
+  _paintPresets() {
+    const presets = this._hub.color_presets || [];
+    this._paintListEditor({
+      title: this._labels.sections.presets || "Colour presets",
+      items: presets,
+      formKey: "preset",
+      choices: {},
+      describe: (preset) => {
+        const swatch =
+          preset.color_format === "color_temp_kelvin" && preset.color_temp_kelvin
+            ? `rgb(${kelvinToRgb(preset.color_temp_kelvin).join(",")})`
+            : `rgb(${(preset.rgb_color || [128, 128, 128]).join(",")})`;
+        return `<span class="swatch" style="background:${swatch};display:inline-block;vertical-align:-4px;margin-right:8px"></span>${
+          preset.name || "—"
+        }`;
+      },
+      onSave: (next) =>
+        this._call("save_hub", { options: { ...this._hub, color_presets: next } }),
+    });
+  }
+
+  /** What a mode does to each room, in each of its states. */
+  _paintRules() {
+    const mode = this._mode;
+    if (!mode) return;
+    const rules = mode.data.rules || [];
+    const roomNames = Object.fromEntries(
+      this._rooms.map((room) => [room.id, room.name])
+    );
+    // A rule names one room, so its scene picker offers that room's scenes.
+    const ruleRoom = (rule) =>
+      this._rooms.find((room) => room.id === rule?.zones) || null;
+
+    this._paintListEditor({
+      title: `${mode.name} — ${this._labels.sections.rules || "Rules"}`,
+      items: rules,
+      formKey: "rule",
+      choices: {
+        ...this._choices(ruleRoom(rules[this._view.index])),
+        mode_states: (mode.data.states || []).map((state) => ({
+          value: state,
+          label: state,
+        })),
+      },
+      describe: (rule) => {
+        const states = (rule.mode_states || []).join(", ") || "—";
+        const room = roomNames[rule.zones] || rule.zones || "—";
+        return `${room}: ${rule.action || "keep"} (${states})`;
+      },
+      onSave: (next) =>
+        this._call("save_mode", {
+          mode_id: mode.id,
+          data: { ...mode.data, rules: next },
+        }),
+    });
+  }
+
+  /** The scenes one switch cycles, in order. */
+  _paintSwitchOrder() {
+    const room = this._room;
+    const switches = room.data.switches || [];
+    const item = switches[this._view.index];
+    if (!item) return;
+    const order = item.scene_order || [];
+    const names = Object.fromEntries(
+      (room.scenes || []).map((scene) => [scene.scene_id, scene.name])
+    );
+    const unused = (room.scenes || []).filter(
+      (scene) => !order.includes(scene.scene_id)
+    );
+    const main = this.shadowRoot.getElementById("main");
+
+    const save = async (next) => {
+      const list = [...switches];
+      list[this._view.index] = { ...item, scene_order: next };
+      await this._call("save_zone_collection", {
+        zone_id: room.id,
+        key: "switches",
+        items: list,
+      });
+      await this._load();
+    };
+
+    main.innerHTML = `
+      <div class="card">
+        <h2>${item.name || "Switch"} — what it cycles</h2>
+        <p class="muted">Each press moves one place down, then wraps.</p>
+        <ul id="order">
+          <li><span class="grow">1. ☀ Adaptive</span></li>
+          ${order
+            .map(
+              (id, i) => `<li>
+                <span class="grow">${i + 2}. ${names[id] || id}</span>
+                <span class="moves">
+                  <button class="flat" data-up="${i}" ${i === 0 ? "disabled" : ""}>↑</button>
+                  <button class="flat" data-down="${i}" ${
+                    i === order.length - 1 ? "disabled" : ""
+                  }>↓</button>
+                  <button class="flat" data-remove="${i}">✕</button>
+                </span>
+              </li>`
+            )
+            .join("")}
+        </ul>
+        ${
+          unused.length
+            ? `<div class="bar"><select id="add-scene">
+                 <option value="">Add a scene…</option>
+                 ${unused
+                   .map(
+                     (scene) =>
+                       `<option value="${scene.scene_id}">${scene.name}</option>`
+                   )
+                   .join("")}
+               </select></div>`
+            : '<p class="muted">Every scene in this room is already in the list.</p>'
+        }
+        <div class="bar"><button class="flat" id="back">⬅️ Back</button></div>
+      </div>`;
+
+    main.querySelectorAll("[data-up],[data-down],[data-remove]").forEach((button) =>
+      button.addEventListener("click", async (event) => {
+        const data = event.target.dataset;
+        const next = [...order];
+        if (data.remove !== undefined) {
+          next.splice(Number(data.remove), 1);
+        } else {
+          const from = Number(data.up ?? data.down);
+          const to = data.up ? from - 1 : from + 1;
+          [next[from], next[to]] = [next[to], next[from]];
+        }
+        await save(next);
+      })
+    );
+    main.querySelector("#add-scene")?.addEventListener("change", async (event) => {
+      if (event.target.value) await save([...order, event.target.value]);
+    });
+    main.querySelector("#back").addEventListener("click", () => {
+      this._view = { ...this._view, sub: undefined };
+      this._paint();
     });
   }
 
   /** The one settings screen: a form, a Save, and sometimes a Delete. */
-  _paintSettings({ title, form, values, choices, save, remove }) {
+  _paintSettings({ title, form, values, choices, save, remove, extra }) {
     const main = this.shadowRoot.getElementById("main");
     main.innerHTML = `
       <div class="card">
@@ -924,6 +1203,7 @@ class BetterLightingPanel extends HTMLElement {
         <div id="form"></div>
         <div class="bar">
           <button id="save">Save</button>
+          ${extra ? `<button class="flat" id="extra">${extra.label}</button>` : ""}
           ${remove ? '<button class="danger" id="remove">Delete</button>' : ""}
         </div>
       </div>`;
@@ -961,6 +1241,7 @@ class BetterLightingPanel extends HTMLElement {
           err?.message || "That could not be saved.";
       }
     });
+    main.querySelector("#extra")?.addEventListener("click", () => extra.go());
     main.querySelector("#remove")?.addEventListener("click", async () => {
       await remove();
       await this._load();
@@ -1010,34 +1291,41 @@ class BetterLightingPanel extends HTMLElement {
     });
   }
 
-  /** Read the room's current state into per-light scene entries. */
+  /** One light's current state, as a scene entry. */
+  _captureOne(entityId) {
+    const state = this._hass.states[entityId];
+    if (!state) return null;
+    if (state.state !== "on") return { action: "off" };
+
+    const entry = { action: "apply" };
+    if (state.attributes.brightness != null) {
+      entry.brightness_pct =
+        Math.round((state.attributes.brightness / 255) * 1000) / 10;
+    }
+    // Whichever colour the light is actually showing. A light in colour-temp
+    // mode carries an rgb_color too, derived rather than set, and storing that
+    // would freeze a warm white into a slightly-wrong orange.
+    if (
+      state.attributes.color_mode === "color_temp" &&
+      state.attributes.color_temp_kelvin
+    ) {
+      entry.color_format = "color_temp_kelvin";
+      entry.color_temp_kelvin = state.attributes.color_temp_kelvin;
+    } else if (state.attributes.rgb_color) {
+      entry.color_format = "rgb_color";
+      entry.rgb_color = [...state.attributes.rgb_color];
+    } else {
+      entry.color_format = "none";
+    }
+    return entry;
+  }
+
+  /** Read the whole room's current state into per-light scene entries. */
   _captureRoom() {
     const lights = {};
     for (const entityId of this._room.lights) {
-      const state = this._hass.states[entityId];
-      if (!state) continue;
-      if (state.state !== "on") {
-        lights[entityId] = { action: "off" };
-        continue;
-      }
-      const entry = { action: "apply" };
-      if (state.attributes.brightness != null) {
-        entry.brightness_pct =
-          Math.round((state.attributes.brightness / 255) * 1000) / 10;
-      }
-      if (
-        state.attributes.color_mode === "color_temp" &&
-        state.attributes.color_temp_kelvin
-      ) {
-        entry.color_format = "color_temp_kelvin";
-        entry.color_temp_kelvin = state.attributes.color_temp_kelvin;
-      } else if (state.attributes.rgb_color) {
-        entry.color_format = "rgb_color";
-        entry.rgb_color = [...state.attributes.rgb_color];
-      } else {
-        entry.color_format = "none";
-      }
-      lights[entityId] = entry;
+      const captured = this._captureOne(entityId);
+      if (captured) lights[entityId] = captured;
     }
     return lights;
   }
@@ -1063,46 +1351,98 @@ class BetterLightingPanel extends HTMLElement {
     return rgb ? `rgb(${rgb.join(",")})` : "var(--secondary-background-color)";
   }
 
+  /**
+   * The scene editor, in the shape Home Assistant's own scene editor uses.
+   *
+   * Two modes, and the distinction matters. In **live mode** the scene is on
+   * the actual bulbs and clicking a light opens Home Assistant's own more-info
+   * dialog -- its colour wheel, its brightness and temperature sliders, its
+   * favourite colours -- so the controls are the ones already learned rather
+   * than an imitation of them. Saving then reads back what the lights are
+   * actually doing. In **review mode** nothing is touched: rows can be added
+   * and removed and their treatment set, but the room is left alone.
+   */
   _paintEditor() {
     const room = this._room;
     const main = this.shadowRoot.getElementById("main");
+    const live = this._previewing;
+    const entries = Object.keys(this._scene.lights || {});
+    const available = (room.lights || []).filter((id) => !entries.includes(id));
+
     main.innerHTML = `
-      <div class="editor">
-        <div class="card">
-          <h2>Lights <span class="pill ${this._previewing ? "live" : ""}">${
-            this._previewing ? "live on the wall" : "not showing"
-          }</span></h2>
-          <div id="lights"></div>
-          <div class="bar">
-            <button id="preview">${this._previewing ? "Stop showing" : "Show it"}</button>
-            <button class="flat" id="recapture">Capture from the room</button>
-          </div>
+      <div class="card banner ${live ? "live" : ""}">
+        <div class="grow">
+          <strong>${live ? "Live mode" : "Review mode"}</strong>
+          <div class="muted">${
+            live
+              ? "Every change is applied to the real lights. Click one to open its controls."
+              : "Nothing is touched. Switch to live mode to set the lights and see it."
+          }</div>
         </div>
-        <div class="card">
-          <h2>Scene</h2>
-          <input type="text" id="name" value="${this._scene.name || ""}">
-          <div id="controls" style="margin-top:16px"></div>
-          <div class="bar">
-            <button id="save">Save</button>
-            <button class="flat" id="back">Back</button>
-            ${this._scene.scene_id ? '<button class="danger" id="delete">Delete</button>' : ""}
-          </div>
+        <button id="mode">${live ? "Switch to review mode" : "Live mode"}</button>
+      </div>
+
+      <div class="card">
+        <h2>Scene</h2>
+        <input type="text" id="name" value="${this._scene.name || ""}">
+      </div>
+
+      <div class="card">
+        <h2>Lights</h2>
+        <div class="muted" style="margin-bottom:12px">
+          Each light can take the scene, be switched off, or be left alone.
+        </div>
+        <div id="rows"></div>
+        ${
+          available.length || !entries.includes(ALL)
+            ? `<div class="bar">
+                 <select id="add-light">
+                   <option value="">Add a light…</option>
+                   ${
+                     entries.includes(ALL)
+                       ? ""
+                       : `<option value="${ALL}">Every light in this room</option>`
+                   }
+                   ${available
+                     .map(
+                       (id) =>
+                         `<option value="${id}">${this._name(id)}</option>`
+                     )
+                     .join("")}
+                 </select>
+               </div>`
+            : ""
+        }
+      </div>
+
+      <div class="card">
+        <div class="bar">
+          <button id="save">Save</button>
+          <button class="flat" id="recapture">Take the room as it is now</button>
+          <button class="flat" id="back">⬅️ Back</button>
+          ${this._scene.scene_id ? '<button class="danger" id="delete">Delete</button>' : ""}
         </div>
       </div>`;
 
     main.querySelector("#name").addEventListener("input", (event) => {
       this._scene.name = event.target.value;
     });
-    main.querySelector("#preview").addEventListener("click", () =>
-      this._previewing ? this._stopPreview() : this._preview()
+    main.querySelector("#mode").addEventListener("click", () =>
+      live ? this._stopPreview().then(() => this._paintEditor()) : this._preview()
     );
+    main.querySelector("#add-light")?.addEventListener("change", (event) => {
+      if (!event.target.value) return;
+      this._spec(event.target.value);
+      this._paintEditor();
+      this._pushPreview();
+    });
+    main.querySelector("#save").addEventListener("click", () => this._save());
     main.querySelector("#recapture").addEventListener("click", () => {
       this._scene.lights = this._captureRoom();
       this._paintEditor();
     });
-    main.querySelector("#save").addEventListener("click", () => this._save());
-    main.querySelector("#back").addEventListener("click", () => {
-      this._stopPreview();
+    main.querySelector("#back").addEventListener("click", async () => {
+      await this._stopPreview();
       this._scene = null;
       this._load();
     });
@@ -1111,142 +1451,158 @@ class BetterLightingPanel extends HTMLElement {
         zone_id: room.id,
         scene_id: this._scene.scene_id,
       });
-      this._stopPreview();
+      await this._stopPreview();
       this._scene = null;
       this._load();
     });
 
     this._paintLightList();
-    this._paintControls();
+  }
+
+  _name(entityId) {
+    if (entityId === ALL) return "Every light in this room";
+    return this._hass.states[entityId]?.attributes?.friendly_name || entityId;
+  }
+
+  /** The area a light sits in, shown under its name as HA's editor does. */
+  _area(entityId) {
+    if (entityId === ALL) return "";
+    const entity = this._hass.entities?.[entityId];
+    const areaId =
+      entity?.area_id || this._hass.devices?.[entity?.device_id]?.area_id;
+    return this._hass.areas?.[areaId]?.name || "";
   }
 
   _paintLightList() {
-    const list = this.shadowRoot.getElementById("lights");
-    if (!list || !this._room) return;
-    list.innerHTML = this._room.lights
+    const list = this.shadowRoot.getElementById("rows");
+    if (!list || !this._scene) return;
+    const live = this._previewing;
+    const entries = Object.keys(this._scene.lights || {});
+
+    list.innerHTML = entries
       .map((entityId) => {
         const spec = this._scene.lights[entityId] || {};
-        const name =
-          this._hass.states[entityId]?.attributes?.friendly_name || entityId;
+        const state = this._hass.states[entityId];
         const detail =
           spec.action === "off"
-            ? "off"
+            ? "Off"
             : spec.action === "leave"
-              ? "left alone"
-              : [
-                  spec.brightness_pct != null ? `${spec.brightness_pct}%` : null,
-                  spec.color_format === "none" ? "colour follows the sun" : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "nothing set";
-        return `<div class="light" data-light="${entityId}" aria-selected="${
-          entityId === this._selectedLight
-        }">
+              ? "Left alone"
+              : live && state?.state === "on"
+                ? `${Math.round(((state.attributes.brightness || 0) / 255) * 100)}%`
+                : spec.brightness_pct != null
+                  ? `${spec.brightness_pct}%`
+                  : "—";
+        return `<div class="light" data-light="${entityId}">
             <span class="swatch" style="background:${this._swatch(entityId)}"></span>
-            <span class="grow">${name}<div class="muted">${detail}</div></span>
+            <span class="grow">
+              ${this._name(entityId)}
+              <div class="muted">${this._area(entityId) || detail}</div>
+            </span>
+            <select data-action="${entityId}">
+              ${[
+                ["apply", "Set it"],
+                ["off", "Switch it off"],
+                ["leave", "Leave it alone"],
+              ]
+                .map(
+                  ([value, label]) =>
+                    `<option value="${value}" ${
+                      (spec.action || "apply") === value ? "selected" : ""
+                    }>${label}</option>`
+                )
+                .join("")}
+            </select>
+            <select data-colour="${entityId}">
+              ${[
+                ["inherit", "Colour as set"],
+                ["none", "Colour follows the sun"],
+              ]
+                .map(
+                  ([value, label]) =>
+                    `<option value="${value}" ${
+                      (spec.color_format === "none" ? "none" : "inherit") === value
+                        ? "selected"
+                        : ""
+                    }>${label}</option>`
+                )
+                .join("")}
+            </select>
+            <button class="flat" data-remove="${entityId}" title="Remove">🗑</button>
           </div>`;
       })
       .join("");
+
     list.querySelectorAll(".light").forEach((row) =>
-      row.addEventListener("click", () => {
-        this._selectedLight = row.dataset.light;
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("select,button")) return;
+        const entityId = row.dataset.light;
+        if (entityId === ALL || !live) return;
+        // Home Assistant's own dialog, with the controls already learned.
+        this.dispatchEvent(
+          new CustomEvent("hass-more-info", {
+            detail: { entityId },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      })
+    );
+    list.querySelectorAll("[data-action]").forEach((select) =>
+      select.addEventListener("change", () => {
+        this._spec(select.dataset.action).action = select.value;
         this._paintLightList();
-        this._paintControls();
+        this._pushPreview();
+      })
+    );
+    list.querySelectorAll("[data-colour]").forEach((select) =>
+      select.addEventListener("change", () => {
+        const spec = this._spec(select.dataset.colour);
+        if (select.value === "none") spec.color_format = "none";
+        else delete spec.color_format;
+        this._pushPreview();
+      })
+    );
+    list.querySelectorAll("[data-remove]").forEach((button) =>
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        delete this._scene.lights[button.dataset.remove];
+        this._paintEditor();
+        this._pushPreview();
       })
     );
   }
 
-  _paintControls() {
-    const holder = this.shadowRoot.getElementById("controls");
-    if (!holder || !this._selectedLight) return;
-    const spec = this._spec(this._selectedLight);
-    holder.innerHTML = `
-      <div class="muted" style="margin-bottom:8px">${this._selectedLight}</div>
-      <select id="action">
-        ${[
-          ["apply", "Set it"],
-          ["off", "Switch it off"],
-          ["leave", "Leave it alone"],
-        ]
-          .map(
-            ([value, label]) =>
-              `<option value="${value}" ${
-                spec.action === value ? "selected" : ""
-              }>${label}</option>`
-          )
-          .join("")}
-      </select>
-      <div id="detail" style="margin-top:16px"></div>`;
-
-    holder.querySelector("#action").addEventListener("change", (event) => {
-      spec.action = event.target.value;
-      this._paintLightList();
-      this._paintControls();
-      this._pushPreview();
-    });
-
-    const detail = holder.querySelector("#detail");
-    if (spec.action !== "apply") return;
-
-    detail.innerHTML = `
-      <label class="muted">Brightness</label>
-      <bl-slider id="brightness" min="1" max="100" value="${
-        spec.brightness_pct ?? 50
-      }"></bl-slider>
-      <div style="margin-top:16px">
-        <select id="format">
-          ${[
-            ["inherit", "Use the scene's colour"],
-            ["none", "Leave the colour to the sun"],
-            ["color_temp_kelvin", "Colour temperature"],
-            ["rgb_color", "Colour"],
-          ]
-            .map(
-              ([value, label]) =>
-                `<option value="${value}" ${
-                  (spec.color_format || "inherit") === value ? "selected" : ""
-                }>${label}</option>`
-            )
-            .join("")}
-        </select>
-      </div>
-      <div id="colour" style="margin-top:16px"></div>`;
-
-    const brightness = detail.querySelector("#brightness");
-    brightness.addEventListener("value-changed", (event) => {
-      spec.brightness_pct = event.detail.value;
-      this._paintLightList();
-    });
-    brightness.addEventListener("value-settled", () => this._pushPreview());
-
-    detail.querySelector("#format").addEventListener("change", (event) => {
-      spec.color_format = event.target.value;
-      this._paintControls();
-      this._paintLightList();
-      this._pushPreview();
-    });
-
-    const colour = detail.querySelector("#colour");
-    if (spec.color_format === "color_temp_kelvin") {
-      colour.innerHTML = `<label class="muted">Colour temperature</label>
-        <bl-slider id="kelvin" min="2000" max="6500" gradient="temperature"
-                   value="${spec.color_temp_kelvin ?? 2700}"></bl-slider>`;
-      const slider = colour.querySelector("#kelvin");
-      slider.addEventListener("value-changed", (event) => {
-        spec.color_temp_kelvin = event.detail.value;
-        this._paintLightList();
-      });
-      slider.addEventListener("value-settled", () => this._pushPreview());
-    } else if (spec.color_format === "rgb_color") {
-      const [hue, saturation] = rgbToHs(spec.rgb_color || [255, 140, 40]);
-      colour.innerHTML = `<bl-color-wheel hue="${hue}" saturation="${saturation}"></bl-color-wheel>`;
-      const wheel = colour.querySelector("bl-color-wheel");
-      wheel.addEventListener("value-changed", (event) => {
-        spec.rgb_color = hsToRgb(event.detail.hue, event.detail.saturation);
-        this._paintLightList();
-      });
-      wheel.addEventListener("value-settled", () => this._pushPreview());
+  /**
+   * Saving in live mode reads the lights back.
+   *
+   * What is on the wall is what gets stored, which is the point of editing
+   * this way: the scene cannot disagree with what you were looking at when
+   * you pressed Save.
+   */
+  async _save() {
+    if (this._previewing) {
+      for (const [entityId, spec] of Object.entries(this._scene.lights)) {
+        if (spec.action && spec.action !== "apply") continue;
+        if (entityId === ALL) continue;
+        const captured = this._captureOne(entityId);
+        if (captured) {
+          this._scene.lights[entityId] = {
+            ...captured,
+            // A light told to follow the sun keeps doing so.
+            ...(spec.color_format === "none" ? { color_format: "none" } : {}),
+          };
+        }
+      }
     }
+    const { scene_id: sceneId } = await this._call("save_scene", {
+      zone_id: this._roomId,
+      scene: this._scene,
+    });
+    this._scene.scene_id = sceneId;
+    await this._stopPreview();
+    this._scene = null;
+    this._load();
   }
 
   async _preview() {
@@ -1266,16 +1622,6 @@ class BetterLightingPanel extends HTMLElement {
     await this._call("stop_preview", { zone_id: this._roomId });
   }
 
-  async _save() {
-    const { scene_id: sceneId } = await this._call("save_scene", {
-      zone_id: this._roomId,
-      scene: this._scene,
-    });
-    this._scene.scene_id = sceneId;
-    await this._stopPreview();
-    this._scene = null;
-    this._load();
-  }
 }
 
 customElements.define("better-lighting-panel", BetterLightingPanel);

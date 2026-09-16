@@ -131,15 +131,21 @@ The panel renders its forms from the same field tables the settings screens
 render, so the two cannot disagree about what a setting is, and a new setting
 appears in both at once.
 
-It is also the only place scenes are really worth building, because it does the
-two things a configuration form cannot:
+### The scene editor
 
-- **A real colour wheel**, a brightness slider and a temperature slider with the
-  gradient on it — plus a number box beside each, since a slider cannot hit
-  2700 K on purpose.
-- **Show it** applies what you are editing to the actual bulbs as you drag, and
-  puts the room back when you stop. Nothing is saved until you press Save, so a
-  draft you dislike costs you nothing.
+Built in the shape of Home Assistant's own scene editor, with two modes:
+
+- **Live mode** puts the scene on the actual bulbs, and clicking a light opens
+  **Home Assistant's own light dialog** — its colour wheel, its brightness and
+  temperature sliders, its favourite colours. The controls are the ones you
+  already know, because they *are* the ones you already know. Saving reads the
+  lights back, so a scene cannot disagree with what you were looking at.
+- **Review mode** touches nothing: add and remove lights and set how each is
+  treated, without the room changing around you.
+
+Each light in a scene takes the scene, is **switched off**, or is **left alone**
+— and its colour can **follow the sun** while it takes the scene's brightness.
+Leaving live mode puts the room back; nothing is stored until you press Save.
 
 In the scene editor, pick a room, pick a scene or start a new one, and set each light: a brightness,
 a colour, *leave the colour to the sun*, off, or left alone entirely. **Capture

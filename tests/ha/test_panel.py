@@ -469,3 +469,105 @@ class TestEverySettingIsReachable:
         await hass.async_block_till_done()
 
         assert hass.states.get("light.hall") is not None
+
+
+class TestThePanelReplacesTheFlows:
+    """Everything the config flows can do, the panel can do."""
+
+    async def test_colour_presets_can_be_managed(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_hub",
+                "options": {
+                    "color_presets": [
+                        {
+                            "name": "TV orange",
+                            "color_format": "rgb_color",
+                            "rgb_color": [255, 140, 40],
+                        }
+                    ]
+                },
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        assert entry.options["color_presets"][0]["name"] == "TV orange"
+
+    async def test_a_modes_rules_can_be_managed(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_mode",
+                "data": {
+                    "name": "Cinema",
+                    "states": ["playing"],
+                    "rules": [
+                        {
+                            "mode_states": ["playing"],
+                            "zones": zone_id,
+                            "action": "turn_off",
+                        }
+                    ],
+                },
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        mode = next(sub for sub in entry.subentries.values() if sub.title == "Cinema")
+        assert mode.data["rules"][0]["action"] == "turn_off"
+        # And the mode is live, not merely stored.
+        assert hass.states.get("select.cinema_state") is not None
+
+    async def test_a_switchs_cycle_order_can_be_set(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+        zone_id = subentry_ids(entry)["Kitchen"]
+        scene_id = entry.subentries[zone_id].data["scenes"][0]["scene_id"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_zone_collection",
+                "zone_id": zone_id,
+                "key": "switches",
+                "items": [
+                    {
+                        "name": "Door",
+                        "binding_type": "service_only",
+                        "scene_order": [scene_id],
+                    }
+                ],
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        stored = entry.subentries[zone_id].data["switches"][0]
+        assert stored["scene_order"] == [scene_id]
+
+    async def test_the_rule_form_asks_for_its_choices_at_runtime(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """A rule's states come from its mode, its scenes from its room."""
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
+        rule = (await client.receive_json())["result"]["forms"]["rule"]
+        fields = {f["key"]: f for group in rule for f in group["fields"]}
+
+        assert fields["mode_states"]["options_key"] == "mode_states"
+        assert fields["zones"]["options_key"] == "zones"
+        assert fields["scene_id"]["options_key"] == "scenes"

@@ -706,3 +706,19 @@ class TestTwoButtonSwitches:
         await self._push(hass, "off")
 
         assert controller.mode is ZoneMode.OFF
+
+
+async def test_every_zone_button_is_available_without_hunting(
+    hass: HomeAssistant,
+) -> None:
+    """Cycle back and clear-manual used to be off until you went looking."""
+    await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+    await setup_hub(hass, hub_entry())
+
+    for button in (
+        "button.kitchen_cycle",
+        "button.kitchen_cycle_back",
+        "button.kitchen_back_to_adaptive",
+        "button.kitchen_clear_manual_override",
+    ):
+        assert hass.states.get(button) is not None, f"{button} is not enabled"

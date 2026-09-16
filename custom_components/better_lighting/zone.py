@@ -751,7 +751,7 @@ class ZoneController:
 
     async def async_window_opened(self) -> None:
         """Requirement 4: a window is open, so switch to the insect scene."""
-        if not self.zone.insect_scene_id:
+        if self.zone.insect_scene(self.scenes) is None:
             return
         if self.zone.insect_only_when_on and not self._any_member_on():
             # An open window is no reason to light a dark room.
@@ -941,15 +941,14 @@ class ZoneController:
         return (
             self.insect_active
             and not self.insect_dismissed
-            and bool(self.zone.insect_scene_id)
-            and self.zone.insect_scene_id in self.scenes
+            and self.zone.insect_scene(self.scenes) is not None
         )
 
     def active_scene(self) -> Scene | None:
         """The scene the current mode resolves to, if any."""
         mode = self.effective_mode
         if mode is ZoneMode.INSECT:
-            return self.scenes.get(self.zone.insect_scene_id or "")
+            return self.zone.insect_scene(self.scenes)
         if mode is ZoneMode.SCENE:
             return self.scenes.get(self.active_scene_id or "")
         if mode is ZoneMode.NIGHT:

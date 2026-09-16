@@ -59,7 +59,7 @@
     "step": {
       "init": {
         "title": "Better Lighting",
-        "description": "Farbvorlagen:\n\n{presets}",
+        "description": "",
         "menu_options": {
           "defaults": "🌅 Adaptive Standardwerte",
           "night": "🌙 Nachtmodus",
@@ -155,7 +155,9 @@
           "send_split_delay_ms": "Wartezeit zwischen getrennten Befehlen",
           "intercept_member_calls": "Aufrufe direkt an einzelne Lampen abfangen"
         },
-        "data_description": {}
+        "data_description": {
+          "intercept_member_calls": "Aufrufe abfangen, die direkt an eine Lampe dieses Raums gehen. So wird eine Änderung über ein Dashboard oder eine Automatisierung, die den Raum umgeht, als manuelle Änderung erkannt und nicht bei der nächsten Aktualisierung überschrieben."
+        }
       }
     },
     "error": {
@@ -236,7 +238,7 @@
         },
         "scenes": {
           "title": "Szenen",
-          "description": "Szenen in diesem Raum, in der Reihenfolge, in der ein Schalter sie durchschaltet:\n\n{scenes}",
+          "description": "Szenen in diesem Raum:\n\n{scenes}",
           "menu_options": {
             "add_scene": "Szene hinzufügen",
             "capture_scene": "Raum so übernehmen, wie er gerade ist",
@@ -604,7 +606,9 @@
           "data_description": {
             "remember_on_state": "Beim Wiedereinschalten nur die Lampen einschalten, die beim Ausschalten an waren.",
             "brightness_strategy": "Wie aus den eingeschalteten Lampen ein Helligkeitswert gebildet wird.",
-            "color_lights_dark_members": "Standardmäßig aus: Ein Farbwechsel passt das vorhandene Licht an, statt den Raum zu beleuchten. Einschalten, um sich wie die Lichtgruppen von Home Assistant zu verhalten."
+            "color_lights_dark_members": "Standardmäßig aus: Ein Farbwechsel passt das vorhandene Licht an, statt den Raum zu beleuchten. Einschalten, um sich wie die Lichtgruppen von Home Assistant zu verhalten.",
+            "hide_members": "Blendet die einzelnen Lampen in Dashboards und der Suche aus, damit der Raum als Ganzes bedient wird. Sie funktionieren weiterhin, sind nur nicht mehr im Weg.",
+            "expand_light_groups": "Wenn eine der Lampen oben selbst eine Gruppe ist, deren Mitglieder einzeln steuern statt der Gruppe als Ganzes. Nötig, damit Szenen und Abgleich pro Lampe sie erreichen."
           }
         },
         "adaptive": {
@@ -680,19 +684,26 @@
         },
         "insect": {
           "title": "Offene Fenster",
-          "description": "",
+          "description": "Wenn ein Fenster oder eine Tür geöffnet wird, hört dieser Raum auf, anzuziehen, was draußen ist. Sobald wieder geschlossen ist, kehrt er zum Normalzustand zurück.",
           "data": {
             "window_entities": "Tür- und Fenstersensoren",
             "insect_scene_id": "Anzuwendende Szene",
             "insect_only_when_on": "Nur wenn der Raum bereits beleuchtet ist",
             "insect_open_delay": "Wartezeit vor Reaktion auf ein offenes Fenster",
             "insect_close_delay": "Wartezeit vor Reaktion auf ein geschlossenes Fenster",
-            "insect_overridable_by_press": "Ein Tastendruck setzt ihn außer Kraft"
+            "insect_overridable_by_press": "Ein Tastendruck setzt ihn außer Kraft",
+            "insect_action": "Was dieser Raum tut",
+            "insect_color_temp_k": "Farbtemperatur",
+            "insect_rgb_color": "Farbe",
+            "insect_brightness_pct": "Helligkeit"
           },
           "data_description": {
             "insect_scene_id": "Üblicherweise ein tiefes Bernstein, das deutlich weniger Insekten anzieht als weißes Licht.",
             "insect_only_when_on": "Ein offenes Fenster ist kein Grund, einen dunklen Raum zu beleuchten.",
-            "insect_close_delay": "Verhindert, dass ein zuschlagendes Fenster den Raum flackern lässt."
+            "insect_close_delay": "Verhindert, dass ein zuschlagendes Fenster den Raum flackern lässt.",
+            "insect_action": "Motten orientieren sich am Licht und werden von kurzen Wellenlängen angezogen. Warmweiß oder Bernstein zieht deutlich weniger an als das übliche Abendweiß.",
+            "insect_color_temp_k": "Wird verwendet, wenn der Raum auf Warmweiß wechselt.",
+            "insect_rgb_color": "Wird verwendet, wenn der Raum auf Bernstein wechselt."
           }
         },
         "summary": {
@@ -1030,6 +1041,12 @@
     },
     "light": {
       "options": {}
+    },
+    "insect_action": {
+      "scene": "Eine Szene anwenden",
+      "color_temp": "Auf Warmweiß wechseln",
+      "rgb_color": "Auf Bernstein wechseln",
+      "turn_off": "Den Raum ausschalten"
     }
   },
   "entity": {

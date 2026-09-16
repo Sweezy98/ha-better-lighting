@@ -42,12 +42,13 @@ from .const import (
     CONF_MAX_BRIGHTNESS_PCT,
     CONF_MIN_BRIGHTNESS_PCT,
     CONF_NAME,
-    CONF_NIGHT_BEHAVIOR,
     CONF_ON_LIGHTS_ONLY,
     CONF_ON_UNSUPPORTED_COLOR,
     CONF_OTHERS,
     CONF_PRESENCE_ENTITY,
     CONF_PRESET_NAME,
+    CONF_RESTORE_ON_POWER_CYCLE,
+    CONF_RESUME_MAX_AGE_MIN,
     CONF_RGB_COLOR,
     CONF_RULE_ACTION,
     CONF_RULE_ENTRY_ACTION,
@@ -75,6 +76,7 @@ from .const import (
     ZONE_SCENE_SPECS,
     ZONE_SPECS,
     FieldSpec,
+    RestoreOnPowerCycle,
     Section,
     SubentryType,
     mode_rule_specs,
@@ -275,7 +277,7 @@ class BetterLightingOptionsFlow(OptionsFlow):
 
     def _presets_summary(self) -> str:
         if not self._presets:
-            return "(none yet)"
+            return "—"
         lines = []
         for preset in self._presets:
             if preset.get(CONF_COLOR_FORMAT) == CONF_COLOR_TEMP_KELVIN:
@@ -554,7 +556,41 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     async def async_step_power(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        return await self._async_section("power", Section.POWER, user_input)
+        """How the room comes back after the power was cut.
+
+        The "forget the last scene after" limit only means anything when the
+        room is set to resume that scene, so it is shown only then -- and
+        choosing to resume re-renders this screen rather than making somebody
+        come back to it to find the field that has just appeared.
+        """
+        errors: dict[str, str] = {}
+        resumes = (
+            self._data.get(CONF_RESTORE_ON_POWER_CYCLE)
+            == RestoreOnPowerCycle.LAST_SCENE.value
+        )
+        if user_input is not None:
+            cleaned, errors = post_validate(ZONE_SPECS, user_input)
+            if not errors:
+                self._data |= cleaned
+                now_resumes = (
+                    cleaned.get(CONF_RESTORE_ON_POWER_CYCLE)
+                    == RestoreOnPowerCycle.LAST_SCENE.value
+                )
+                if now_resumes and not resumes:
+                    return await self.async_step_power()
+                return await self.async_step_menu()
+
+        specs = tuple(
+            spec
+            for spec in ZONE_SPECS
+            if spec.section is Section.POWER
+            and (resumes or spec.key != CONF_RESUME_MAX_AGE_MIN)
+        )
+        return self.async_show_form(
+            step_id="power",
+            data_schema=build_schema(specs, user_input or self._data, flat=True),
+            errors=errors,
+        )
 
     async def async_step_presence(
         self, user_input: dict[str, Any] | None = None
@@ -577,19 +613,20 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         )
 
     def _summary(self) -> str:
+        # Symbols rather than words: a description placeholder is substituted
+        # verbatim and never translated, so anything written in English here
+        # would stay English in every language.
         lights = self._data.get(CONF_LIGHTS) or ()
-        night = self._data.get(CONF_NIGHT_BEHAVIOR, "min_settings")
         lines = [
-            f"Lights: {len(lights)}",
-            f"Scenes: {len(self._scenes)}",
-            f"Switches: {len(self._switches)}",
-            f"Calibrated lights: {len(self._profiles)}",
-            f"Night mode: {night}",
+            f"💡 {len(lights)}",
+            f"🎨 {len(self._scenes)}",
+            f"🎚️ {len(self._switches)}",
+            f"📐 {len(self._profiles)}",
         ]
         if presence := self._data.get(CONF_PRESENCE_ENTITY):
-            lines.append(f"Presence: {presence}")
+            lines.append(f"🚶 {presence}")
         if windows := self._data.get(CONF_WINDOW_ENTITIES):
-            lines.append(f"Windows watched: {len(windows)}")
+            lines.append(f"🪟 {len(windows)}")
         return "\n".join(lines)
 
     # -- the room's own menu ----------------------------------------------
@@ -638,19 +675,19 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
 
     def _scenes_summary(self) -> str:
         if not self._scenes:
-            return "(none yet)"
+            return "—"
         lines = []
-        for index, scene in enumerate(self._scenes, start=1):
+        for scene in self._scenes:
             lights = scene.get(CONF_SCENE_LIGHTS) or {}
             named = len([key for key in lights if key != ALL_LIGHTS])
             detail = []
             if ALL_LIGHTS in lights:
-                detail.append("all lights")
+                detail.append("💡*")
             if named:
-                detail.append(f"{named} named")
+                detail.append(f"💡{named}")
             lines.append(
-                f"{index}. {scene.get(CONF_NAME)}"
-                + (f" ({', '.join(detail)})" if detail else " (nothing set)")
+                f"{scene.get(CONF_NAME)}"
+                + (f" — {', '.join(detail)}" if detail else "")
             )
         return "\n".join(lines)
 
@@ -890,30 +927,30 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     def _lights_summary(self) -> str:
         lights = self._scene.get(CONF_SCENE_LIGHTS) or {}
         if not lights:
-            return "(nothing set — this scene would leave the room adaptive)"
+            return "—"
         lines = []
         for entity_id, entry in lights.items():
-            label = "all lights" if entity_id == ALL_LIGHTS else entity_id
+            label = "💡 *" if entity_id == ALL_LIGHTS else entity_id
             action = entry.get(CONF_LIGHT_ACTION, "apply")
             if action == "off":
-                lines.append(f"{label}: off")
+                lines.append(f"{label}: ⭘")
                 continue
             if action == "leave":
-                lines.append(f"{label}: left alone")
+                lines.append(f"{label}: ↷")
                 continue
             parts = []
             if (brightness := entry.get(CONF_BRIGHTNESS_PCT)) is not None:
                 parts.append(f"{int(brightness)}%")
             fmt = entry.get(CONF_COLOR_FORMAT, COLOR_FORMAT_INHERIT)
             if fmt == COLOR_FORMAT_NONE:
-                parts.append("colour stays adaptive")
+                parts.append("☀")
             elif fmt == CONF_COLOR_TEMP_KELVIN and entry.get(CONF_COLOR_TEMP_KELVIN):
                 parts.append(f"{entry[CONF_COLOR_TEMP_KELVIN]} K")
             elif fmt == CONF_RGB_COLOR and entry.get(CONF_RGB_COLOR):
                 parts.append("RGB " + ",".join(str(v) for v in entry[CONF_RGB_COLOR]))
             elif fmt != COLOR_FORMAT_INHERIT:
                 parts.append(str(fmt).replace("_", " "))
-            lines.append(f"{label}: {', '.join(parts) or 'nothing set'}")
+            lines.append(f"{label}: {', '.join(parts) or '—'}")
         return "\n".join(lines)
 
     async def async_step_add_light(
@@ -937,7 +974,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
                 return await self.async_step_scene_lights()
 
         available: list[SelectOptionDict] = [
-            SelectOptionDict(value=ALL_LIGHTS, label="All lights in this room")
+            SelectOptionDict(value=ALL_LIGHTS, label="💡 *")
         ]
         available += [
             SelectOptionDict(value=entity_id, label=entity_id)
@@ -1056,9 +1093,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
                                 {
                                     "value": entity_id,
                                     "label": (
-                                        "All lights in this room"
-                                        if entity_id == ALL_LIGHTS
-                                        else entity_id
+                                        "💡 *" if entity_id == ALL_LIGHTS else entity_id
                                     ),
                                 }
                                 for entity_id in lights
@@ -1101,7 +1136,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
 
     def _calibrations_summary(self) -> str:
         if not self._profiles:
-            return "(none: every light follows the room own limits)"
+            return "—"
         lines = []
         for profile in self._profiles:
             parts = []
@@ -1231,7 +1266,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
 
     def _switches_summary(self) -> str:
         if not self._switches:
-            return "(none: a plain wall switch still cycles this room)"
+            return "—"
         names = {
             str(scene.get(CONF_SCENE_ID)): str(scene.get(CONF_NAME))
             for scene in self._scenes
@@ -1242,10 +1277,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
                 names.get(scene_id, scene_id)
                 for scene_id in (switch.get(CONF_SCENE_ORDER) or ())
             ]
-            lines.append(
-                f"{switch.get(CONF_NAME)}: "
-                + (" -> ".join(["Adaptive", *order]) if order else "Adaptive only")
-            )
+            lines.append(f"{switch.get(CONF_NAME)}: " + " → ".join(["☀", *order]))
         return "\n".join(lines)
 
     def _switch_picker(self) -> vol.Schema:
@@ -1352,7 +1384,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             str(scene.get(CONF_SCENE_ID)): str(scene.get(CONF_NAME))
             for scene in self._scenes
         }
-        lines = ["1. Adaptive"]
+        lines = ["1. ☀"]
         for index, scene_id in enumerate(self._order, start=2):
             lines.append(f"{index}. {names.get(scene_id, scene_id)}")
         return "\n".join(lines)

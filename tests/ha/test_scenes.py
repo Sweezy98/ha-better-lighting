@@ -688,5 +688,51 @@ class TestTheMenuIsTheHub:
             result["flow_id"], {"next_step_id": "summary"}
         )
         summary = result["description_placeholders"]["summary"]
-        assert "Lights: 1" in summary
-        assert "Scenes: 0" in summary
+        # Symbols, not words: a placeholder is never translated, so English
+        # prose here would stay English in every language.
+        assert "💡 1" in summary
+        assert "🎨 0" in summary
+
+
+class TestConditionalAndDescribedFields:
+    async def _open(self, hass: HomeAssistant, step: str):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = await setup_hub(
+            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+        )
+        result = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SubentryType.ZONE.value),
+            context={"source": config_entries.SOURCE_USER},
+        )
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+        )
+        return await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"next_step_id": step}
+        )
+
+    @staticmethod
+    def _keys(result) -> set[str]:
+        return {str(key.schema) for key in result["data_schema"].schema}
+
+    async def test_the_resume_limit_is_hidden_until_it_applies(
+        self, hass: HomeAssistant
+    ) -> None:
+        result = await self._open(hass, "power")
+        assert "resume_max_age_minutes" not in self._keys(result)
+
+        result = await hass.config_entries.subentries.async_configure(
+            result["flow_id"], {"restore_on_power_cycle": "last_scene"}
+        )
+
+        # Choosing to resume re-opens the screen with the field that now means
+        # something, rather than making the user come back for it.
+        assert result["step_id"] == "power"
+        assert "resume_max_age_minutes" in self._keys(result)
+
+    async def test_insect_mode_offers_more_than_a_scene(
+        self, hass: HomeAssistant
+    ) -> None:
+        result = await self._open(hass, "insect")
+        keys = self._keys(result)
+        assert {"insect_action", "insect_color_temp_k", "insect_rgb_color"} <= keys

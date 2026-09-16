@@ -196,9 +196,20 @@ def _pct(minimum: int = 1, maximum: int = 100) -> Any:
 
 
 def _kelvin() -> Any:
-    return selector.ColorTempSelector(
-        selector.ColorTempSelectorConfig(
-            unit=selector.ColorTempSelectorUnit.KELVIN, min=1000, max=10000
+    """A colour temperature, typed rather than dragged.
+
+    The gradient slider looks better and is useless for the job: these are
+    limits, and hitting exactly 2700 K on a 9000-wide slider is luck. The
+    picker belongs where a colour is being *chosen*, not where a bound is
+    being set.
+    """
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=1000,
+            max=10000,
+            step=50,
+            unit_of_measurement="K",
+            mode=selector.NumberSelectorMode.BOX,
         )
     )
 
@@ -1081,7 +1092,41 @@ CONF_INSECT_OPEN_DELAY = "insect_open_delay"
 CONF_INSECT_CLOSE_DELAY = "insect_close_delay"
 CONF_INSECT_OVERRIDABLE = "insect_overridable_by_press"
 
+
+class InsectAction(StrEnum):
+    """What an open window does to a room.
+
+    Moths navigate by light and are drawn to short wavelengths, so the useful
+    answers are "go amber" and "go dark" -- which is why this is not simply a
+    scene picker.
+    """
+
+    SCENE = "scene"
+    COLOR_TEMP = "color_temp"
+    RGB_COLOR = "rgb_color"
+    TURN_OFF = "turn_off"
+
+
+CONF_INSECT_ACTION = "insect_action"
+CONF_INSECT_COLOR_TEMP_K = "insect_color_temp_k"
+CONF_INSECT_RGB_COLOR = "insect_rgb_color"
+CONF_INSECT_BRIGHTNESS_PCT = "insect_brightness_pct"
+
 ZONE_INSECT_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_INSECT_ACTION,
+        InsectAction.COLOR_TEMP.value,
+        _select([a.value for a in InsectAction], "insect_action"),
+        section=Section.INSECT,
+    ),
+    FieldSpec(CONF_INSECT_COLOR_TEMP_K, 2000, _kelvin(), section=Section.INSECT),
+    FieldSpec(
+        CONF_INSECT_RGB_COLOR,
+        [255, 140, 40],
+        selector.ColorRGBSelector(),
+        section=Section.INSECT,
+    ),
+    FieldSpec(CONF_INSECT_BRIGHTNESS_PCT, 30, _pct(), section=Section.INSECT),
     FieldSpec(
         CONF_WINDOW_ENTITIES,
         [],

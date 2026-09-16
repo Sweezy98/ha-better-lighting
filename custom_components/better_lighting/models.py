@@ -69,10 +69,14 @@ from .const import (
     CONF_ICON,
     CONF_IGNORE_PRESENCE,
     CONF_INITIAL_TRANSITION,
+    CONF_INSECT_ACTION,
+    CONF_INSECT_BRIGHTNESS_PCT,
     CONF_INSECT_CLOSE_DELAY,
+    CONF_INSECT_COLOR_TEMP_K,
     CONF_INSECT_ONLY_WHEN_ON,
     CONF_INSECT_OPEN_DELAY,
     CONF_INSECT_OVERRIDABLE,
+    CONF_INSECT_RGB_COLOR,
     CONF_INSECT_SCENE,
     CONF_INTERCEPT_MEMBER_CALLS,
     CONF_INTERVAL,
@@ -160,6 +164,7 @@ from .const import (
     BindingType,
     BrightnessMode,
     CoverCondition,
+    InsectAction,
     NightBehavior,
     OptedOutOnExit,
     PresenceOffAction,
@@ -174,6 +179,7 @@ from .const import (
 from .cycle import AdaptivePosition, CycleConfig, ForeignPolicy, build_cycle
 from .profiles import LightProfile
 from .scenes import (
+    ALL_LIGHTS,
     OthersPolicy,
     Scene,
     SceneLightSpec,
@@ -326,7 +332,11 @@ class ZoneConfig:
 
     # Requirement 4: a window is open, so stop attracting everything outside.
     window_entities: tuple[str, ...]
+    insect_action: InsectAction
     insect_scene_id: str | None
+    insect_color_temp_k: int
+    insect_rgb_color: tuple[int, int, int]
+    insect_brightness_pct: float
     insect_only_when_on: bool
     insect_open_delay: int
     insect_close_delay: int
@@ -336,6 +346,36 @@ class ZoneConfig:
     def slug(self) -> str:
         """Human-facing id for service calls and logs. Never a stored reference."""
         return slugify(self.name)
+
+    def insect_scene(self, scenes: Mapping[str, Scene]) -> Scene | None:
+        """What this room looks like while a window is open.
+
+        Only one of the four answers is a scene; the others are built here so
+        "go amber" does not oblige somebody to define a scene they will never
+        pick from a menu.
+        """
+        match self.insect_action:
+            case InsectAction.SCENE:
+                return scenes.get(self.insect_scene_id or "")
+            case InsectAction.TURN_OFF:
+                spec = SceneLightSpec(turn_off=True)
+            case InsectAction.RGB_COLOR:
+                spec = SceneLightSpec(
+                    brightness_pct=self.insect_brightness_pct,
+                    color={CONF_RGB_COLOR: tuple(self.insect_rgb_color)},
+                )
+            case _:
+                spec = SceneLightSpec(
+                    brightness_pct=self.insect_brightness_pct,
+                    color={CONF_COLOR_TEMP_KELVIN: self.insect_color_temp_k},
+                )
+        return Scene(
+            scene_id=f"{self.subentry_id}:insect",
+            name="Insect mode",
+            icon="mdi:bee",
+            lights={ALL_LIGHTS: spec},
+            zones=frozenset({self.subentry_id}),
+        )
 
     @classmethod
     def from_subentry(cls, subentry: ConfigSubentry) -> Self:
@@ -397,7 +437,13 @@ class ZoneConfig:
             presence_off_action=PresenceOffAction(raw[CONF_PRESENCE_OFF_ACTION]),
             presence_respects_manual=bool(raw[CONF_PRESENCE_RESPECTS_MANUAL]),
             window_entities=tuple(raw.get(CONF_WINDOW_ENTITIES) or ()),
+            insect_action=InsectAction(
+                raw.get(CONF_INSECT_ACTION, InsectAction.COLOR_TEMP.value)
+            ),
             insect_scene_id=raw.get(CONF_INSECT_SCENE) or None,
+            insect_color_temp_k=int(raw.get(CONF_INSECT_COLOR_TEMP_K, 2000)),
+            insect_rgb_color=tuple(raw.get(CONF_INSECT_RGB_COLOR) or (255, 140, 40)),
+            insect_brightness_pct=float(raw.get(CONF_INSECT_BRIGHTNESS_PCT, 30)),
             insect_only_when_on=bool(raw[CONF_INSECT_ONLY_WHEN_ON]),
             insect_open_delay=int(raw[CONF_INSECT_OPEN_DELAY]),
             insect_close_delay=int(raw[CONF_INSECT_CLOSE_DELAY]),

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from homeassistant.components.event import EventEntity
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import BetterLightingConfigEntry
@@ -44,23 +44,17 @@ class ControllerPressEvent(EventEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _attr_translation_key = "controller_press"
     _attr_icon = "mdi:gesture-tap-button"
     _attr_event_types = PRESS_KINDS
 
     def __init__(self, controller: ControllerConfig, zone_name: str) -> None:
         self.controller = controller
         self._attr_unique_id = f"{controller.subentry_id}_press"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, controller.subentry_id)},
-            name=f"{zone_name} - {controller.name}",
-            manufacturer="Better Lighting",
-            model="Controller",
-            entry_type=DeviceEntryType.SERVICE,
-            # Nested under the room's own device, so the switch reads as part
-            # of the room rather than as something standing beside it.
-            via_device=(DOMAIN, controller.zone_id),
-        )
+        # The room's own device, not one of the switch's own. A switch has no
+        # hardware of ours behind it, and giving it a device of its own meant
+        # deleting the switch left an empty device and a dead entity behind.
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, controller.zone_id)})
+        self._attr_name = controller.name
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()

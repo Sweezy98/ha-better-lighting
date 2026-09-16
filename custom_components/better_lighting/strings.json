@@ -59,7 +59,7 @@
     "step": {
       "init": {
         "title": "Better Lighting",
-        "description": "Colour presets:\n\n{presets}",
+        "description": "",
         "menu_options": {
           "defaults": "🌅 Adaptive defaults",
           "night": "🌙 Night mode",
@@ -155,7 +155,9 @@
           "send_split_delay_ms": "Delay between split commands",
           "intercept_member_calls": "Intercept calls made directly to member lights"
         },
-        "data_description": {}
+        "data_description": {
+          "intercept_member_calls": "Catch calls aimed straight at one of this room's lights, so a dashboard or automation that bypasses the room is still noticed as a manual change rather than being overwritten at the next update."
+        }
       }
     },
     "error": {
@@ -236,7 +238,7 @@
         },
         "scenes": {
           "title": "Scenes",
-          "description": "Scenes in this room, in the order a switch cycles them:\n\n{scenes}",
+          "description": "Scenes in this room:\n\n{scenes}",
           "menu_options": {
             "add_scene": "Add a scene",
             "capture_scene": "Capture the room as it is now",
@@ -604,7 +606,9 @@
           "data_description": {
             "remember_on_state": "When the zone is switched back on, light only the lights that were on when it was switched off.",
             "brightness_strategy": "How one brightness value is derived from the lights that are on.",
-            "color_lights_dark_members": "Off by default: changing a room's colour adjusts the light that is there rather than lighting the room. Turn this on to match how Home Assistant's own light groups behave."
+            "color_lights_dark_members": "Off by default: changing a room's colour adjusts the light that is there rather than lighting the room. Turn this on to match how Home Assistant's own light groups behave.",
+            "hide_members": "Hides the individual lights from dashboards and search, so the room is controlled as one thing. They keep working; they are only out of the way.",
+            "expand_light_groups": "If one of the lights above is itself a group, control its members individually rather than the group as a whole. Needed for per-light scenes and calibration to reach them."
           }
         },
         "adaptive": {
@@ -680,19 +684,26 @@
         },
         "insect": {
           "title": "Open windows",
-          "description": "",
+          "description": "When a window or door opens, this room stops attracting whatever is outside. It goes back to normal once the opening is closed again.",
           "data": {
             "window_entities": "Door and window sensors",
             "insect_scene_id": "Scene to apply",
             "insect_only_when_on": "Only if the room is already lit",
             "insect_open_delay": "Wait before reacting to an open window",
             "insect_close_delay": "Wait before reacting to a closed window",
-            "insect_overridable_by_press": "A switch press overrides it"
+            "insect_overridable_by_press": "A switch press overrides it",
+            "insect_action": "What this room does",
+            "insect_color_temp_k": "Colour temperature",
+            "insect_rgb_color": "Colour",
+            "insect_brightness_pct": "Brightness"
           },
           "data_description": {
             "insect_scene_id": "Usually something deep amber, which attracts far fewer insects than white light.",
             "insect_only_when_on": "An open window is no reason to light a dark room.",
-            "insect_close_delay": "Stops a slamming window flickering the room."
+            "insect_close_delay": "Stops a slamming window flickering the room.",
+            "insect_action": "Moths navigate by light and are drawn to short wavelengths, so warm or amber attracts far less than the usual evening white.",
+            "insect_color_temp_k": "Used when the room goes warm.",
+            "insect_rgb_color": "Used when the room goes amber."
           }
         },
         "summary": {
@@ -1030,6 +1041,12 @@
     },
     "light": {
       "options": {}
+    },
+    "insect_action": {
+      "scene": "Apply a scene",
+      "color_temp": "Go warm",
+      "rgb_color": "Go amber",
+      "turn_off": "Switch the room off"
     }
   },
   "entity": {

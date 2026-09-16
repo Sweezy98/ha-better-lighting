@@ -129,7 +129,10 @@ whichever you prefer.
 
 The panel renders its forms from the same field tables the settings screens
 render, so the two cannot disagree about what a setting is, and a new setting
-appears in both at once.
+appears in both at once. Each field is drawn by **Home Assistant's own
+controls** — its entity and icon pickers, its toggles, its dropdowns — so the
+page behaves like the rest of Home Assistant rather than like an imitation of
+it.
 
 ### Importing Home Assistant's scenes
 
@@ -166,8 +169,9 @@ which is usually faster than setting anything by hand.
 
 Navigation is a room at a time: pick a room and its sections appear beneath it
 — lights, group behaviour, adaptive, night, power cycle, presence, open
-windows — followed by its scenes, switches and calibration. Modes and the
-global settings sit below the rooms.
+windows — followed by its scenes, switches and calibration. Modes, the colour
+presets, the global settings and the diagnostics page sit below the rooms, and
+a breadcrumb above the content says where you are with one way back.
 
 ---
 

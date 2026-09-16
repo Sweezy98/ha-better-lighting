@@ -252,13 +252,12 @@ def test_the_panel_covers_every_settings_surface() -> None:
     a surface added to the flows and forgotten on the page.
     """
     panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
-    # Naming, creating and deleting a room are Home Assistant's own flow, so
-    # they are deliberately absent here.
     surfaces = {
         "global settings": '"hub"',
         "colour presets": "_paintPresets",
         "add a room": "add-room",
         "room settings": "_paintRoomSection",
+        "delete a room": "delete_zone",
         "scenes": "_paintEditor",
         "capture a scene": "_captureRoom",
         "switches": '"switch"',
@@ -338,7 +337,7 @@ def test_home_assistants_controls_are_used_but_not_relied_on() -> None:
         assert "customElements.get(tag)" in panel_js
 
     # Every borrowed control we rely on is actually reached for somewhere.
-    for tag in ("ha-entity-picker", "ha-switch", "ha-icon-picker"):
+    for tag in ("ha-selector", "ha-entity-picker", "ha-switch", "ha-icon-picker"):
         assert tag in panel_js, f"{tag} is not used"
 
     # And the fallbacks are still there.

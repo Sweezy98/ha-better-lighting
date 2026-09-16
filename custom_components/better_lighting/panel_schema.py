@@ -41,10 +41,8 @@ _LOGGER = logging.getLogger(__name__)
 # The order the panel shows a room's sections in: what it is, what it does by
 # itself, then what it does about people and windows. Same grouping as the
 # menu, because somebody who learned one should not have to learn the other.
-# Section.BASIC is deliberately absent: a room's name, its lights and its icon
-# are what Home Assistant's own add-and-reconfigure flow is for, and two places
-# to rename a room is one too many.
 ZONE_SECTIONS: tuple[Section, ...] = (
+    Section.BASIC,
     Section.GROUP,
     Section.ADAPTIVE,
     Section.NIGHT,
@@ -71,8 +69,17 @@ def _selector_kind(widget: Any) -> str:
 
 
 def describe(spec: FieldSpec) -> dict[str, Any]:
-    """One field, as the panel needs it."""
+    """One field, as the panel needs it.
+
+    Carries the selector twice over. ``selector`` is the config verbatim, in
+    the shape Home Assistant's own ha-selector takes, so the panel can hand a
+    field straight to the component that renders it everywhere else -- chips
+    for a multi-select, its entity picker, its sliders. The flattened keys
+    beside it drive the plain controls that stand in when that component
+    cannot be had.
+    """
     config = dict(getattr(spec.selector, "config", {}) or {})
+    selector_type = getattr(type(spec.selector), "selector_type", None)
     field: dict[str, Any] = {
         "key": spec.key,
         "kind": _selector_kind(spec.selector),
@@ -80,6 +87,8 @@ def describe(spec: FieldSpec) -> dict[str, Any]:
         "required": spec.required,
         "section": spec.section.value,
     }
+    if selector_type:
+        field["selector"] = {selector_type: config}
     if spec.options_key:
         # Filled in by the panel from the room or hub it is editing.
         field["options_key"] = spec.options_key
@@ -230,36 +239,59 @@ def _runtime_choices(
     return table
 
 
+def _localise_options(
+    forms: dict[str, Any], option_labels: dict[str, dict[str, str]]
+) -> None:
+    """Put our own words into the selectors we hand to Home Assistant.
+
+    Its select renders a bare value unless the options carry labels, and it
+    has no way to reach a custom integration's translations on its own -- so
+    they are written in here, where they are already loaded.
+    """
+    for form in forms.values():
+        for group in form:
+            for field in group["fields"]:
+                config = (field.get("selector") or {}).get("select")
+                if not config:
+                    continue
+                labels = option_labels.get(config.get("translation_key") or "")
+                if not labels:
+                    continue
+                config["options"] = [
+                    {"value": value, "label": labels.get(value, value)}
+                    for value in config.get("options") or ()
+                ]
+
+
 def schema(language: str = "en") -> dict[str, Any]:
     """Every form the panel can draw, plus the words to draw it with."""
-    return {
-        "ui": ui_strings(language),
-        "labels": labels(language),
-        "forms": {
-            "hub": _table(HUB_SPECS, HUB_SECTIONS),
-            "zone": _table(ZONE_SPECS, ZONE_SECTIONS),
-            "mode": _table(MODE_SPECS),
-            # The room a switch is in is implicit now that it lives inside
-            # one, and its running order is edited as a list rather than a
-            # field -- same two omissions the settings screen makes.
-            "switch": _table(
-                tuple(
-                    spec
-                    for spec in CONTROLLER_SPECS
-                    if spec.key not in (CONF_ZONE_ID, CONF_SCENE_ORDER)
-                ),
-                SWITCH_SECTIONS,
+    words = labels(language)
+    forms = {
+        "hub": _table(HUB_SPECS, HUB_SECTIONS),
+        "zone": _table(ZONE_SPECS, ZONE_SECTIONS),
+        "mode": _table(MODE_SPECS),
+        # The room a switch is in is implicit now that it lives inside one,
+        # and its running order is edited as a list rather than a field --
+        # the same two omissions the settings screen makes.
+        "switch": _table(
+            tuple(
+                spec
+                for spec in CONTROLLER_SPECS
+                if spec.key not in (CONF_ZONE_ID, CONF_SCENE_ORDER)
             ),
-            "calibration": _table(LIGHT_PROFILE_SPECS),
-            "scene": _table(ZONE_SCENE_SPECS),
-            "preset": _table(COLOR_PRESET_SPECS),
-            # Rules are built per mode, since their state picker depends on
-            # the states that mode defines, and their scene picker on the room
-            # the rule names. Both are marked as runtime choices so the panel
-            # fills them from the mode and room in hand.
-            "rule": _runtime_choices(
-                _table(mode_rule_specs([])),
-                {CONF_RULE_STATES: "mode_states"},
-            ),
-        },
+            SWITCH_SECTIONS,
+        ),
+        "calibration": _table(LIGHT_PROFILE_SPECS),
+        "scene": _table(ZONE_SCENE_SPECS),
+        "preset": _table(COLOR_PRESET_SPECS),
+        # Rules are built per mode, since their state picker depends on the
+        # states that mode defines, and their scene picker on the room the
+        # rule names. Both are marked as runtime choices so the panel fills
+        # them from the mode and room in hand.
+        "rule": _runtime_choices(
+            _table(mode_rule_specs([])),
+            {CONF_RULE_STATES: "mode_states"},
+        ),
     }
+    _localise_options(forms, words["options"])
+    return {"ui": ui_strings(language), "labels": words, "forms": forms}

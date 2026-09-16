@@ -78,5 +78,6 @@
   "sunrise": "sunrise",
   "sunset": "sunset",
   "sending_now": "What each light would be sent now",
-  "pick_a_room": "Pick a room to see its curve."
+  "pick_a_room": "Pick a room to see its curve.",
+  "cancel": "Cancel"
 }

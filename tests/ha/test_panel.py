@@ -671,20 +671,21 @@ class TestThePanelScriptIsNotCachedForever:
         ]
         assert fields["insect_rgb_color"]["depends_on"]["values"] == ["rgb_color"]
 
-    async def test_a_rooms_name_is_not_editable_here(
+    async def test_a_room_can_be_named_and_given_its_lights_here(
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
-        """Two places to rename a room is one too many."""
+        """Held back only while the pickers were plain dropdowns."""
         _entry, client = await _setup(hass, hass_ws_client)
 
         await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
         zone = (await client.receive_json())["result"]["forms"]["zone"]
-        keys = {f["key"] for group in zone for f in group["fields"]}
+        fields = {f["key"]: f for group in zone for f in group["fields"]}
 
-        assert "name" not in keys
-        assert "lights" not in keys
-        # What the flow does not cover is still here.
-        assert "night_behavior" in keys
+        assert fields["lights"]["kind"] == "entity"
+        assert fields["lights"]["multiple"] is True
+        assert fields["icon"]["kind"] == "icon"
+        assert fields["area_id"]["kind"] == "area"
+        assert "night_behavior" in fields
 
     async def test_the_section_headings_are_translated(
         self, hass: HomeAssistant, hass_ws_client
@@ -799,3 +800,49 @@ class TestThePanelScriptIsNotCachedForever:
 
         assert result["config"]["max_brightness_pct"] == 40
         assert max(s["brightness_pct"] for s in result["samples"]) <= 40
+
+    async def test_every_field_carries_a_selector_home_assistant_can_render(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """So the panel can hand a field to the component HA uses elsewhere."""
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
+        forms = (await client.receive_json())["result"]["forms"]
+
+        for name, form in forms.items():
+            for group in form:
+                for field in group["fields"]:
+                    selector = field.get("selector")
+                    assert selector, f"{name}.{field['key']} has no selector"
+                    assert len(selector) == 1, f"{name}.{field['key']} is ambiguous"
+
+    async def test_a_multi_select_keeps_its_custom_values(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """The words a button publishes are its own; ours are only a start."""
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
+        switch = (await client.receive_json())["result"]["forms"]["switch"]
+        fields = {f["key"]: f for group in switch for f in group["fields"]}
+
+        config = fields["press_states"]["selector"]["select"]
+        assert config["multiple"] is True
+        assert config["custom_value"] is True
+
+    async def test_select_options_carry_our_own_translations(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """Home Assistant cannot reach a custom integration's strings, so the
+        labels travel inside the selector."""
+        _entry, client = await _setup(hass, hass_ws_client)
+
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/schema", "language": "de"})
+        zone = (await client.receive_json())["result"]["forms"]["zone"]
+        fields = {f["key"]: f for group in zone for f in group["fields"]}
+
+        options = fields["night_behavior"]["selector"]["select"]["options"]
+        assert all(isinstance(option, dict) for option in options)
+        by_value = {option["value"]: option["label"] for option in options}
+        assert by_value["scene"] == "Eine Nachtszene anwenden"

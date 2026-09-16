@@ -78,5 +78,6 @@
   "sunrise": "Sonnenaufgang",
   "sunset": "Sonnenuntergang",
   "sending_now": "Was jede Lampe jetzt bekäme",
-  "pick_a_room": "Einen Raum auswählen, um seinen Verlauf zu sehen."
+  "pick_a_room": "Einen Raum auswählen, um seinen Verlauf zu sehen.",
+  "cancel": "Abbrechen"
 }

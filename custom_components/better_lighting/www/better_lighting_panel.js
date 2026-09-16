@@ -318,7 +318,16 @@ let controlsReady;
 function ensureHaControls() {
   if (controlsReady) return controlsReady;
   controlsReady = (async () => {
-    const wanted = ["ha-entity-picker", "ha-switch", "ha-icon-picker"];
+    // ha-selector renders every field the way Home Assistant renders it
+    // everywhere else -- chips for a multi-select, its own pickers, its own
+    // sliders. The rest are what the fallbacks reach for when it is absent.
+    const wanted = [
+      "ha-selector",
+      "ha-entity-picker",
+      "ha-switch",
+      "ha-icon-picker",
+      "ha-area-picker",
+    ];
     if (wanted.every((tag) => customElements.get(tag))) return true;
     try {
       const helpers = await window.loadCardHelpers?.();
@@ -466,12 +475,12 @@ class BlForm extends HTMLElement {
         .import { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
                   padding:12px 0; border-top:1px solid var(--divider-color,#e0e0e0); }
         .import .chip { gap:6px; }
-        #crumbs:empty { display:none; }
-        #crumbs { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+        #crumbs { display:flex; min-height:34px; align-items:center; gap:10px; margin-bottom:12px; }
         .crumb-back { background:var(--card-background-color); color:inherit;
                       border:1px solid var(--divider-color,#ccc); border-radius:8px;
                       width:34px; height:34px; padding:0; font-size:20px;
                       line-height:1; cursor:pointer; flex:0 0 auto; }
+        .crumb-back[disabled] { opacity:.35; cursor:default; }
         .crumb-trail { color:var(--secondary-text-color); font-size:14px; }
         details.diag { border-top:1px solid var(--divider-color,#e0e0e0); }
         details.diag table { width:100%; border-collapse:collapse; margin:4px 0 12px; }
@@ -511,6 +520,12 @@ class BlForm extends HTMLElement {
   }
 
   _control(field, value) {
+    // Home Assistant's own renderer first: it is the control people already
+    // use for this exact selector, down to the chips-with-an-add-button that
+    // a multi-select with custom values gets.
+    const native = this._nativeControl(field, value);
+    if (native) return native;
+
     switch (field.kind) {
       case "boolean": {
         const box = document.createElement("div");
@@ -589,6 +604,19 @@ class BlForm extends HTMLElement {
         const options = this._choicesFor(field);
         return this._plainSelect(field, value, options);
       }
+      case "area": {
+        if (this._hass && customElements.get("ha-area-picker")) {
+          const picker = document.createElement("ha-area-picker");
+          picker.hass = this._hass;
+          picker.value = value ?? "";
+          picker.addEventListener("value-changed", (event) => {
+            event.stopPropagation();
+            this._set(field.key, event.detail.value);
+          });
+          return picker;
+        }
+        return this._plainText(field, value);
+      }
       case "icon": {
         // Home Assistant's icon picker: it searches, previews and knows every
         // mdi name, which a text field emphatically does not.
@@ -617,6 +645,38 @@ class BlForm extends HTMLElement {
       default:
         return this._plainText(field, value);
     }
+  }
+
+  /**
+   * The field as Home Assistant would render it, or nothing.
+   *
+   * Runtime choices are spliced in here rather than sent from the backend:
+   * which scenes a room has is not knowable when the schema is built.
+   */
+  _nativeControl(field, value) {
+    if (!this._hass || !field.selector || !customElements.get("ha-selector")) {
+      return null;
+    }
+    let selector = field.selector;
+    if (field.options_key) {
+      const options = (this._choices[field.options_key] || []).map((choice) => ({
+        value: choice.value,
+        label: choice.label,
+      }));
+      if (!options.length) return null;
+      const [[kind, config]] = Object.entries(selector);
+      selector = { [kind]: { ...config, options } };
+    }
+
+    const element = document.createElement("ha-selector");
+    element.hass = this._hass;
+    element.selector = selector;
+    element.value = value ?? undefined;
+    element.addEventListener("value-changed", (event) => {
+      event.stopPropagation();
+      this._set(field.key, event.detail.value);
+    });
+    return element;
   }
 
   /** The fallback for anything with no better control: a text field. */
@@ -834,6 +894,72 @@ class BetterLightingPanel extends HTMLElement {
 
   get _mode() {
     return this._modes.find((mode) => mode.id === this._modeId) || null;
+  }
+
+  /**
+   * A standalone choice, drawn the way Home Assistant draws one.
+   *
+   * The forms get this through ha-selector already; the pickers built by
+   * hand -- add a light, add a scene to a switch's order, what a light does
+   * in a scene -- did not, and looked it.
+   */
+  _choiceControl(options, value, onChange, placeholder) {
+    if (this._hass && customElements.get("ha-selector")) {
+      const element = document.createElement("ha-selector");
+      element.hass = this._hass;
+      element.selector = { select: { options, mode: "dropdown", sort: false } };
+      element.value = value ?? undefined;
+      if (placeholder) element.label = placeholder;
+      element.addEventListener("value-changed", (event) => {
+        event.stopPropagation();
+        if (event.detail.value !== undefined) onChange(event.detail.value);
+      });
+      return element;
+    }
+    const select = document.createElement("select");
+    select.innerHTML =
+      (placeholder ? `<option value="">${placeholder}</option>` : "") +
+      options
+        .map(
+          (option) =>
+            `<option value="${option.value}" ${
+              option.value === value ? "selected" : ""
+            }>${option.label}</option>`
+        )
+        .join("");
+    select.addEventListener("change", () => {
+      if (select.value) onChange(select.value);
+    });
+    return select;
+  }
+
+  /**
+   * Home Assistant's entity picker, narrowed to the lights it may offer.
+   *
+   * include_entities rather than a domain filter: a scene belongs to a room,
+   * and the room's lights are the only ones it could sensibly name. So this
+   * is its searchable picker with the right names and icons, over the right
+   * short list.
+   */
+  _entityControl(entityIds, onChange) {
+    if (this._hass && customElements.get("ha-selector")) {
+      const element = document.createElement("ha-selector");
+      element.hass = this._hass;
+      element.selector = { entity: { include_entities: entityIds } };
+      element.label = this._t("add_light");
+      element.value = undefined;
+      element.addEventListener("value-changed", (event) => {
+        event.stopPropagation();
+        if (event.detail.value) onChange(event.detail.value);
+      });
+      return element;
+    }
+    return this._choiceControl(
+      entityIds.map((id) => ({ value: id, label: this._name(id) })),
+      null,
+      onChange,
+      this._t("add_light")
+    );
   }
 
   /** One of the panel's own strings, in the language the browser asked for. */
@@ -1097,6 +1223,18 @@ class BetterLightingPanel extends HTMLElement {
     }
 
     switch (view.kind) {
+      case "hub":
+        return { parts: [this._t("global_settings")] };
+      case "diagnostics":
+        return { parts: [this._t("diagnostics")] };
+      case "presets": {
+        if (view.index === undefined) return { parts: [this._t("colour_presets")] };
+        const preset = (this._hub.color_presets || [])[view.index];
+        return {
+          parts: [this._t("colour_presets"), preset?.name],
+          back: to({ kind: "presets" }),
+        };
+      }
       case "scenes":
         if (view.sub === "import") {
           return {
@@ -1104,7 +1242,7 @@ class BetterLightingPanel extends HTMLElement {
             back: to({ kind: "scenes" }),
           };
         }
-        return null;
+        return { parts: [room?.name, named.scenes] };
       case "switches": {
         const item = (room?.data.switches || [])[view.index];
         if (view.sub === "order") {
@@ -1119,7 +1257,7 @@ class BetterLightingPanel extends HTMLElement {
             back: to({ kind: "switches" }),
           };
         }
-        return null;
+        return { parts: [room?.name, named.switches] };
       }
       case "calibrations": {
         const item = (room?.data.light_profiles || [])[view.index];
@@ -1129,27 +1267,23 @@ class BetterLightingPanel extends HTMLElement {
             back: to({ kind: "calibrations" }),
           };
         }
-        return null;
+        return { parts: [room?.name, named.calibrations] };
       }
       case "mode":
+        if (view.creating) return { parts: [this._t("add_mode")] };
         if (view.rule !== undefined) {
-          return {
-            parts: [mode?.name, named.rules],
-            back: to({ kind: "mode" }),
-          };
+          return { parts: [mode?.name, named.rules], back: to({ kind: "mode" }) };
         }
-        return null;
-      case "presets":
-        if (view.index !== undefined) {
-          const preset = (this._hub.color_presets || [])[view.index];
-          return {
-            parts: [this._t("colour_presets"), preset?.name],
-            back: to({ kind: "presets" }),
-          };
-        }
-        return null;
-      default:
-        return null;
+        return { parts: [mode?.name] };
+      default: {
+        if (view.creating) return { parts: [this._t("add_room")] };
+        const groups = this._schema?.forms.zone || [];
+        const group =
+          groups.find((g) => g.section === view.section) || groups[0];
+        return {
+          parts: [room?.name, named[group?.section] || group?.section],
+        };
+      }
     }
   }
 
@@ -1157,28 +1291,17 @@ class BetterLightingPanel extends HTMLElement {
     const holder = this.shadowRoot.getElementById("crumbs");
     if (!holder) return;
     const trail = this._trail();
-    if (!trail) {
-      holder.innerHTML = "";
-      return;
-    }
-    holder.innerHTML = `<button class="crumb-back" id="crumb-back">&lsaquo;</button>
-      <span class="crumb-trail">${trail.parts
+    // Always present, even at the top: a strip that comes and goes shifts
+    // everything below it every time you move, which reads as a glitch.
+    holder.innerHTML = `<button class="crumb-back" id="crumb-back" ${
+      trail.back ? "" : "disabled"
+    }>&lsaquo;</button>
+      <span class="crumb-trail">${(trail.parts || [])
         .filter(Boolean)
         .join(" &rsaquo; ")}</span>`;
-    holder.querySelector("#crumb-back").addEventListener("click", trail.back);
-  }
-
-  /** Home Assistant's own page for this integration, where its flows live. */
-  _openIntegrationPage() {
-    // There is no deep link that starts a subentry flow: the frontend's
-    // redirect table offers the integration page and the add-integration
-    // dialog, and nothing between. So this lands on the page the flow lives
-    // on, and the panel reloads when it is returned to.
-    const path = "/config/integrations/integration/better_lighting";
-    history.pushState(null, "", path);
-    this.dispatchEvent(
-      new CustomEvent("location-changed", { bubbles: true, composed: true })
-    );
+    if (trail.back) {
+      holder.querySelector("#crumb-back").addEventListener("click", trail.back);
+    }
   }
 
   /** The runtime choices a field may ask for, for the room in hand. */
@@ -1212,23 +1335,38 @@ class BetterLightingPanel extends HTMLElement {
         @media (max-width:800px) { .body { grid-template-columns:1fr; } }
         .card { background:var(--card-background-color,#fff); border-radius:12px;
                 padding:16px; box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.1)); }
+        /* Stacked cards -- a mode and its rules, the diagnostics tables and
+           the curve -- were flush against each other, which read as one card
+           with a line through it rather than two things. */
+        #main > * + *, .editor > .card + .card { margin-top:16px; }
+        .card > :last-child { margin-bottom:0; }
         h2 { margin:0 0 12px; font-size:16px; font-weight:500; }
-        ul { list-style:none; margin:0; padding:0; }
+        ul { list-style:none; margin:0 0 4px; padding:0; }
         li { padding:10px 12px; border-radius:8px; cursor:pointer; }
         li:hover { background:var(--secondary-background-color); }
         li[aria-selected="true"] { background:var(--primary-color); color:#fff; }
         ul.sub { margin:2px 0 8px 12px; border-left:2px solid var(--divider-color,#ddd); }
         ul.sub li { font-size:14px; padding:7px 10px; }
         h3 { margin:18px 0 10px; font-size:15px; font-weight:500; }
-        details { border-top:1px solid var(--divider-color,#e0e0e0); padding:4px 0; }
-        details:first-of-type { border-top:none; }
-        summary { cursor:pointer; padding:12px 4px; font-size:15px; font-weight:500;
-                  list-style:none; display:flex; align-items:center; gap:8px; }
+        /* A boxed accordion, in the shape Home Assistant's expansion panel
+           uses: the title on the left, a chevron on the right, and the
+           contents inside the box rather than running under the next one. */
+        details { border:1px solid var(--divider-color,#3d3d3d); border-radius:12px;
+                  margin-bottom:12px; overflow:hidden;
+                  background:var(--ha-card-background, var(--card-background-color)); }
+        details:last-of-type { margin-bottom:0; }
+        summary { cursor:pointer; padding:14px 16px; font-size:15px; font-weight:500;
+                  list-style:none; display:flex; align-items:center;
+                  justify-content:space-between; gap:12px; }
         summary::-webkit-details-marker { display:none; }
-        summary::before { content:"\u25B8"; transition:transform .15s;
-                          color:var(--secondary-text-color); }
-        details[open] > summary::before { transform:rotate(90deg); }
-        details > bl-form { padding:4px 4px 12px; }
+        summary::after { content:""; flex:0 0 auto; width:9px; height:9px;
+                         margin-right:4px; border-right:2px solid currentColor;
+                         border-bottom:2px solid currentColor;
+                         transform:rotate(45deg) translate(-2px,-2px);
+                         transition:transform .15s; }
+        details[open] > summary::after { transform:rotate(225deg) translate(-3px,-3px); }
+        details[open] > summary { border-bottom:1px solid var(--divider-color,#3d3d3d); }
+        details > bl-form { display:block; padding:16px; }
         .light { display:flex; align-items:center; gap:12px; padding:8px 12px;
                  border-radius:8px; cursor:pointer; }
         .light[aria-selected="true"] { outline:2px solid var(--primary-color); }
@@ -1242,6 +1380,7 @@ class BetterLightingPanel extends HTMLElement {
         button.flat { background:transparent; color:var(--primary-color); }
         button.danger { background:var(--error-color,#db4437); }
         .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px; }
+        .card > p.muted:first-of-type { margin-top:0; }
         input[type=text] { font:inherit; padding:8px; border-radius:8px; width:100%;
                            border:1px solid var(--divider-color,#ccc);
                            background:var(--card-background-color); color:inherit; }
@@ -1368,18 +1507,16 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "diagnostics" };
       this._paint();
     });
-    // Adding one is Home Assistant's own flow, not an imitation of it: its
-    // dialog validates, names and creates the subentry, and it is the screen
-    // people already meet everywhere else. A custom panel cannot open that
-    // dialog in place -- doing so needs a dialogImport from the frontend's
-    // own module graph, which is not reachable from here -- so this goes to
-    // the page it lives on.
-    nav.querySelector("#add-room").addEventListener("click", () =>
-      this._openIntegrationPage()
-    );
-    nav.querySelector("#add-mode").addEventListener("click", () =>
-      this._openIntegrationPage()
-    );
+    nav.querySelector("#add-room").addEventListener("click", () => {
+      this._roomId = null;
+      this._view = { kind: "room", section: null, creating: true };
+      this._paint();
+    });
+    nav.querySelector("#add-mode").addEventListener("click", () => {
+      this._modeId = null;
+      this._view = { kind: "mode", creating: true };
+      this._paint();
+    });
 
     this._paintMain();
   }
@@ -1416,27 +1553,47 @@ class BetterLightingPanel extends HTMLElement {
 
   /** One room section, or the form that creates a room. */
   _paintRoomSection() {
-    const room = this._room;
+    const groups = this._schema?.forms.zone || [];
+    const creating = this._view.creating || !this._room;
     const main = this.shadowRoot.getElementById("main");
-    if (!room) {
+
+    if (creating && !this._view.creating && !this._rooms.length) {
       main.innerHTML = `<div class="card"><p class="muted">${this._t(
         "no_rooms"
       )}</p><div class="bar"><button id="add">${this._t(
         "add_room"
       )}</button></div></div>`;
-      main.querySelector("#add").addEventListener("click", () =>
-        this._openIntegrationPage()
-      );
+      main.querySelector("#add").addEventListener("click", () => {
+        this._view = { kind: "room", section: null, creating: true };
+        this._paint();
+      });
       return;
     }
 
-    const groups = this._schema?.forms.zone || [];
+    // A new room asks only for what it needs to exist: the rest of its
+    // screens are there the moment it does.
+    if (creating) {
+      this._paintSettings({
+        title: this._t("add_room"),
+        form: groups.slice(0, 1),
+        values: {},
+        choices: this._choices(null),
+        save: async (next) => {
+          const result = await this._call("save_zone", {
+            zone_id: null,
+            data: next,
+          });
+          this._view = { kind: "room", section: null };
+          return result;
+        },
+      });
+      return;
+    }
+
+    const room = this._room;
     const group = groups.find((g) => g.section === this._view.section) || groups[0];
     const values = { ...room.data };
 
-    // Naming a room, choosing its lights and deleting it all belong to Home
-    // Assistant's own flow. What is left here is what that flow does not
-    // cover: how the room behaves.
     this._paintSettings({
       title: `${room.name} — ${
         this._labels.sections[group.section] || group.section
@@ -1452,6 +1609,16 @@ class BetterLightingPanel extends HTMLElement {
         this._view = { kind: "room", section: group.section };
         return result;
       },
+      // Deleting belongs on the screen that names the room, not on the one
+      // about presence sensors.
+      remove:
+        group.section === "basic"
+          ? async () => {
+              await this._call("delete_zone", { zone_id: room.id });
+              this._roomId = null;
+              this._view = { kind: "room", section: null };
+            }
+          : null,
     });
   }
 
@@ -1891,16 +2058,8 @@ class BetterLightingPanel extends HTMLElement {
         </ul>
         ${
           unused.length
-            ? `<div class="bar"><select id="add-scene">
-                 <option value="">${this._t("add_scene")}</option>
-                 ${unused
-                   .map(
-                     (scene) =>
-                       `<option value="${scene.scene_id}">${scene.name}</option>`
-                   )
-                   .join("")}
-               </select></div>`
-            : '<p class="muted">${this._t("all_scenes_used")}</p>'
+            ? `<div class="bar" id="add-scene"></div>`
+            : `<p class="muted">${this._t("all_scenes_used")}</p>`
         }
       </div>`;
 
@@ -1918,9 +2077,17 @@ class BetterLightingPanel extends HTMLElement {
         await save(next);
       })
     );
-    main.querySelector("#add-scene")?.addEventListener("change", async (event) => {
-      if (event.target.value) await save([...order, event.target.value]);
-    });
+    const sceneAdder = main.querySelector("#add-scene");
+    if (sceneAdder) {
+      sceneAdder.appendChild(
+        this._choiceControl(
+          unused.map((scene) => ({ value: scene.scene_id, label: scene.name })),
+          null,
+          (chosen) => save([...order, chosen]),
+          this._t("add_scene")
+        )
+      );
+    }
   }
 
   /** The one settings screen: a form, a Save, and sometimes a Delete. */
@@ -1933,6 +2100,7 @@ class BetterLightingPanel extends HTMLElement {
         <div id="form"></div>
         <div class="bar">
           <button id="save">${this._t("save")}</button>
+          <button class="flat" id="cancel">${this._t("cancel")}</button>
           ${remove ? `<button class="danger" id="remove">${this._t("delete")}</button>` : ""}
         </div>
       </div>`;
@@ -1976,6 +2144,13 @@ class BetterLightingPanel extends HTMLElement {
         main.querySelector("#error").textContent =
           err?.message || this._t("save_failed");
       }
+    });
+    // Cancel goes wherever the crumb would, or reloads this screen when it is
+    // already the top of its branch -- either way, nothing typed is kept.
+    main.querySelector("#cancel").addEventListener("click", () => {
+      const trail = this._trail();
+      if (trail.back) trail.back();
+      else this._load();
     });
     main.querySelector("#remove")?.addEventListener("click", async () => {
       await remove();
@@ -2133,31 +2308,13 @@ class BetterLightingPanel extends HTMLElement {
           ${this._t("light_treatment")}
         </div>
         <div id="rows"></div>
-        ${
-          available.length || !entries.includes(ALL)
-            ? `<div class="bar">
-                 <select id="add-light">
-                   <option value="">${this._t("add_light")}</option>
-                   ${
-                     entries.includes(ALL)
-                       ? ""
-                       : `<option value="${ALL}">${this._t("every_light")}</option>`
-                   }
-                   ${available
-                     .map(
-                       (id) =>
-                         `<option value="${id}">${this._name(id)}</option>`
-                     )
-                     .join("")}
-                 </select>
-               </div>`
-            : ""
-        }
+        <div class="bar" id="add-light"></div>
       </div>
 
       <div class="card">
         <div class="bar">
           <button id="save">${this._t("save")}</button>
+          <button class="flat" id="cancel">${this._t("cancel")}</button>
           <button class="flat" id="recapture">${this._t("capture_room")}</button>
           ${this._scene.scene_id ? `<button class="danger" id="delete">${this._t("delete")}</button>` : ""}
         </div>
@@ -2169,13 +2326,22 @@ class BetterLightingPanel extends HTMLElement {
     main.querySelector("#mode").addEventListener("click", () =>
       live ? this._stopPreview().then(() => this._paintEditor()) : this._preview()
     );
-    main.querySelector("#add-light")?.addEventListener("change", (event) => {
-      if (!event.target.value) return;
-      this._spec(event.target.value);
-      this._paintEditor();
-      this._pushPreview();
-    });
+    if (available.length) {
+      main.querySelector("#add-light").appendChild(
+        this._entityControl(available, (chosen) => {
+          this._spec(chosen);
+          this._paintEditor();
+          this._pushPreview();
+        })
+      );
+    }
     main.querySelector("#save").addEventListener("click", () => this._save());
+    main.querySelector("#cancel").addEventListener("click", async () => {
+      await this._stopPreview();
+      this._scene = null;
+      this._view = { kind: "scenes" };
+      this._load();
+    });
     main.querySelector("#recapture").addEventListener("click", () => {
       this._scene.lights = this._captureRoom();
       this._paintEditor();
@@ -2213,64 +2379,78 @@ class BetterLightingPanel extends HTMLElement {
     const live = this._previewing;
     const entries = Object.keys(this._scene.lights || {});
 
-    list.innerHTML = entries
-      .map((entityId) => {
-        const spec = this._scene.lights[entityId] || {};
-        const state = this._hass.states[entityId];
-        const detail =
-          spec.action === "off"
-            ? this._t("off")
-            : spec.action === "leave"
-              ? this._t("left_alone")
-              : live && state?.state === "on"
-                ? `${Math.round(((state.attributes.brightness || 0) / 255) * 100)}%`
-                : spec.brightness_pct != null
-                  ? `${spec.brightness_pct}%`
-                  : "—";
-        return `<div class="light" data-light="${entityId}">
-            <span class="swatch" style="background:${this._swatch(entityId)}"></span>
-            <span class="grow">
-              ${this._name(entityId)}
-              <div class="muted">${this._area(entityId) || detail}</div>
-            </span>
-            <select data-action="${entityId}">
-              ${[
-                ["apply", this._t("set_it")],
-                ["off", this._t("switch_it_off")],
-                ["leave", this._t("leave_it_alone")],
-              ]
-                .map(
-                  ([value, label]) =>
-                    `<option value="${value}" ${
-                      (spec.action || "apply") === value ? "selected" : ""
-                    }>${label}</option>`
-                )
-                .join("")}
-            </select>
-            <select data-colour="${entityId}">
-              ${[
-                ["inherit", this._t("colour_as_set")],
-                ["none", this._t("colour_follows_sun")],
-              ]
-                .map(
-                  ([value, label]) =>
-                    `<option value="${value}" ${
-                      (spec.color_format === "none" ? "none" : "inherit") === value
-                        ? "selected"
-                        : ""
-                    }>${label}</option>`
-                )
-                .join("")}
-            </select>
-            <button class="flat" data-remove="${entityId}" title="${this._t("remove")}">🗑</button>
-          </div>`;
-      })
-      .join("");
+    // Built as elements rather than as a string, so the two choices on each
+    // row can be Home Assistant's dropdown like every other one on the page.
+    list.innerHTML = "";
+    for (const entityId of entries) {
+      const spec = this._scene.lights[entityId] || {};
+      const state = this._hass.states[entityId];
+      const detail =
+        spec.action === "off"
+          ? this._t("off")
+          : spec.action === "leave"
+            ? this._t("left_alone")
+            : live && state?.state === "on"
+              ? `${Math.round(((state.attributes.brightness || 0) / 255) * 100)}%`
+              : spec.brightness_pct != null
+                ? `${spec.brightness_pct}%`
+                : "—";
 
-    list.querySelectorAll(".light").forEach((row) =>
+      const row = document.createElement("div");
+      row.className = "light";
+      row.dataset.light = entityId;
+      row.innerHTML = `
+        <span class="swatch" style="background:${this._swatch(entityId)}"></span>
+        <span class="grow">
+          ${this._name(entityId)}
+          <div class="muted">${this._area(entityId) || detail}</div>
+        </span>`;
+
+      row.appendChild(
+        this._choiceControl(
+          [
+            { value: "apply", label: this._t("set_it") },
+            { value: "off", label: this._t("switch_it_off") },
+            { value: "leave", label: this._t("leave_it_alone") },
+          ],
+          spec.action || "apply",
+          (chosen) => {
+            this._spec(entityId).action = chosen;
+            this._paintLightList();
+            this._pushPreview();
+          }
+        )
+      );
+      row.appendChild(
+        this._choiceControl(
+          [
+            { value: "inherit", label: this._t("colour_as_set") },
+            { value: "none", label: this._t("colour_follows_sun") },
+          ],
+          spec.color_format === "none" ? "none" : "inherit",
+          (chosen) => {
+            const entry = this._spec(entityId);
+            if (chosen === "none") entry.color_format = "none";
+            else delete entry.color_format;
+            this._pushPreview();
+          }
+        )
+      );
+
+      const remove = document.createElement("button");
+      remove.className = "flat";
+      remove.title = this._t("remove");
+      remove.textContent = "🗑";
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
+        delete this._scene.lights[entityId];
+        this._paintEditor();
+        this._pushPreview();
+      });
+      row.appendChild(remove);
+
       row.addEventListener("click", (event) => {
-        if (event.target.closest("select,button")) return;
-        const entityId = row.dataset.light;
+        if (event.target.closest("select,button,ha-selector")) return;
         if (entityId === ALL || !live) return;
         // Home Assistant's own dialog, with the controls already learned.
         this.dispatchEvent(
@@ -2280,31 +2460,9 @@ class BetterLightingPanel extends HTMLElement {
             composed: true,
           })
         );
-      })
-    );
-    list.querySelectorAll("[data-action]").forEach((select) =>
-      select.addEventListener("change", () => {
-        this._spec(select.dataset.action).action = select.value;
-        this._paintLightList();
-        this._pushPreview();
-      })
-    );
-    list.querySelectorAll("[data-colour]").forEach((select) =>
-      select.addEventListener("change", () => {
-        const spec = this._spec(select.dataset.colour);
-        if (select.value === "none") spec.color_format = "none";
-        else delete spec.color_format;
-        this._pushPreview();
-      })
-    );
-    list.querySelectorAll("[data-remove]").forEach((button) =>
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        delete this._scene.lights[button.dataset.remove];
-        this._paintEditor();
-        this._pushPreview();
-      })
-    );
+      });
+      list.appendChild(row);
+    }
   }
 
   /**

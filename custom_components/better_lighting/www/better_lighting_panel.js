@@ -815,6 +815,10 @@ class BetterLightingPanel extends HTMLElement {
     // Which menu groups are folded shut. A house with a dozen rooms wants the
     // modes in reach without scrolling past all of them.
     this._collapsed = { rooms: false, modes: false };
+    // And which rooms have their screens showing, by room id. Unset means
+    // "whatever opening that room would do", so the tree behaves until
+    // somebody has an opinion about one of its branches.
+    this._expanded = {};
     this._scene = null;
     this._selectedLight = null;
     this._previewing = false;
@@ -1774,6 +1778,11 @@ class BetterLightingPanel extends HTMLElement {
     const inRoom = ["room", "scenes", "switches", "calibrations"].includes(
       this._view.kind
     );
+    // Opening a room shows its screens; after that it is the user's chevron
+    // that decides, including for the room they are standing in.
+    if (inRoom && this._expanded[this._roomId] === undefined) {
+      this._expanded[this._roomId] = true;
+    }
     const extras = [
       ["scenes", this._t("scenes")],
       ["switches", this._t("switches")],
@@ -1782,21 +1791,27 @@ class BetterLightingPanel extends HTMLElement {
 
     const roomRows = this._rooms
       .map((room) => {
-        const open = inRoom && room.id === this._roomId;
+        const open = Boolean(this._expanded[room.id]);
+        // Two rooms can be unfolded at once now, and only one of them is the
+        // room you are in -- so which screen is current is a question about
+        // this room, not about the view alone.
+        const here = room.id === this._roomId;
         const children = open
           ? `<ul class="sub">${[
               ...sections.map(
                 (section) =>
-                  `<li data-section="${section}" aria-selected="${
-                    this._view.kind === "room" && current === section
-                  }">${icon(SECTION_ICONS[section] || "mdi:circle-small")}<span
+                  `<li data-section="${section}" data-room="${room.id}"
+                    aria-selected="${
+                    here && this._view.kind === "room" && current === section
+                    }">${icon(SECTION_ICONS[section] || "mdi:circle-small")}<span
                     class="grow">${this._sectionName(section)}</span></li>`
               ),
               ...extras.map(
                 ([key, fallback]) =>
-                  `<li data-section="${key}" aria-selected="${
-                    this._view.kind === key
-                  }">${icon(SECTION_ICONS[key])}<span class="grow">${
+                  `<li data-section="${key}" data-room="${room.id}"
+                    aria-selected="${
+                    here && this._view.kind === key
+                    }">${icon(SECTION_ICONS[key])}<span class="grow">${
                     this._labels.sections[key] || fallback
                   }</span></li>`
               ),
@@ -1807,7 +1822,10 @@ class BetterLightingPanel extends HTMLElement {
         return `<li class="room" data-room="${room.id}" aria-expanded="${open}"
           aria-selected="false">${icon(
             room.data?.icon || "mdi:lightbulb-group"
-          )}<span class="grow">${room.name}</span></li>${children}`;
+          )}<span class="grow">${room.name}</span><span class="twist"
+            data-room-twist="${room.id}">${icon(
+            open ? "mdi:chevron-down" : "mdi:chevron-right"
+          )}</span></li>${children}`;
       })
       .join("");
 
@@ -1896,6 +1914,9 @@ class BetterLightingPanel extends HTMLElement {
         chosen();
         this._stopPreview();
         this._roomId = item.dataset.room;
+        // A room you have just walked into shows its screens, whatever you
+        // last did with its chevron.
+        this._expanded[item.dataset.room] = true;
         this._view = { kind: "room", section: null };
         this._scene = null;
         this._paint();
@@ -1908,6 +1929,9 @@ class BetterLightingPanel extends HTMLElement {
         const section = item.dataset.section;
         this._stopPreview();
         this._scene = null;
+        // A screen belongs to the room it is listed under, which is not
+        // always the room you were last in now that two can be unfolded.
+        this._roomId = item.dataset.room || this._roomId;
         this._view = ["scenes", "switches", "calibrations"].includes(section)
           ? { kind: section }
           : { kind: "room", section };
@@ -1949,6 +1973,14 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "mode", creating: true };
       this._paint();
     });
+    nav.querySelectorAll("[data-room-twist]").forEach((handle) =>
+      handle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const id = handle.dataset.roomTwist;
+        this._expanded[id] = !this._expanded[id];
+        this._paintNav();
+      })
+    );
     nav.querySelectorAll("[data-twist]").forEach((handle) =>
       handle.addEventListener("click", (event) => {
         // Folding a group is not going anywhere, so the row it sits on must
@@ -2030,6 +2062,8 @@ class BetterLightingPanel extends HTMLElement {
     main.querySelectorAll("li[data-room]").forEach((row) =>
       row.addEventListener("click", () => {
         this._roomId = row.dataset.room;
+        // Same as walking into it from the menu: its screens are showing.
+        this._expanded[row.dataset.room] = true;
         this._view = { kind: "room", section: null };
         this._paint();
       })

@@ -9,9 +9,11 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from tests.conftest import (
     MemberLight,
+    add_zone_scene,
     hub_entry,
     setup_hub,
     setup_members,
+    subentry_ids,
     zone_subentry,
 )
 from tests.ha.test_scenes import scene_subentry
@@ -47,9 +49,7 @@ async def build(hass: HomeAssistant, *, on: bool = False, scenes=(), **zone_kwar
 
 
 def scene_id(entry, title: str) -> str:
-    return next(
-        sub.subentry_id for sub in entry.subentries.values() if sub.title == title
-    )
+    return subentry_ids(entry)[title]
 
 
 async def occupy(hass: HomeAssistant, occupied: bool = True) -> None:
@@ -240,10 +240,9 @@ class TestSceneIgnoresPresence:
         """Requirement 3: the living room during a film."""
         entry = await build(hass, on=True)
         # A scene that says presence has no business here.
-        from tests.ha.test_modes import _sub
 
-        hass.config_entries.async_add_subentry(
-            entry, _sub(scene_subentry("Movie", brightness=5, ignore_presence=True))
+        add_zone_scene(
+            hass, entry, scene_subentry("Movie", brightness=5, ignore_presence=True)
         )
         await hass.async_block_till_done()
 
@@ -306,10 +305,9 @@ class TestInsectMode:
         self, hass: HomeAssistant
     ) -> None:
         entry = await self._build(hass)
-        from tests.ha.test_modes import _sub
 
-        hass.config_entries.async_add_subentry(
-            entry, _sub(scene_subentry("Cosy", brightness=20))
+        add_zone_scene(
+            hass, entry, scene_subentry("Cosy", brightness=20)
         )
         await hass.async_block_till_done()
         await hass.services.async_call(

@@ -16,6 +16,7 @@ from tests.conftest import (
     hub_entry,
     setup_hub,
     setup_members,
+    subentry_ids,
     zone_subentry,
 )
 from tests.ha.test_scenes import scene_subentry
@@ -129,7 +130,7 @@ class TestPerSwitchOrders:
         )
         await setup_hub(hass, entry)
 
-        ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+        ids = subentry_ids(entry)
         zone_id = ids["Kitchen"]
         hass.config_entries.async_add_subentry(
             entry,
@@ -225,7 +226,7 @@ class TestEntityBinding:
             subentries_data=[zone, *(scene_subentry(name) for name in scenes)]
         )
         await setup_hub(hass, entry)
-        ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+        ids = subentry_ids(entry)
         hass.config_entries.async_add_subentry(
             entry,
             _make(

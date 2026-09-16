@@ -25,7 +25,6 @@ from .models import (
     HubConfig,
     LightProfileConfig,
     ModeConfig,
-    SceneConfig,
     ZoneConfig,
     synthetic_controller,
 )
@@ -119,12 +118,22 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
         if subentry.subentry_type == SubentryType.LIGHT_PROFILE.value
         and (profile := LightProfileConfig.from_subentry(subentry)).light_entity
     }
-    scenes = {
-        scene.subentry_id: scene.scene
+    # Scenes belong to rooms now, so the flat registry is assembled from the
+    # zones rather than from subentries of its own. Keeping it flat means
+    # repairs, diagnostics and the services still have one place to look.
+    scenes = {scene.scene_id: scene for zone in zones.values() for scene in zone.scenes}
+    legacy = [
+        subentry
         for subentry in entry.subentries.values()
         if subentry.subentry_type == SubentryType.SCENE.value
-        and (scene := SceneConfig.from_subentry(subentry))
-    }
+    ]
+    if legacy:
+        _LOGGER.warning(
+            "Ignoring %d scene(s) left over from before scenes belonged to rooms: "
+            "%s. Re-create them under their room, then delete the old entries",
+            len(legacy),
+            ", ".join(sorted(sub.title for sub in legacy)),
+        )
     switches = {
         controller.subentry_id: controller
         for subentry in entry.subentries.values()
@@ -188,7 +197,7 @@ async def async_setup_entry(
             runtime.hub,
             runtime.contexts,
             runtime.profiles,
-            runtime.scenes,
+            {scene.scene_id: scene for scene in zone.scenes},
         )
         runtime.controllers[subentry_id] = controller
         await controller.async_setup()

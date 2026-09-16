@@ -332,12 +332,144 @@
               }
             }
           }
+        },
+        "add_light": {
+          "title": "Name a light",
+          "description": "Named lights:\n\n{lights}",
+          "data": {
+            "light": "Light",
+            "action": "What happens to it",
+            "brightness_pct": "Brightness",
+            "color_format": "Colour for this light"
+          },
+          "data_description": {
+            "brightness_pct": "Leave empty to use the scene's own brightness.",
+            "color_format": "'Leave the colour to the sun' lets this light take the scene's brightness while its colour keeps adapting — useful for a desk lamp in a film scene. You are asked for the colour itself next."
+          }
+        },
+        "light_color": {
+          "title": "Colour for {light}",
+          "data": {
+            "color_temp_kelvin": "Colour temperature",
+            "rgb_color": "Colour",
+            "warm_white": "Warm white channel",
+            "cold_white": "Cold white channel"
+          },
+          "data_description": {
+            "warm_white": "RGBWW strips have white LEDs behind the colour ones. Leave both at zero for a pure colour; raise the warm channel to sit a strip against a wooden floor."
+          }
+        },
+        "remove_light": {
+          "title": "Stop naming a light",
+          "description": "Named lights:\n\n{lights}",
+          "data": {
+            "light": "Light"
+          }
+        },
+        "menu": {
+          "title": "Room",
+          "description": "Scenes in this room:\n\n{scenes}",
+          "menu_options": {
+            "scenes": "Scenes",
+            "finish": "Done"
+          }
+        },
+        "scenes": {
+          "title": "Scenes",
+          "description": "Scenes in this room, in the order a switch cycles them:\n\n{scenes}",
+          "menu_options": {
+            "add_scene": "Add a scene",
+            "capture_scene": "Capture the room as it is now",
+            "edit_scene": "Change a scene",
+            "remove_scene": "Remove a scene",
+            "move_scene": "Reorder",
+            "menu": "Back"
+          }
+        },
+        "add_scene": {
+          "title": "Add a scene",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "transition": "Transition"
+          },
+          "sections": {
+            "advanced": {
+              "name": "Behaviour",
+              "data": {
+                "on_lights_only": "Only affect lights that are already on",
+                "ignore_presence": "Ignore presence while this scene is showing",
+                "others": "Lights this scene says nothing about",
+                "on_unsupported_color": "If a light cannot show the colour"
+              }
+            }
+          }
+        },
+        "edit_scene": {
+          "title": "Change a scene",
+          "description": "Scenes in this room:\n\n{scenes}",
+          "data": {
+            "scene": "Scene"
+          }
+        },
+        "remove_scene": {
+          "title": "Remove a scene",
+          "description": "Scenes in this room:\n\n{scenes}",
+          "data": {
+            "scene": "Scene"
+          }
+        },
+        "move_scene": {
+          "title": "Reorder",
+          "description": "Scenes in this room, in the order a switch cycles them:\n\n{scenes}",
+          "data": {
+            "scene": "Scene",
+            "position": "Move to position"
+          }
+        },
+        "capture_scene": {
+          "title": "Capture the room as it is now",
+          "description": "Set the room up with the normal light controls, then name it here.\n\n{lights}",
+          "data": {
+            "name": "Name"
+          }
+        },
+        "scene_lights": {
+          "title": "Lights in this scene",
+          "description": "{lights}",
+          "menu_options": {
+            "add_light": "Add a light",
+            "remove_light": "Remove a light",
+            "save_scene": "Save this scene"
+          }
+        },
+        "scene_form": {
+          "title": "Change a scene",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "transition": "Transition"
+          },
+          "sections": {
+            "advanced": {
+              "name": "Behaviour",
+              "data": {
+                "on_lights_only": "Only affect lights that are already on",
+                "ignore_presence": "Ignore presence while this scene is showing",
+                "others": "Lights this scene says nothing about",
+                "on_unsupported_color": "If a light cannot show the colour"
+              }
+            }
+          }
         }
       },
       "error": {
         "invalid_value": "This value is not valid.",
         "no_lights": "Pick at least one light.",
-        "light_in_other_zone": "One of these lights already belongs to another zone. A light can only be in one zone."
+        "light_in_other_zone": "One of these lights already belongs to another zone. A light can only be in one zone.",
+        "light_required": "Choose a light.",
+        "name_required": "Give the scene a name.",
+        "nothing_to_capture": "None of this room's lights are available to capture."
       },
       "abort": {
         "reconfigure_successful": "Zone updated."
@@ -419,144 +551,6 @@
       },
       "abort": {
         "reconfigure_successful": "Calibration updated."
-      }
-    },
-    "scene": {
-      "entry_type": "Scene",
-      "initiate_flow": {
-        "user": "Add scene",
-        "reconfigure": "Reconfigure scene"
-      },
-      "step": {
-        "user": {
-          "title": "Scene",
-          "description": "A scene is a recipe, not a room. Define it once and apply it anywhere. Choose carefully what it takes over: whatever it leaves alone keeps following the sun.",
-          "data": {
-            "name": "Name",
-            "icon": "Icon",
-            "override_mode": "This scene sets",
-            "brightness_pct": "Brightness",
-            "color_format": "Colour given as",
-            "transition": "Transition",
-            "scene_zones": "Offer this scene in"
-          },
-          "data_description": {
-            "override_mode": "'Brightness' pins the brightness and lets the colour keep tracking the sun. 'Colour' does the opposite. 'Both' fixes the look entirely. 'Neither' only chooses which lights are on.",
-            "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness.",
-            "scene_zones": "Leave empty for a scene the whole house uses, such as a night scene. Naming one room keeps it out of every other room's list, and puts the room in front of its name so a Reading scene in the living room and one in the bedroom can both simply be called Reading."
-          },
-          "sections": {
-            "advanced": {
-              "name": "Behaviour",
-              "data": {
-                "on_lights_only": "Only affect lights that are already on",
-                "ignore_presence": "Ignore presence sensors while active",
-                "others": "Lights this scene does not mention",
-                "on_unsupported_color": "If a light cannot show this colour"
-              },
-              "data_description": {
-                "on_lights_only": "Adjust the room without lighting it up. Lights that are off stay off.",
-                "others": "'Adaptive' keeps them following the sun, which is usually what you want.",
-                "on_unsupported_color": "'Adaptive' leaves it on its normal white, which reads honestly as 'that bulb cannot do colour'."
-              }
-            }
-          }
-        },
-        "reconfigure": {
-          "title": "Scene",
-          "description": "A scene is a recipe, not a room. Define it once and apply it anywhere. Choose carefully what it takes over: whatever it leaves alone keeps following the sun.",
-          "data": {
-            "name": "Name",
-            "icon": "Icon",
-            "override_mode": "This scene sets",
-            "brightness_pct": "Brightness",
-            "color_format": "Colour given as",
-            "transition": "Transition",
-            "scene_zones": "Offer this scene in"
-          },
-          "data_description": {
-            "override_mode": "'Brightness' pins the brightness and lets the colour keep tracking the sun. 'Colour' does the opposite. 'Both' fixes the look entirely. 'Neither' only chooses which lights are on.",
-            "color_format": "The next step asks for the colour itself. Choose 'none' for a scene that only sets brightness.",
-            "scene_zones": "Leave empty for a scene the whole house uses, such as a night scene. Naming one room keeps it out of every other room's list, and puts the room in front of its name so a Reading scene in the living room and one in the bedroom can both simply be called Reading."
-          },
-          "sections": {
-            "advanced": {
-              "name": "Behaviour",
-              "data": {
-                "on_lights_only": "Only affect lights that are already on",
-                "ignore_presence": "Ignore presence sensors while active",
-                "others": "Lights this scene does not mention",
-                "on_unsupported_color": "If a light cannot show this colour"
-              },
-              "data_description": {
-                "on_lights_only": "Adjust the room without lighting it up. Lights that are off stay off.",
-                "others": "'Adaptive' keeps them following the sun, which is usually what you want.",
-                "on_unsupported_color": "'Adaptive' leaves it on its normal white, which reads honestly as 'that bulb cannot do colour'."
-              }
-            }
-          }
-        },
-        "color": {
-          "title": "Scene colour",
-          "description": "Pick the colour for this scene.",
-          "data": {
-            "color_temp_kelvin": "Colour temperature",
-            "rgb_color": "Colour",
-            "color_name": "Colour name"
-          },
-          "data_description": {
-            "color_name": "A CSS colour name, such as 'coral' or 'warmwhite'."
-          }
-        },
-        "lights": {
-          "title": "Individual lights",
-          "description": "Named lights:\n\n{lights}\n\nAnything you do not name here takes the scene's own brightness and colour. Name a light to give it different values, switch it off while the rest of the room is lit, or leave it untouched.",
-          "menu_options": {
-            "add_light": "Name a light",
-            "remove_light": "Stop naming a light",
-            "finish": "Done"
-          }
-        },
-        "add_light": {
-          "title": "Name a light",
-          "description": "Named lights:\n\n{lights}",
-          "data": {
-            "light": "Light",
-            "action": "What happens to it",
-            "brightness_pct": "Brightness",
-            "color_format": "Colour for this light"
-          },
-          "data_description": {
-            "brightness_pct": "Leave empty to use the scene's own brightness.",
-            "color_format": "'Leave the colour to the sun' lets this light take the scene's brightness while its colour keeps adapting — useful for a desk lamp in a film scene. You are asked for the colour itself next."
-          }
-        },
-        "remove_light": {
-          "title": "Stop naming a light",
-          "description": "Named lights:\n\n{lights}",
-          "data": {
-            "light": "Light"
-          }
-        },
-        "light_color": {
-          "title": "Colour for {light}",
-          "data": {
-            "color_temp_kelvin": "Colour temperature",
-            "rgb_color": "Colour",
-            "warm_white": "Warm white channel",
-            "cold_white": "Cold white channel"
-          },
-          "data_description": {
-            "warm_white": "RGBWW strips have white LEDs behind the colour ones. Leave both at zero for a pure colour; raise the warm channel to sit a strip against a wooden floor."
-          }
-        }
-      },
-      "error": {
-        "invalid_value": "This value is not valid.",
-        "light_required": "Choose a light."
-      },
-      "abort": {
-        "reconfigure_successful": "Scene updated."
       }
     },
     "controller": {

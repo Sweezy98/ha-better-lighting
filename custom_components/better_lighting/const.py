@@ -652,6 +652,49 @@ SCENE_COLOR_SPECS: dict[str, FieldSpec] = {
     ),
 }
 
+# --------------------------------------------------------------------------
+# Scenes belonging to a room.
+# --------------------------------------------------------------------------
+# A room scene is a list of lights and what each should look like, in the
+# spirit of Home Assistant's own scenes -- not a brightness-and-colour recipe
+# applied wholesale. It therefore carries no brightness or colour of its own:
+# those live on the individual lights, which is the only way "the strip behind
+# the television at 7% orange, the ceiling off, the desk lamp at 20% keeping
+# whatever colour the sun says" can be said at all. Which axes the scene takes
+# over follows from what each light actually names.
+CONF_ZONE_SCENES = "scenes"
+
+ZONE_SCENE_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(CONF_ICON, "mdi:palette", selector.IconSelector()),
+    FieldSpec(
+        CONF_TRANSITION,
+        1.5,
+        _seconds(0, 300, 0.5),
+        validator=VALID_TRANSITION,
+    ),
+    FieldSpec(CONF_ON_LIGHTS_ONLY, False, _boolean(), section=Section.ADVANCED),
+    FieldSpec(CONF_IGNORE_PRESENCE, False, _boolean(), section=Section.ADVANCED),
+    FieldSpec(
+        CONF_OTHERS,
+        "adaptive",
+        _select(OTHERS_POLICIES, "others"),
+        section=Section.ADVANCED,
+    ),
+    FieldSpec(
+        CONF_ON_UNSUPPORTED_COLOR,
+        "adaptive",
+        _select(UNSUPPORTED_COLOR_POLICIES, "on_unsupported_color"),
+        section=Section.ADVANCED,
+    ),
+)
+
+
 # Per-light entries inside a scene.
 CONF_SCENE_LIGHTS = "lights"
 CONF_LIGHT_ACTION = "action"

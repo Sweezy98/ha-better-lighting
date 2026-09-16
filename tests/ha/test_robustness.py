@@ -14,8 +14,10 @@ from custom_components.better_lighting.diagnostics import (
 from tests.conftest import (
     MemberLight,
     hub_entry,
+    remove_zone_scene,
     setup_hub,
     setup_members,
+    subentry_ids,
     zone_subentry,
 )
 from tests.ha.test_modes import _sub, build, mode_subentry, rule, set_state
@@ -64,7 +66,7 @@ class TestSessionSurvivesAReload:
             ]
         )
         await setup_hub(hass, entry)
-        ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+        ids = subentry_ids(entry)
         hass.config_entries.async_add_subentry(
             entry,
             _sub(
@@ -146,9 +148,7 @@ class TestDanglingReferences:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
         await setup_hub(hass, entry)
-        scene_id = next(
-            sub.subentry_id for sub in entry.subentries.values() if sub.title == "Cosy"
-        )
+        scene_id = subentry_ids(entry)["Cosy"]
         zone = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
         hass.config_entries.async_update_subentry(
             entry, zone, data={**zone.data, "night_scene_id": scene_id}
@@ -156,7 +156,7 @@ class TestDanglingReferences:
         await hass.async_block_till_done()
         assert not _our_issues(hass)
 
-        hass.config_entries.async_remove_subentry(entry, scene_id)
+        remove_zone_scene(hass, entry, scene_id)
         await hass.async_block_till_done()
 
         issues = _our_issues(hass)
@@ -166,15 +166,13 @@ class TestDanglingReferences:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
         await setup_hub(hass, entry)
-        scene_id = next(
-            sub.subentry_id for sub in entry.subentries.values() if sub.title == "Cosy"
-        )
+        scene_id = subentry_ids(entry)["Cosy"]
         zone = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
         hass.config_entries.async_update_subentry(
             entry, zone, data={**zone.data, "insect_scene_id": scene_id}
         )
         await hass.async_block_till_done()
-        hass.config_entries.async_remove_subentry(entry, scene_id)
+        remove_zone_scene(hass, entry, scene_id)
         await hass.async_block_till_done()
         assert _our_issues(hass)
 
@@ -193,10 +191,8 @@ class TestDanglingReferences:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
         await setup_hub(hass, entry)
-        scene_id = next(
-            sub.subentry_id for sub in entry.subentries.values() if sub.title == "Cosy"
-        )
-        hass.config_entries.async_remove_subentry(entry, scene_id)
+        scene_id = subentry_ids(entry)["Cosy"]
+        remove_zone_scene(hass, entry, scene_id)
         await hass.async_block_till_done()
 
         await hass.services.async_call(

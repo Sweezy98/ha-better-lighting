@@ -19,6 +19,7 @@ from homeassistant.components.light import (
 from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
+from homeassistant.util import slugify
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     setup_test_component_platform,
@@ -128,6 +129,7 @@ def hub_entry(**kwargs) -> MockConfigEntry:
     """A hub entry with one two-light zone unless told otherwise."""
     kwargs.setdefault("subentries_data", [zone_subentry()])
     kwargs.setdefault("options", {})
+    kwargs["subentries_data"] = _fold_scenes_into_zones(kwargs["subentries_data"])
     return MockConfigEntry(
         domain=DOMAIN,
         title="Better Lighting",
@@ -171,3 +173,120 @@ def form_input(specs: tuple[FieldSpec, ...], **overrides) -> dict:
         elif spec.default is not None:
             data[spec.key] = spec.default
     return {**data, **overrides}
+
+
+def scene_to_zone_scene(data: ConfigSubentryData) -> dict[str, Any]:
+    """Turn a scene-subentry payload into one of a room's own scenes.
+
+    Scenes used to be house-wide recipes with one brightness and one colour.
+    They are now lists of lights, so the old shape maps onto a single "all
+    lights in this room" entry -- which is exactly what those tests meant.
+    """
+    raw = dict(data["data"])
+    override = raw.get("override_mode", "both")
+    entry: dict[str, Any] = {"action": "apply"}
+    if override in ("both", "brightness"):
+        entry["brightness_pct"] = raw.get("brightness_pct")
+    if override in ("both", "color"):
+        entry["color_format"] = raw.get("color_format", "color_temp_kelvin")
+        for key in ("color_temp_kelvin", "rgb_color", "color_name"):
+            if raw.get(key) is not None:
+                entry[key] = raw[key]
+    else:
+        entry["color_format"] = "none"
+
+    lights = dict(raw.get("lights") or {})
+    lights.setdefault("*", entry)
+    return {
+        "scene_id": raw.get("scene_id") or f"scene_{slugify(data['title'])}",
+        "name": raw.get("name") or data["title"],
+        "icon": raw.get("icon", "mdi:palette"),
+        "transition": raw.get("transition", 0),
+        "on_lights_only": raw.get("on_lights_only", False),
+        "ignore_presence": raw.get("ignore_presence", False),
+        "others": raw.get("others", "adaptive"),
+        "on_unsupported_color": raw.get("on_unsupported_color", "adaptive"),
+        "lights": lights,
+        # Carried only so the folding below knows which rooms asked for it.
+        "_zones": raw.get("scene_zones") or [],
+    }
+
+
+def _fold_scenes_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
+    """Attach scene payloads to the zones that should offer them."""
+    scenes = [s for s in subentries if s["subentry_type"] == SubentryType.SCENE.value]
+    if not scenes:
+        return list(subentries)
+
+    rest = [s for s in subentries if s["subentry_type"] != SubentryType.SCENE.value]
+    converted = [scene_to_zone_scene(s) for s in scenes]
+    out = []
+    for sub in rest:
+        if sub["subentry_type"] != SubentryType.ZONE.value:
+            out.append(sub)
+            continue
+        data = dict(sub["data"])
+        mine = [
+            {k: v for k, v in scene.items() if k != "_zones"}
+            for scene in converted
+            if not scene["_zones"] or sub["unique_id"] in scene["_zones"]
+        ]
+        data["scenes"] = list(data.get("scenes") or ()) + mine
+        out.append(
+            ConfigSubentryData(
+                data=data,
+                subentry_type=sub["subentry_type"],
+                title=sub["title"],
+                unique_id=sub["unique_id"],
+            )
+        )
+    return out
+
+
+def subentry_ids(entry: MockConfigEntry) -> dict[str, str]:
+    """Titles to ids -- and each room's scenes by name.
+
+    Scenes are no longer subentries, so a test that used to look one up by
+    title now wants the id stored inside its room. Both live in one mapping so
+    a rule can name a room and a scene the same way.
+    """
+    ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+    for sub in entry.subentries.values():
+        for scene in sub.data.get("scenes") or ():
+            ids[scene["name"]] = scene["scene_id"]
+    return ids
+
+
+def add_zone_scene(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    scene: ConfigSubentryData,
+    zone_title: str | None = None,
+) -> str:
+    """Append a scene to a room after the hub is already running."""
+    converted = scene_to_zone_scene(scene)
+    converted.pop("_zones", None)
+    for sub in entry.subentries.values():
+        if sub.subentry_type != SubentryType.ZONE.value:
+            continue
+        if zone_title is not None and sub.title != zone_title:
+            continue
+        hass.config_entries.async_update_subentry(
+            entry,
+            sub,
+            data={**sub.data, "scenes": [*(sub.data.get("scenes") or ()), converted]},
+        )
+    return converted["scene_id"]
+
+
+def remove_zone_scene(
+    hass: HomeAssistant, entry: MockConfigEntry, scene_id: str
+) -> None:
+    """Delete a scene from whichever room holds it."""
+    for sub in entry.subentries.values():
+        scenes = sub.data.get("scenes") or ()
+        remaining = [s for s in scenes if s.get("scene_id") != scene_id]
+        if len(remaining) != len(scenes):
+            hass.config_entries.async_update_subentry(
+                entry, sub, data={**sub.data, "scenes": remaining}
+            )

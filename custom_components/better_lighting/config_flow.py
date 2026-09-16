@@ -20,6 +20,8 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
+from homeassistant.helpers.selector import SelectOptionDict
+from homeassistant.util import ulid as ulid_util
 
 from .const import (
     COLOR_FORMAT_INHERIT,
@@ -29,12 +31,18 @@ from .const import (
     CONF_BINDING_TYPE,
     CONF_BRIGHTNESS_PCT,
     CONF_COLOR_FORMAT,
+    CONF_COLOR_TEMP_KELVIN,
+    CONF_ICON,
+    CONF_IGNORE_PRESENCE,
     CONF_LIGHT_ACTION,
     CONF_LIGHT_ENTITY,
     CONF_LIGHTS,
     CONF_NAME,
     CONF_OFF_AT_END,
-    CONF_OVERRIDE_MODE,
+    CONF_ON_LIGHTS_ONLY,
+    CONF_ON_UNSUPPORTED_COLOR,
+    CONF_OTHERS,
+    CONF_RGB_COLOR,
     CONF_RULE_ACTION,
     CONF_RULE_ENTRY_ACTION,
     CONF_RULE_ENTRY_SCENE,
@@ -42,18 +50,19 @@ from .const import (
     CONF_RULE_STATES,
     CONF_RULE_ZONES,
     CONF_RULES,
+    CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
     CONF_SCENE_ORDER,
-    CONF_SCENE_ZONES,
     CONF_STATES,
+    CONF_TRANSITION,
     CONF_ZONE_ID,
+    CONF_ZONE_SCENES,
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
     MODE_SPECS,
-    SCENE_COLOR_SPECS,
-    SCENE_SPECS,
+    ZONE_SCENE_SPECS,
     ZONE_SPECS,
     BindingType,
     SubentryType,
@@ -61,6 +70,7 @@ from .const import (
     scene_light_color_specs,
     scene_light_specs,
 )
+from .scenes import ALL_LIGHTS
 from .schemas import build_schema, flatten_sections, post_validate
 
 _LOGGER = logging.getLogger(__name__)
@@ -78,13 +88,22 @@ def scene_options(
     """
     options = []
     for sub in entry.subentries.values():
-        if sub.subentry_type != SubentryType.SCENE.value:
+        if sub.subentry_type != SubentryType.ZONE.value:
             continue
-        if zone_id is not None:
-            scoped = sub.data.get(CONF_SCENE_ZONES) or []
-            if scoped and zone_id not in scoped:
+        if zone_id is not None and sub.subentry_id != zone_id:
+            continue
+        for scene in sub.data.get(CONF_ZONE_SCENES) or ():
+            if not scene.get(CONF_SCENE_ID):
                 continue
-        options.append({"value": sub.subentry_id, "label": sub.title})
+            # Prefixed when the list spans rooms, because two rooms may well
+            # each have a Reading scene and they are not the same thing.
+            label = scene.get(CONF_NAME, "?")
+            options.append(
+                {
+                    "value": scene[CONF_SCENE_ID],
+                    "label": label if zone_id is not None else f"{sub.title} · {label}",
+                }
+            )
     return options
 
 
@@ -171,7 +190,6 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
         return {
             SubentryType.ZONE.value: ZoneSubentryFlow,
             SubentryType.LIGHT_PROFILE.value: LightProfileSubentryFlow,
-            SubentryType.SCENE.value: SceneSubentryFlow,
             SubentryType.CONTROLLER.value: ControllerSubentryFlow,
             SubentryType.MODE.value: ModeSubentryFlow,
         }
@@ -200,7 +218,22 @@ class BetterLightingOptionsFlow(OptionsFlow):
 
 
 class ZoneSubentryFlow(ConfigSubentryFlow):
-    """Add or reconfigure a zone."""
+    """Add or reconfigure a zone, and manage the scenes that belong to it.
+
+    A room's settings come first, then a menu for its scenes. Scenes live here
+    rather than in a list of their own because a scene is a list of *this*
+    room's lights: a reading scene for the living room and one for the bedroom
+    have nothing in common but the word, and putting them in one house-wide
+    list only ever produced a picker nobody could read.
+    """
+
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+        self._scenes: list[dict[str, Any]] = []
+        self._subentry: Any = None
+        self._scene: dict[str, Any] = {}
+        self._editing: int | None = None
+        self._pending_light: tuple[str, dict[str, Any]] = ("", {})
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -218,6 +251,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None, *, subentry: Any
     ) -> SubentryFlowResult:
         entry = self._get_entry()
+        self._subentry = subentry
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -229,29 +263,456 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
                 exclude_subentry_id=subentry.subentry_id if subentry else None,
             )
             if not errors:
-                title = cleaned[CONF_NAME]
-                if subentry is None:
-                    return self.async_create_entry(title=title, data=cleaned)
-                return self.async_update_and_abort(
-                    entry, subentry, data=cleaned, title=title
-                )
+                self._data = cleaned
+                if not self._scenes:
+                    self._scenes = [
+                        dict(scene)
+                        for scene in (
+                            (subentry.data.get(CONF_ZONE_SCENES) or [])
+                            if subentry
+                            else []
+                        )
+                    ]
+                return await self.async_step_menu()
 
         existing = dict(subentry.data) if subentry else None
-        scenes = scene_options(entry)
         return self.async_show_form(
             step_id="reconfigure" if subentry else "user",
             data_schema=build_schema(
-                ZONE_SPECS, user_input or existing, options={"scenes": scenes}
+                ZONE_SPECS,
+                user_input or existing,
+                options={"scenes": self._scene_options()},
             ),
             errors=errors,
-            description_placeholders={
-                "scene_hint": (
-                    ""
-                    if scenes
-                    else "No scenes defined yet, so the night scene cannot be "
-                    "chosen. Add one, then reconfigure this zone."
+            description_placeholders={"scene_hint": ""},
+        )
+
+    # -- the room's own menu ----------------------------------------------
+
+    async def async_step_menu(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return self.async_show_menu(
+            step_id="menu",
+            menu_options=["scenes", "finish"],
+            description_placeholders={"scenes": self._scenes_summary()},
+        )
+
+    async def async_step_scenes(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_scene", "capture_scene"]
+        if self._scenes:
+            options += ["edit_scene", "remove_scene"]
+        if len(self._scenes) > 1:
+            options.append("move_scene")
+        options.append("menu")
+        return self.async_show_menu(
+            step_id="scenes",
+            menu_options=options,
+            description_placeholders={"scenes": self._scenes_summary()},
+        )
+
+    def _scenes_summary(self) -> str:
+        if not self._scenes:
+            return "(none yet)"
+        lines = []
+        for index, scene in enumerate(self._scenes, start=1):
+            lights = scene.get(CONF_SCENE_LIGHTS) or {}
+            named = len([key for key in lights if key != ALL_LIGHTS])
+            detail = []
+            if ALL_LIGHTS in lights:
+                detail.append("all lights")
+            if named:
+                detail.append(f"{named} named")
+            lines.append(
+                f"{index}. {scene.get(CONF_NAME)}"
+                + (f" ({', '.join(detail)})" if detail else " (nothing set)")
+            )
+        return "\n".join(lines)
+
+    def _scene_options(self) -> list[SelectOptionDict]:
+        """This room's scenes, for the night and insect pickers."""
+        return [
+            SelectOptionDict(
+                value=str(scene.get(CONF_SCENE_ID)), label=scene[CONF_NAME]
+            )
+            for scene in self._scenes
+            if scene.get(CONF_SCENE_ID)
+        ]
+
+    def _scene_picker(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required("scene"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": str(index), "label": scene.get(CONF_NAME, "?")}
+                            for index, scene in enumerate(self._scenes)
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        sort=False,
+                    )
                 )
-            },
+            }
+        )
+
+    # -- adding and editing one scene -------------------------------------
+
+    async def async_step_add_scene(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_scene_form("add_scene", user_input, index=None)
+
+    async def async_step_edit_scene(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            self._editing = int(user_input["scene"])
+            self._scene = dict(self._scenes[self._editing])
+            return await self.async_step_scene_form()
+        return self.async_show_form(
+            step_id="edit_scene",
+            data_schema=self._scene_picker(),
+            description_placeholders={"scenes": self._scenes_summary()},
+        )
+
+    async def async_step_scene_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_scene_form(
+            "scene_form", user_input, index=self._editing
+        )
+
+    async def _async_scene_form(
+        self, step_id: str, user_input: dict[str, Any] | None, *, index: int | None
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            flat = flatten_sections(ZONE_SCENE_SPECS, user_input)
+            cleaned, errors = post_validate(ZONE_SCENE_SPECS, flat)
+            if not errors:
+                lights = self._scene.get(CONF_SCENE_LIGHTS) or {}
+                self._scene = {
+                    **cleaned,
+                    CONF_SCENE_ID: self._scene.get(CONF_SCENE_ID)
+                    or ulid_util.ulid_now(),
+                    CONF_SCENE_LIGHTS: dict(lights),
+                }
+                self._editing = index
+                return await self.async_step_scene_lights()
+
+        current = user_input
+        if current is None and index is not None:
+            current = dict(self._scenes[index])
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=build_schema(ZONE_SCENE_SPECS, current),
+            errors=errors,
+        )
+
+    async def async_step_remove_scene(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            index = int(user_input["scene"])
+            if 0 <= index < len(self._scenes):
+                self._scenes.pop(index)
+            return await self.async_step_scenes()
+        return self.async_show_form(
+            step_id="remove_scene",
+            data_schema=self._scene_picker(),
+            description_placeholders={"scenes": self._scenes_summary()},
+        )
+
+    async def async_step_move_scene(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Reorder, because a switch cycles the room's scenes in this order."""
+        if user_input is not None:
+            index = int(user_input["scene"])
+            target = max(0, min(len(self._scenes) - 1, int(user_input["position"]) - 1))
+            scene = self._scenes.pop(index)
+            self._scenes.insert(target, scene)
+            return await self.async_step_scenes()
+
+        schema = self._scene_picker().extend(
+            {
+                vol.Required("position", default=1): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=len(self._scenes),
+                        step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="move_scene",
+            data_schema=schema,
+            description_placeholders={"scenes": self._scenes_summary()},
+        )
+
+    # -- capturing what the room looks like now ---------------------------
+
+    async def async_step_capture_scene(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Store the room exactly as it looks right now.
+
+        The fastest way to build a scene, and the way round the fact that a
+        config flow has no colour wheel: set the room up with Home Assistant's
+        own light controls, then come here and name it.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            name = (user_input.get(CONF_NAME) or "").strip()
+            if not name:
+                errors[CONF_NAME] = "name_required"
+            else:
+                lights = self._capture_lights()
+                if not lights:
+                    errors["base"] = "nothing_to_capture"
+                else:
+                    self._scenes.append(
+                        {
+                            CONF_SCENE_ID: ulid_util.ulid_now(),
+                            CONF_NAME: name,
+                            CONF_ICON: "mdi:palette",
+                            CONF_TRANSITION: 1.5,
+                            CONF_ON_LIGHTS_ONLY: False,
+                            CONF_IGNORE_PRESENCE: False,
+                            CONF_OTHERS: "adaptive",
+                            CONF_ON_UNSUPPORTED_COLOR: "adaptive",
+                            CONF_SCENE_LIGHTS: lights,
+                        }
+                    )
+                    return await self.async_step_scenes()
+
+        return self.async_show_form(
+            step_id="capture_scene",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_NAME): selector.TextSelector(
+                        selector.TextSelectorConfig()
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={"lights": self._capture_preview()},
+        )
+
+    def _capture_lights(self) -> dict[str, Any]:
+        """Read the room's current state into per-light scene entries."""
+        captured: dict[str, Any] = {}
+        for entity_id in self._data.get(CONF_LIGHTS) or ():
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                continue
+            if state.state != "on":
+                captured[entity_id] = {CONF_LIGHT_ACTION: "off"}
+                continue
+
+            entry: dict[str, Any] = {CONF_LIGHT_ACTION: "apply"}
+            if (brightness := state.attributes.get("brightness")) is not None:
+                entry[CONF_BRIGHTNESS_PCT] = round(int(brightness) / 255 * 100, 1)
+
+            # Whichever colour the light is actually showing. A light in
+            # colour-temp mode has an rgb_color attribute too, derived rather
+            # than set, and storing that would freeze a warm white into a
+            # slightly-wrong orange.
+            if state.attributes.get("color_mode") == "color_temp" and (
+                kelvin := state.attributes.get("color_temp_kelvin")
+            ):
+                entry[CONF_COLOR_FORMAT] = CONF_COLOR_TEMP_KELVIN
+                entry[CONF_COLOR_TEMP_KELVIN] = int(kelvin)
+            elif (rgb := state.attributes.get("rgb_color")) is not None:
+                entry[CONF_COLOR_FORMAT] = CONF_RGB_COLOR
+                entry[CONF_RGB_COLOR] = list(rgb)
+            else:
+                entry[CONF_COLOR_FORMAT] = COLOR_FORMAT_NONE
+            captured[entity_id] = entry
+        return captured
+
+    def _capture_preview(self) -> str:
+        lines = []
+        for entity_id in self._data.get(CONF_LIGHTS) or ():
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                lines.append(f"{entity_id}: unavailable")
+            elif state.state != "on":
+                lines.append(f"{entity_id}: off")
+            else:
+                brightness = state.attributes.get("brightness")
+                pct = f"{round(int(brightness) / 255 * 100)}%" if brightness else "on"
+                lines.append(f"{entity_id}: {pct}")
+        return "\n".join(lines) or "(this room has no lights)"
+
+    # -- the lights inside one scene --------------------------------------
+
+    async def async_step_scene_lights(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_light"]
+        if self._scene.get(CONF_SCENE_LIGHTS):
+            options += ["remove_light"]
+        options.append("save_scene")
+        return self.async_show_menu(
+            step_id="scene_lights",
+            menu_options=options,
+            description_placeholders={"lights": self._lights_summary()},
+        )
+
+    def _lights_summary(self) -> str:
+        lights = self._scene.get(CONF_SCENE_LIGHTS) or {}
+        if not lights:
+            return "(nothing set — this scene would leave the room adaptive)"
+        lines = []
+        for entity_id, entry in lights.items():
+            label = "all lights" if entity_id == ALL_LIGHTS else entity_id
+            action = entry.get(CONF_LIGHT_ACTION, "apply")
+            if action == "off":
+                lines.append(f"{label}: off")
+                continue
+            if action == "leave":
+                lines.append(f"{label}: left alone")
+                continue
+            parts = []
+            if (brightness := entry.get(CONF_BRIGHTNESS_PCT)) is not None:
+                parts.append(f"{int(brightness)}%")
+            fmt = entry.get(CONF_COLOR_FORMAT, COLOR_FORMAT_INHERIT)
+            if fmt == COLOR_FORMAT_NONE:
+                parts.append("colour stays adaptive")
+            elif fmt == CONF_COLOR_TEMP_KELVIN and entry.get(CONF_COLOR_TEMP_KELVIN):
+                parts.append(f"{entry[CONF_COLOR_TEMP_KELVIN]} K")
+            elif fmt == CONF_RGB_COLOR and entry.get(CONF_RGB_COLOR):
+                parts.append("RGB " + ",".join(str(v) for v in entry[CONF_RGB_COLOR]))
+            elif fmt != COLOR_FORMAT_INHERIT:
+                parts.append(str(fmt).replace("_", " "))
+            lines.append(f"{label}: {', '.join(parts) or 'nothing set'}")
+        return "\n".join(lines)
+
+    async def async_step_add_light(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        specs = scene_light_specs()
+        errors: dict[str, str] = {}
+        lights = self._scene.setdefault(CONF_SCENE_LIGHTS, {})
+
+        if user_input is not None:
+            flat = flatten_sections(specs, user_input)
+            cleaned, errors = post_validate(specs, flat)
+            entity_id = cleaned.pop("light", None)
+            if not entity_id:
+                errors["light"] = "light_required"
+            if not errors:
+                self._pending_light = (entity_id, cleaned)
+                if _light_needs_color(cleaned):
+                    return await self.async_step_light_color()
+                lights[entity_id] = cleaned
+                return await self.async_step_scene_lights()
+
+        available: list[SelectOptionDict] = [
+            SelectOptionDict(value=ALL_LIGHTS, label="All lights in this room")
+        ]
+        available += [
+            SelectOptionDict(value=entity_id, label=entity_id)
+            for entity_id in (self._data.get(CONF_LIGHTS) or ())
+        ]
+        available = [option for option in available if option["value"] not in lights]
+        if not available:
+            return await self.async_step_scene_lights()
+
+        return self.async_show_form(
+            step_id="add_light",
+            data_schema=build_schema(specs, user_input, options={"lights": available}),
+            errors=errors,
+            description_placeholders={"lights": self._lights_summary()},
+        )
+
+    async def async_step_light_color(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        entity_id, pending = self._pending_light
+        fmt = pending.get(CONF_COLOR_FORMAT)
+        specs = scene_light_color_specs(fmt)
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            cleaned, errors = post_validate(specs, user_input)
+            if not errors:
+                self._scene.setdefault(CONF_SCENE_LIGHTS, {})[entity_id] = {
+                    **pending,
+                    **cleaned,
+                }
+                self._pending_light = ("", {})
+                return await self.async_step_scene_lights()
+
+        return self.async_show_form(
+            step_id="light_color",
+            data_schema=build_schema(specs, user_input),
+            errors=errors,
+            description_placeholders={"light": entity_id},
+        )
+
+    async def async_step_remove_light(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        lights = self._scene.get(CONF_SCENE_LIGHTS) or {}
+        if user_input is not None:
+            lights.pop(user_input["light"], None)
+            return await self.async_step_scene_lights()
+
+        return self.async_show_form(
+            step_id="remove_light",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("light"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {
+                                    "value": entity_id,
+                                    "label": (
+                                        "All lights in this room"
+                                        if entity_id == ALL_LIGHTS
+                                        else entity_id
+                                    ),
+                                }
+                                for entity_id in lights
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                            sort=False,
+                        )
+                    )
+                }
+            ),
+            description_placeholders={"lights": self._lights_summary()},
+        )
+
+    async def async_step_save_scene(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        scene = dict(self._scene)
+        if self._editing is not None and 0 <= self._editing < len(self._scenes):
+            self._scenes[self._editing] = scene
+        else:
+            self._scenes.append(scene)
+        self._scene = {}
+        self._editing = None
+        return await self.async_step_scenes()
+
+    # -- done --------------------------------------------------------------
+
+    async def async_step_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        data = {**self._data, CONF_ZONE_SCENES: self._scenes}
+        title = data[CONF_NAME]
+        if self._subentry is None:
+            return self.async_create_entry(title=title, data=data)
+        return self.async_update_and_abort(
+            self._get_entry(), self._subentry, data=data, title=title
         )
 
 
@@ -333,242 +794,6 @@ def _profile_title(hass, light_entity: str | None) -> str:
     if state is not None and (name := state.attributes.get("friendly_name")):
         return str(name)
     return light_entity.removeprefix("light.").replace("_", " ").title()
-
-
-class SceneSubentryFlow(ConfigSubentryFlow):
-    """Add or reconfigure a scene.
-
-    Two steps on purpose. A colour must carry exactly one format, and the only
-    reliable way to guarantee that through a form is to ask which format first
-    and then show that one field -- rather than offer eight and hope the user
-    fills in a single one.
-    """
-
-    def __init__(self) -> None:
-        self._data: dict[str, Any] = {}
-        self._lights: dict[str, Any] = {}
-        self._pending_light: tuple[str, dict[str, Any]] = ("", {})
-        self._subentry: Any = None
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        return await self._async_basics(user_input, subentry=None)
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        return await self._async_basics(
-            user_input, subentry=self._get_reconfigure_subentry()
-        )
-
-    async def _async_basics(
-        self, user_input: dict[str, Any] | None, *, subentry: Any
-    ) -> SubentryFlowResult:
-        self._subentry = subentry
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            flat = flatten_sections(SCENE_SPECS, user_input)
-            cleaned, errors = post_validate(SCENE_SPECS, flat)
-            if not errors:
-                self._data = cleaned
-                self._lights = dict(
-                    (subentry.data.get(CONF_SCENE_LIGHTS) or {}) if subentry else {}
-                )
-                if self._needs_color(cleaned):
-                    return await self.async_step_color()
-                return await self.async_step_lights()
-
-        existing = dict(subentry.data) if subentry else None
-        return self.async_show_form(
-            step_id="reconfigure" if subentry else "user",
-            data_schema=build_schema(
-                SCENE_SPECS,
-                user_input or existing,
-                options={"zones": zone_options(self._get_entry())},
-            ),
-            errors=errors,
-        )
-
-    async def async_step_color(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Collect the one colour field the chosen format needs."""
-        fmt = self._data.get(CONF_COLOR_FORMAT)
-        spec = SCENE_COLOR_SPECS.get(fmt)
-        if spec is None:
-            return self._finish()
-
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            cleaned, errors = post_validate((spec,), user_input)
-            if not errors:
-                # Only the chosen format survives, so a format switched during
-                # a reconfigure cannot leave a second colour behind.
-                for other in SCENE_COLOR_SPECS:
-                    self._data.pop(other, None)
-                self._data |= cleaned
-                return await self.async_step_lights()
-
-        existing = dict(self._subentry.data) if self._subentry else None
-        return self.async_show_form(
-            step_id="color",
-            data_schema=build_schema((spec,), user_input or existing),
-            errors=errors,
-            description_placeholders={"format": str(fmt)},
-        )
-
-    @staticmethod
-    def _needs_color(data: dict[str, Any]) -> bool:
-        if data.get(CONF_OVERRIDE_MODE) in ("brightness", "neither"):
-            return False
-        return data.get(CONF_COLOR_FORMAT) not in (None, COLOR_FORMAT_NONE)
-
-    # -- naming individual lights -----------------------------------------
-
-    def _lights_summary(self) -> str:
-        if not self._lights:
-            return (
-                "(none — every light in the room gets the scene's own "
-                "brightness and colour)"
-            )
-        lines = []
-        for entity_id, entry in self._lights.items():
-            action = entry.get(CONF_LIGHT_ACTION, "apply")
-            if action == "off":
-                lines.append(f"{entity_id}: off")
-                continue
-            if action == "leave":
-                lines.append(f"{entity_id}: left alone")
-                continue
-            parts = []
-            if (brightness := entry.get(CONF_BRIGHTNESS_PCT)) is not None:
-                parts.append(f"{int(brightness)}%")
-            fmt = entry.get(CONF_COLOR_FORMAT, COLOR_FORMAT_INHERIT)
-            if fmt == COLOR_FORMAT_NONE:
-                parts.append("colour stays adaptive")
-            elif fmt != COLOR_FORMAT_INHERIT:
-                parts.append(str(fmt).replace("_", " "))
-            lines.append(f"{entity_id}: {', '.join(parts) or 'scene defaults'}")
-        return "\n".join(lines)
-
-    async def async_step_lights(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        options = ["add_light", "finish"]
-        if self._lights:
-            options = ["add_light", "remove_light", "finish"]
-        return self.async_show_menu(
-            step_id="lights",
-            menu_options=options,
-            description_placeholders={"lights": self._lights_summary()},
-        )
-
-    async def async_step_add_light(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        entry = self._get_entry()
-        specs = scene_light_specs()
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            flat = flatten_sections(specs, user_input)
-            cleaned, errors = post_validate(specs, flat)
-            entity_id = cleaned.pop("light", None)
-            if not entity_id:
-                errors["light"] = "light_required"
-            if not errors:
-                self._pending_light = (entity_id, cleaned)
-                if _light_needs_color(cleaned):
-                    return await self.async_step_light_color()
-                self._lights[entity_id] = cleaned
-                return await self.async_step_lights()
-
-        available = [
-            option
-            for option in scene_light_options(entry, self._data.get(CONF_SCENE_ZONES))
-            if option["value"] not in self._lights
-        ]
-        if not available:
-            return await self.async_step_lights()
-
-        return self.async_show_form(
-            step_id="add_light",
-            data_schema=build_schema(specs, user_input, options={"lights": available}),
-            errors=errors,
-            description_placeholders={"lights": self._lights_summary()},
-        )
-
-    async def async_step_light_color(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        """Ask for the colour itself, showing only the control that was chosen.
-
-        Home Assistant has no combined light-colour control for config flows --
-        only a colour picker and a colour-temperature slider, which are exactly
-        what these are. Asking which one first means the user sees that one
-        rather than every colour field at once.
-        """
-        entity_id, pending = self._pending_light
-        fmt = pending.get(CONF_COLOR_FORMAT)
-        specs = scene_light_color_specs(fmt)
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            cleaned, errors = post_validate(specs, user_input)
-            if not errors:
-                self._lights[entity_id] = {**pending, **cleaned}
-                self._pending_light = ("", {})
-                return await self.async_step_lights()
-
-        return self.async_show_form(
-            step_id="light_color",
-            data_schema=build_schema(specs, user_input),
-            errors=errors,
-            description_placeholders={"light": entity_id},
-        )
-
-    async def async_step_remove_light(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        if user_input is not None:
-            self._lights.pop(user_input["light"], None)
-            return await self.async_step_lights()
-
-        return self.async_show_form(
-            step_id="remove_light",
-            data_schema=vol.Schema(
-                {
-                    vol.Required("light"): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                {"value": entity_id, "label": entity_id}
-                                for entity_id in self._lights
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                            sort=False,
-                        )
-                    )
-                }
-            ),
-            description_placeholders={"lights": self._lights_summary()},
-        )
-
-    async def async_step_finish(
-        self, user_input: dict[str, Any] | None = None
-    ) -> SubentryFlowResult:
-        return self._finish()
-
-    def _finish(self) -> SubentryFlowResult:
-        entry = self._get_entry()
-        data = {**self._data, CONF_SCENE_LIGHTS: self._lights}
-        title = scene_title(entry, data[CONF_NAME], data.get(CONF_SCENE_ZONES))
-        if self._subentry is None:
-            return self.async_create_entry(title=title, data=data)
-        return self.async_update_and_abort(
-            entry, self._subentry, data=data, title=title
-        )
 
 
 def scene_title(entry: ConfigEntry, name: str, zone_ids: list[str] | None) -> str:

@@ -332,12 +332,144 @@
               }
             }
           }
+        },
+        "add_light": {
+          "title": "Lampe benennen",
+          "description": "Benannte Lampen:\n\n{lights}",
+          "data": {
+            "light": "Lampe",
+            "action": "Was mit ihr geschieht",
+            "brightness_pct": "Helligkeit",
+            "color_format": "Farbe für diese Lampe"
+          },
+          "data_description": {
+            "brightness_pct": "Leer lassen, um die Helligkeit der Szene zu verwenden.",
+            "color_format": "„Farbe der Sonne überlassen“ lässt diese Lampe die Helligkeit der Szene übernehmen, während ihre Farbe weiter nachgeführt wird — nützlich für eine Schreibtischlampe in einer Filmszene. Nach der Farbe selbst wird als Nächstes gefragt."
+          }
+        },
+        "light_color": {
+          "title": "Farbe für {light}",
+          "data": {
+            "color_temp_kelvin": "Farbtemperatur",
+            "rgb_color": "Farbe",
+            "warm_white": "Warmweiß-Kanal",
+            "cold_white": "Kaltweiß-Kanal"
+          },
+          "data_description": {
+            "warm_white": "RGBWW-Streifen haben weiße LEDs hinter den farbigen. Beide auf null lassen für eine reine Farbe; den Warmkanal anheben, damit ein Streifen zu einem Holzboden passt."
+          }
+        },
+        "remove_light": {
+          "title": "Lampe nicht mehr benennen",
+          "description": "Benannte Lampen:\n\n{lights}",
+          "data": {
+            "light": "Lampe"
+          }
+        },
+        "menu": {
+          "title": "Raum",
+          "description": "Szenen in diesem Raum:\n\n{scenes}",
+          "menu_options": {
+            "scenes": "Szenen",
+            "finish": "Fertig"
+          }
+        },
+        "scenes": {
+          "title": "Szenen",
+          "description": "Szenen in diesem Raum, in der Reihenfolge, in der ein Schalter sie durchschaltet:\n\n{scenes}",
+          "menu_options": {
+            "add_scene": "Szene hinzufügen",
+            "capture_scene": "Raum so übernehmen, wie er gerade ist",
+            "edit_scene": "Szene ändern",
+            "remove_scene": "Szene entfernen",
+            "move_scene": "Reihenfolge ändern",
+            "menu": "Zurück"
+          }
+        },
+        "add_scene": {
+          "title": "Szene hinzufügen",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "transition": "Übergangsdauer"
+          },
+          "sections": {
+            "advanced": {
+              "name": "Verhalten",
+              "data": {
+                "on_lights_only": "Nur Lampen beeinflussen, die bereits an sind",
+                "ignore_presence": "Anwesenheit ignorieren, solange diese Szene aktiv ist",
+                "others": "Lampen, zu denen diese Szene nichts sagt",
+                "on_unsupported_color": "Wenn eine Lampe die Farbe nicht darstellen kann"
+              }
+            }
+          }
+        },
+        "edit_scene": {
+          "title": "Szene ändern",
+          "description": "Szenen in diesem Raum:\n\n{scenes}",
+          "data": {
+            "scene": "Szene"
+          }
+        },
+        "remove_scene": {
+          "title": "Szene entfernen",
+          "description": "Szenen in diesem Raum:\n\n{scenes}",
+          "data": {
+            "scene": "Szene"
+          }
+        },
+        "move_scene": {
+          "title": "Reihenfolge ändern",
+          "description": "Szenen in diesem Raum, in der Reihenfolge, in der ein Schalter sie durchschaltet:\n\n{scenes}",
+          "data": {
+            "scene": "Szene",
+            "position": "An Position verschieben"
+          }
+        },
+        "capture_scene": {
+          "title": "Raum so übernehmen, wie er gerade ist",
+          "description": "Den Raum mit den normalen Lichtsteuerungen einrichten und ihm hier einen Namen geben.\n\n{lights}",
+          "data": {
+            "name": "Name"
+          }
+        },
+        "scene_lights": {
+          "title": "Lampen in dieser Szene",
+          "description": "{lights}",
+          "menu_options": {
+            "add_light": "Lampe hinzufügen",
+            "remove_light": "Lampe entfernen",
+            "save_scene": "Diese Szene speichern"
+          }
+        },
+        "scene_form": {
+          "title": "Szene ändern",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "transition": "Übergangsdauer"
+          },
+          "sections": {
+            "advanced": {
+              "name": "Verhalten",
+              "data": {
+                "on_lights_only": "Nur Lampen beeinflussen, die bereits an sind",
+                "ignore_presence": "Anwesenheit ignorieren, solange diese Szene aktiv ist",
+                "others": "Lampen, zu denen diese Szene nichts sagt",
+                "on_unsupported_color": "Wenn eine Lampe die Farbe nicht darstellen kann"
+              }
+            }
+          }
         }
       },
       "error": {
         "invalid_value": "Dieser Wert ist ungültig.",
         "no_lights": "Mindestens eine Lampe auswählen.",
-        "light_in_other_zone": "Eine dieser Lampen gehört bereits zu einem anderen Raum. Eine Lampe kann nur in einem Raum sein."
+        "light_in_other_zone": "Eine dieser Lampen gehört bereits zu einem anderen Raum. Eine Lampe kann nur in einem Raum sein.",
+        "light_required": "Eine Lampe auswählen.",
+        "name_required": "Der Szene einen Namen geben.",
+        "nothing_to_capture": "Keine Lampe dieses Raums ist verfügbar, um übernommen zu werden."
       },
       "abort": {
         "reconfigure_successful": "Raum aktualisiert."
@@ -419,144 +551,6 @@
       },
       "abort": {
         "reconfigure_successful": "Abgleich aktualisiert."
-      }
-    },
-    "scene": {
-      "entry_type": "Szene",
-      "initiate_flow": {
-        "user": "Szene hinzufügen",
-        "reconfigure": "Szene neu konfigurieren"
-      },
-      "step": {
-        "user": {
-          "title": "Szene",
-          "description": "Eine Szene ist ein Rezept, kein Raum. Einmal definieren und überall anwenden. Gut überlegen, was sie übernimmt: Was sie in Ruhe lässt, folgt weiter der Sonne.",
-          "data": {
-            "name": "Name",
-            "icon": "Symbol",
-            "override_mode": "Diese Szene setzt",
-            "brightness_pct": "Helligkeit",
-            "color_format": "Farbe angegeben als",
-            "transition": "Übergangsdauer",
-            "scene_zones": "Szene anbieten in"
-          },
-          "data_description": {
-            "override_mode": "„Helligkeit“ legt die Helligkeit fest und lässt die Farbe weiter der Sonne folgen. „Farbe“ macht es umgekehrt. „Beides“ legt das Aussehen vollständig fest. „Weder noch“ wählt nur, welche Lampen an sind.",
-            "color_format": "Der nächste Schritt fragt nach der Farbe selbst. „Keine Farbe“ wählen für eine Szene, die nur die Helligkeit setzt.",
-            "scene_zones": "Leer lassen für eine Szene, die das ganze Haus nutzt, etwa eine Nachtszene. Wird ein Raum angegeben, erscheint die Szene in keiner anderen Raumliste und trägt den Raum vor ihrem Namen — so können eine Lese-Szene im Wohnzimmer und eine im Schlafzimmer beide einfach „Lesen“ heißen."
-          },
-          "sections": {
-            "advanced": {
-              "name": "Verhalten",
-              "data": {
-                "on_lights_only": "Nur Lampen beeinflussen, die bereits an sind",
-                "ignore_presence": "Anwesenheitssensoren ignorieren, solange aktiv",
-                "others": "Lampen, die diese Szene nicht nennt",
-                "on_unsupported_color": "Wenn eine Lampe diese Farbe nicht darstellen kann"
-              },
-              "data_description": {
-                "on_lights_only": "Den Raum anpassen, ohne ihn zu erhellen. Ausgeschaltete Lampen bleiben aus.",
-                "others": "„Adaptiv“ lässt sie weiter der Sonne folgen, was meist gewünscht ist.",
-                "on_unsupported_color": "„Adaptiv“ belässt sie bei ihrem normalen Weiß, was ehrlich zeigt: Dieses Leuchtmittel kann keine Farbe."
-              }
-            }
-          }
-        },
-        "reconfigure": {
-          "title": "Szene",
-          "description": "Eine Szene ist ein Rezept, kein Raum. Einmal definieren und überall anwenden. Gut überlegen, was sie übernimmt: Was sie in Ruhe lässt, folgt weiter der Sonne.",
-          "data": {
-            "name": "Name",
-            "icon": "Symbol",
-            "override_mode": "Diese Szene setzt",
-            "brightness_pct": "Helligkeit",
-            "color_format": "Farbe angegeben als",
-            "transition": "Übergangsdauer",
-            "scene_zones": "Szene anbieten in"
-          },
-          "data_description": {
-            "override_mode": "„Helligkeit“ legt die Helligkeit fest und lässt die Farbe weiter der Sonne folgen. „Farbe“ macht es umgekehrt. „Beides“ legt das Aussehen vollständig fest. „Weder noch“ wählt nur, welche Lampen an sind.",
-            "color_format": "Der nächste Schritt fragt nach der Farbe selbst. „Keine Farbe“ wählen für eine Szene, die nur die Helligkeit setzt.",
-            "scene_zones": "Leer lassen für eine Szene, die das ganze Haus nutzt, etwa eine Nachtszene. Wird ein Raum angegeben, erscheint die Szene in keiner anderen Raumliste und trägt den Raum vor ihrem Namen — so können eine Lese-Szene im Wohnzimmer und eine im Schlafzimmer beide einfach „Lesen“ heißen."
-          },
-          "sections": {
-            "advanced": {
-              "name": "Verhalten",
-              "data": {
-                "on_lights_only": "Nur Lampen beeinflussen, die bereits an sind",
-                "ignore_presence": "Anwesenheitssensoren ignorieren, solange aktiv",
-                "others": "Lampen, die diese Szene nicht nennt",
-                "on_unsupported_color": "Wenn eine Lampe diese Farbe nicht darstellen kann"
-              },
-              "data_description": {
-                "on_lights_only": "Den Raum anpassen, ohne ihn zu erhellen. Ausgeschaltete Lampen bleiben aus.",
-                "others": "„Adaptiv“ lässt sie weiter der Sonne folgen, was meist gewünscht ist.",
-                "on_unsupported_color": "„Adaptiv“ belässt sie bei ihrem normalen Weiß, was ehrlich zeigt: Dieses Leuchtmittel kann keine Farbe."
-              }
-            }
-          }
-        },
-        "color": {
-          "title": "Szenenfarbe",
-          "description": "Farbe für diese Szene auswählen.",
-          "data": {
-            "color_temp_kelvin": "Farbtemperatur",
-            "rgb_color": "Farbe",
-            "color_name": "Farbname"
-          },
-          "data_description": {
-            "color_name": "Ein CSS-Farbname, etwa „coral“ oder „warmwhite“."
-          }
-        },
-        "lights": {
-          "title": "Einzelne Lampen",
-          "description": "Benannte Lampen:\n\n{lights}\n\nAlles, was hier nicht benannt wird, übernimmt Helligkeit und Farbe der Szene. Eine Lampe benennen, um ihr eigene Werte zu geben, sie auszuschalten, während der Rest des Raums leuchtet, oder sie unberührt zu lassen.",
-          "menu_options": {
-            "add_light": "Lampe benennen",
-            "remove_light": "Lampe nicht mehr benennen",
-            "finish": "Fertig"
-          }
-        },
-        "add_light": {
-          "title": "Lampe benennen",
-          "description": "Benannte Lampen:\n\n{lights}",
-          "data": {
-            "light": "Lampe",
-            "action": "Was mit ihr geschieht",
-            "brightness_pct": "Helligkeit",
-            "color_format": "Farbe für diese Lampe"
-          },
-          "data_description": {
-            "brightness_pct": "Leer lassen, um die Helligkeit der Szene zu verwenden.",
-            "color_format": "„Farbe der Sonne überlassen“ lässt diese Lampe die Helligkeit der Szene übernehmen, während ihre Farbe weiter nachgeführt wird — nützlich für eine Schreibtischlampe in einer Filmszene. Nach der Farbe selbst wird als Nächstes gefragt."
-          }
-        },
-        "remove_light": {
-          "title": "Lampe nicht mehr benennen",
-          "description": "Benannte Lampen:\n\n{lights}",
-          "data": {
-            "light": "Lampe"
-          }
-        },
-        "light_color": {
-          "title": "Farbe für {light}",
-          "data": {
-            "color_temp_kelvin": "Farbtemperatur",
-            "rgb_color": "Farbe",
-            "warm_white": "Warmweiß-Kanal",
-            "cold_white": "Kaltweiß-Kanal"
-          },
-          "data_description": {
-            "warm_white": "RGBWW-Streifen haben weiße LEDs hinter den farbigen. Beide auf null lassen für eine reine Farbe; den Warmkanal anheben, damit ein Streifen zu einem Holzboden passt."
-          }
-        }
-      },
-      "error": {
-        "invalid_value": "Dieser Wert ist ungültig.",
-        "light_required": "Eine Lampe auswählen."
-      },
-      "abort": {
-        "reconfigure_successful": "Szene aktualisiert."
       }
     },
     "controller": {

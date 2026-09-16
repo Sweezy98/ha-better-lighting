@@ -163,6 +163,11 @@ class UnsupportedColorPolicy(StrEnum):
     SKIP = "skip"
 
 
+# The key of the entry that applies to every light in the room. A scene can
+# then say "all of you at 20%" once and override only the lights that differ.
+ALL_LIGHTS = "*"
+
+
 @dataclass(frozen=True, slots=True)
 class SceneLightSpec:
     """What a scene says about one particular light.
@@ -207,17 +212,40 @@ class Scene:
         return not self.zones or zone_id in self.zones
 
     def spec_for(self, entity_id: str) -> SceneLightSpec:
-        """This scene's intent for one light, with scene-level values filled in."""
-        spec = self.lights.get(entity_id, SceneLightSpec())
+        """This scene's intent for one light.
+
+        Resolved in three layers, each filling in what the one above left
+        unsaid: the light's own entry, then the room-wide ``*`` entry, then
+        any scene-level value. The ``*`` entry is what makes "everything at
+        20%, except the ceiling which is off" a two-row scene rather than one
+        row per bulb.
+        """
+        spec = self.lights.get(entity_id)
+        fallback = self.lights.get(ALL_LIGHTS)
+        if spec is None:
+            spec = fallback if fallback is not None else SceneLightSpec()
+            fallback = None
+
+        def pick(value: Any, other: Any, scene_level: Any) -> Any:
+            if value is not None:
+                return value
+            if fallback is not None and other is not None:
+                return other
+            return scene_level
+
         return SceneLightSpec(
-            brightness_pct=(
-                spec.brightness_pct
-                if spec.brightness_pct is not None
-                else self.brightness_pct
+            brightness_pct=pick(
+                spec.brightness_pct,
+                fallback.brightness_pct if fallback else None,
+                self.brightness_pct,
             ),
-            color=spec.color if spec.color is not None else self.color,
-            turn_off=spec.turn_off,
-            skip=spec.skip,
+            color=pick(
+                spec.color,
+                fallback.color if fallback else None,
+                self.color,
+            ),
+            turn_off=spec.turn_off or bool(fallback and fallback.turn_off),
+            skip=spec.skip or bool(fallback and fallback.skip),
         )
 
     def axes_specified_for(self, entity_id: str) -> Axis:
@@ -240,7 +268,11 @@ class Scene:
 
     def targets(self, entity_id: str) -> bool:
         """Whether this scene has anything to say about ``entity_id``."""
-        if self.lights and entity_id not in self.lights:
+        if (
+            self.lights
+            and entity_id not in self.lights
+            and ALL_LIGHTS not in self.lights
+        ):
             return False
         return not self.spec_for(entity_id).skip
 

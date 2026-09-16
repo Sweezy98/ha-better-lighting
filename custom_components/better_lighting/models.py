@@ -120,6 +120,7 @@ from .const import (
     CONF_RULE_STATES,
     CONF_RULE_ZONES,
     CONF_RULES,
+    CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
     CONF_SCENE_ORDER,
     CONF_SCENE_TRANSITION,
@@ -138,6 +139,7 @@ from .const import (
     CONF_WINDOW_ENTITIES,
     CONF_WRAP_AROUND,
     CONF_ZONE_ID,
+    CONF_ZONE_SCENES,
     CONTROLLER_SPECS,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
@@ -297,6 +299,12 @@ class ZoneConfig:
     presence_off_action: PresenceOffAction
     presence_respects_manual: bool
 
+    # This room's own scenes, in the order they were defined. A scene belongs
+    # to exactly one room now: a reading scene for the living room and one for
+    # the bedroom are different lists of different lights, and pretending they
+    # are one house-wide recipe only ever produced a very long picker.
+    scenes: tuple[Scene, ...]
+
     # Requirement 4: a window is open, so stop attracting everything outside.
     window_entities: tuple[str, ...]
     insect_scene_id: str | None
@@ -342,6 +350,10 @@ class ZoneConfig:
             night_color_temp_k=int(raw[CONF_NIGHT_COLOR_TEMP_K]),
             night_transition=float(raw[CONF_NIGHT_TRANSITION]),
             night_ignore_presence=bool(raw[CONF_NIGHT_IGNORE_PRESENCE]),
+            scenes=tuple(
+                zone_scene(entry, subentry.subentry_id)
+                for entry in (raw.get(CONF_ZONE_SCENES) or ())
+            ),
             restore_on_power_cycle=RestoreOnPowerCycle(
                 raw[CONF_RESTORE_ON_POWER_CYCLE]
             ),
@@ -743,6 +755,34 @@ def _scene_light_color(raw: dict[str, Any]) -> dict[str, Any] | None:
                 )
             }
     return None
+
+
+def zone_scene(raw: dict[str, Any], zone_id: str) -> Scene:
+    """One of a room's own scenes.
+
+    Carries no brightness or colour of its own -- every value lives on a light.
+    Which axes the scene takes over therefore follows from what each light
+    actually names, so "7% and orange here, 20% but keep the sun's colour
+    there" is one scene rather than an impossibility.
+    """
+    return Scene(
+        scene_id=str(raw.get(CONF_SCENE_ID) or ""),
+        name=str(raw.get(CONF_NAME) or ""),
+        icon=str(raw.get(CONF_ICON) or "mdi:palette"),
+        lights=_scene_lights(raw.get(CONF_SCENE_LIGHTS) or {}),
+        on_lights_only=bool(raw.get(CONF_ON_LIGHTS_ONLY, False)),
+        zones=frozenset({zone_id}),
+        others=OthersPolicy(raw.get(CONF_OTHERS, OthersPolicy.ADAPTIVE.value)),
+        ignore_presence=bool(raw.get(CONF_IGNORE_PRESENCE, False)),
+        transition=(
+            float(raw[CONF_TRANSITION])
+            if raw.get(CONF_TRANSITION) is not None
+            else None
+        ),
+        on_unsupported_color=UnsupportedColorPolicy(
+            raw.get(CONF_ON_UNSUPPORTED_COLOR, UnsupportedColorPolicy.ADAPTIVE.value)
+        ),
+    )
 
 
 def _scene_lights(raw: dict[str, Any]) -> dict[str, SceneLightSpec]:

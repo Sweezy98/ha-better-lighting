@@ -11,6 +11,7 @@ from tests.conftest import (
     hub_entry,
     setup_hub,
     setup_members,
+    subentry_ids,
     zone_subentry,
 )
 from tests.ha.test_scenes import scene_subentry
@@ -94,7 +95,7 @@ async def build(
     )
     await setup_hub(hass, entry)
 
-    ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+    ids = subentry_ids(entry)
     rules = (rules_for or _default_rules)(ids)
     hass.config_entries.async_add_subentry(entry, _sub(mode_subentry(rules=rules)))
     await hass.async_block_till_done()
@@ -167,7 +168,7 @@ class TestExit:
             ]
         )
         await setup_hub(hass, entry)
-        ids = {sub.title: sub.subentry_id for sub in entry.subentries.values()}
+        ids = subentry_ids(entry)
         hass.config_entries.async_add_subentry(
             entry,
             _sub(

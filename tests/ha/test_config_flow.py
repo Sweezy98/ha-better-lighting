@@ -24,6 +24,14 @@ HUB_INPUT = form_input(HUB_SPECS)
 ZONE_INPUT = form_input(ZONE_SPECS, name="Living Room", lights=["light.three"])
 
 
+async def finish_zone(hass: HomeAssistant, result):
+    """Walk a zone flow from its menu to the end without touching scenes."""
+    assert result["step_id"] == "menu"
+    return await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"next_step_id": "finish"}
+    )
+
+
 async def test_creates_the_hub(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -75,6 +83,8 @@ async def test_adds_a_zone_subentry(hass: HomeAssistant) -> None:
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], ZONE_INPUT
     )
+    # The room's settings are followed by its own menu, where its scenes live.
+    result = await finish_zone(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Living Room"
 
@@ -134,6 +144,7 @@ async def test_reconfigure_keeps_its_own_lights(hass: HomeAssistant) -> None:
             "icon": "mdi:stove",
         },
     )
+    result = await finish_zone(hass, result)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert entry.subentries[subentry_id].data["icon"] == "mdi:stove"

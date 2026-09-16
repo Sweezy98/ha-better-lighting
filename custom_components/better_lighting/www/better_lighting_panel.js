@@ -607,6 +607,11 @@ class BetterLightingPanel extends HTMLElement {
     return this._modes.find((mode) => mode.id === this._modeId) || null;
   }
 
+  /** One of the panel's own strings, in the language the browser asked for. */
+  _t(key) {
+    return this._schema?.ui?.[key] ?? key;
+  }
+
   get _labels() {
     return this._schema?.labels || { data: {}, descriptions: {}, options: {}, sections: {} };
   }
@@ -718,10 +723,10 @@ class BetterLightingPanel extends HTMLElement {
       .join("");
 
     nav.innerHTML = `
-      <h2>Rooms</h2>
+      <h2>${this._t("rooms")}</h2>
       <ul>${roomRows}</ul>
-      <div class="bar"><button class="flat" id="add-room">Add a room</button></div>
-      <h2 style="margin-top:20px">Modes</h2>
+      <div class="bar"><button class="flat" id="add-room">${this._t("add_room")}</button></div>
+      <h2 style="margin-top:20px">${this._t("modes")}</h2>
       <ul>${this._modes
         .map(
           (mode) =>
@@ -730,12 +735,12 @@ class BetterLightingPanel extends HTMLElement {
             }">${mode.name}</li>`
         )
         .join("")}</ul>
-      <div class="bar"><button class="flat" id="add-mode">Add a mode</button></div>
+      <div class="bar"><button class="flat" id="add-mode">${this._t("add_mode")}</button></div>
       <ul style="margin-top:20px">
-        <li data-hub="1" aria-selected="${this._view.kind === "hub"}">⚙️ Global settings</li>
+        <li data-hub="1" aria-selected="${this._view.kind === "hub"}">⚙️ ${this._t("global_settings")}</li>
         <li data-presets="1" aria-selected="${
           this._view.kind === "presets"
-        }">${labels.sections.presets || "🎨 Colour presets"}</li>
+        }">${labels.sections.presets || `🎨 ${this._t("colour_presets")}`}</li>
       </ul>`;
 
     nav.querySelectorAll("li.room").forEach((item) =>
@@ -797,7 +802,7 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintRules();
       case "hub":
         return this._paintSettings({
-          title: "Global settings",
+          title: this._t("global_settings"),
           form: this._schema?.forms.hub || [],
           values: this._hub,
           save: (values) => this._call("save_hub", { options: values }),
@@ -808,9 +813,9 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintScenes();
       case "switches":
         if (this._view.sub === "order") return this._paintSwitchOrder();
-        return this._paintCollection("switches", "switch", "Light switches");
+        return this._paintCollection("switches", "switch", this._t("switches"));
       case "calibrations":
-        return this._paintCollection("light_profiles", "calibration", "Light calibration");
+        return this._paintCollection("light_profiles", "calibration", this._t("calibration"));
       default:
         return this._paintRoomSection();
     }
@@ -826,7 +831,7 @@ class BetterLightingPanel extends HTMLElement {
 
     this._paintSettings({
       title: creating
-        ? "Add a room"
+        ? this._t("add_room")
         : `${room.name} — ${this._labels.sections[group.section] || group.section}`,
       // A new room needs the essentials, not every screen at once.
       form: creating ? [groups[0]] : [group],
@@ -853,7 +858,7 @@ class BetterLightingPanel extends HTMLElement {
     const creating = this._view.creating || !this._mode;
     const mode = this._mode;
     this._paintSettings({
-      title: creating ? "Add a mode" : mode.name,
+      title: creating ? this._t("add_mode") : mode.name,
       form: this._schema?.forms.mode || [],
       values: creating ? { states: [] } : { ...mode.data },
       choices: this._choices(this._room),
@@ -875,7 +880,7 @@ class BetterLightingPanel extends HTMLElement {
       extra: creating
         ? null
         : {
-            label: `${this._labels.sections.rules || "Rules"} (${
+            label: `${this._labels.sections.rules || this._t("rules")} (${
               (mode.data.rules || []).length
             })`,
             go: () => {
@@ -904,7 +909,7 @@ class BetterLightingPanel extends HTMLElement {
                 `<li data-index="${i}">${item.name || item.light_entity || "—"}</li>`
             )
             .join("")}</ul>
-          <div class="bar"><button id="add">Add</button></div>
+          <div class="bar"><button id="add">${this._t("add")}</button></div>
         </div>`;
       main.querySelectorAll("li").forEach((row) =>
         row.addEventListener("click", () => {
@@ -947,7 +952,7 @@ class BetterLightingPanel extends HTMLElement {
       extra:
         storageKey === "switches" && index < items.length
           ? {
-              label: `What it cycles (${
+              label: `${this._t("what_it_cycles")} (${
                 (items[index].scene_order || []).length + 1
               })`,
               go: () => {
@@ -993,9 +998,9 @@ class BetterLightingPanel extends HTMLElement {
                 </li>`
             )
             .join("")}</ul>
-          ${items.length ? "" : '<p class="muted">—</p>'}
-          <div class="bar"><button id="add">Add</button>
-            <button class="flat" id="back">⬅️ Back</button></div>
+          ${items.length ? "" : `<p class="muted">${this._t("none")}</p>`}
+          <div class="bar"><button id="add">${this._t("add")}</button>
+            <button class="flat" id="back">⬅️ ${this._t("back")}</button></div>
         </div>`;
 
       main.querySelectorAll("li").forEach((row) =>
@@ -1053,7 +1058,7 @@ class BetterLightingPanel extends HTMLElement {
   _paintPresets() {
     const presets = this._hub.color_presets || [];
     this._paintListEditor({
-      title: this._labels.sections.presets || "Colour presets",
+      title: this._labels.sections.presets || this._t("colour_presets"),
       items: presets,
       formKey: "preset",
       choices: {},
@@ -1084,7 +1089,7 @@ class BetterLightingPanel extends HTMLElement {
       this._rooms.find((room) => room.id === rule?.zones) || null;
 
     this._paintListEditor({
-      title: `${mode.name} — ${this._labels.sections.rules || "Rules"}`,
+      title: `${mode.name} — ${this._labels.sections.rules || this._t("rules")}`,
       items: rules,
       formKey: "rule",
       choices: {
@@ -1135,10 +1140,10 @@ class BetterLightingPanel extends HTMLElement {
 
     main.innerHTML = `
       <div class="card">
-        <h2>${item.name || "Switch"} — what it cycles</h2>
-        <p class="muted">Each press moves one place down, then wraps.</p>
+        <h2>${item.name || this._t("switch")} — ${this._t("what_it_cycles")}</h2>
+        <p class="muted">${this._t("cycle_hint")}</p>
         <ul id="order">
-          <li><span class="grow">1. ☀ Adaptive</span></li>
+          <li><span class="grow">1. ☀ ${this._t("adaptive")}</span></li>
           ${order
             .map(
               (id, i) => `<li>
@@ -1157,7 +1162,7 @@ class BetterLightingPanel extends HTMLElement {
         ${
           unused.length
             ? `<div class="bar"><select id="add-scene">
-                 <option value="">Add a scene…</option>
+                 <option value="">${this._t("add_scene")}</option>
                  ${unused
                    .map(
                      (scene) =>
@@ -1165,9 +1170,9 @@ class BetterLightingPanel extends HTMLElement {
                    )
                    .join("")}
                </select></div>`
-            : '<p class="muted">Every scene in this room is already in the list.</p>'
+            : '<p class="muted">${this._t("all_scenes_used")}</p>'
         }
-        <div class="bar"><button class="flat" id="back">⬅️ Back</button></div>
+        <div class="bar"><button class="flat" id="back">⬅️ ${this._t("back")}</button></div>
       </div>`;
 
     main.querySelectorAll("[data-up],[data-down],[data-remove]").forEach((button) =>
@@ -1202,9 +1207,9 @@ class BetterLightingPanel extends HTMLElement {
         <div id="error" class="muted"></div>
         <div id="form"></div>
         <div class="bar">
-          <button id="save">Save</button>
+          <button id="save">${this._t("save")}</button>
           ${extra ? `<button class="flat" id="extra">${extra.label}</button>` : ""}
-          ${remove ? '<button class="danger" id="remove">Delete</button>' : ""}
+          ${remove ? `<button class="danger" id="remove">${this._t("delete")}</button>` : ""}
         </div>
       </div>`;
 
@@ -1238,7 +1243,7 @@ class BetterLightingPanel extends HTMLElement {
         await this._load();
       } catch (err) {
         main.querySelector("#error").textContent =
-          err?.message || "That could not be saved.";
+          err?.message || this._t("save_failed");
       }
     });
     main.querySelector("#extra")?.addEventListener("click", () => extra.go());
@@ -1267,8 +1272,8 @@ class BetterLightingPanel extends HTMLElement {
           )
           .join("")}</ul>
         <div class="bar">
-          <button id="new">New scene</button>
-          <button class="flat" id="capture">Capture the room as it is now</button>
+          <button id="new">${this._t("new_scene")}</button>
+          <button class="flat" id="capture">${this._t("capture_room")}</button>
         </div>
       </div>`;
 
@@ -1280,12 +1285,12 @@ class BetterLightingPanel extends HTMLElement {
       })
     );
     main.querySelector("#new").addEventListener("click", () => {
-      this._scene = { name: "New scene", lights: {} };
+      this._scene = { name: this._t("new_scene"), lights: {} };
       this._selectedLight = room.lights[0] || null;
       this._paintEditor();
     });
     main.querySelector("#capture").addEventListener("click", () => {
-      this._scene = { name: "Captured", lights: this._captureRoom() };
+      this._scene = { name: this._t("captured"), lights: this._captureRoom() };
       this._selectedLight = room.lights[0] || null;
       this._paintEditor();
     });
@@ -1372,36 +1377,36 @@ class BetterLightingPanel extends HTMLElement {
     main.innerHTML = `
       <div class="card banner ${live ? "live" : ""}">
         <div class="grow">
-          <strong>${live ? "Live mode" : "Review mode"}</strong>
+          <strong>${live ? this._t("live_mode") : this._t("review_mode")}</strong>
           <div class="muted">${
             live
-              ? "Every change is applied to the real lights. Click one to open its controls."
-              : "Nothing is touched. Switch to live mode to set the lights and see it."
+              ? this._t("live_hint")
+              : this._t("review_hint")
           }</div>
         </div>
-        <button id="mode">${live ? "Switch to review mode" : "Live mode"}</button>
+        <button id="mode">${live ? this._t("to_review_mode") : this._t("live_mode")}</button>
       </div>
 
       <div class="card">
-        <h2>Scene</h2>
+        <h2>${this._t("scene")}</h2>
         <input type="text" id="name" value="${this._scene.name || ""}">
       </div>
 
       <div class="card">
-        <h2>Lights</h2>
+        <h2>${this._t("lights")}</h2>
         <div class="muted" style="margin-bottom:12px">
-          Each light can take the scene, be switched off, or be left alone.
+          ${this._t("light_treatment")}
         </div>
         <div id="rows"></div>
         ${
           available.length || !entries.includes(ALL)
             ? `<div class="bar">
                  <select id="add-light">
-                   <option value="">Add a light…</option>
+                   <option value="">${this._t("add_light")}</option>
                    ${
                      entries.includes(ALL)
                        ? ""
-                       : `<option value="${ALL}">Every light in this room</option>`
+                       : `<option value="${ALL}">${this._t("every_light")}</option>`
                    }
                    ${available
                      .map(
@@ -1417,10 +1422,10 @@ class BetterLightingPanel extends HTMLElement {
 
       <div class="card">
         <div class="bar">
-          <button id="save">Save</button>
-          <button class="flat" id="recapture">Take the room as it is now</button>
-          <button class="flat" id="back">⬅️ Back</button>
-          ${this._scene.scene_id ? '<button class="danger" id="delete">Delete</button>' : ""}
+          <button id="save">${this._t("save")}</button>
+          <button class="flat" id="recapture">${this._t("capture_room")}</button>
+          <button class="flat" id="back">⬅️ ${this._t("back")}</button>
+          ${this._scene.scene_id ? `<button class="danger" id="delete">${this._t("delete")}</button>` : ""}
         </div>
       </div>`;
 
@@ -1460,7 +1465,7 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   _name(entityId) {
-    if (entityId === ALL) return "Every light in this room";
+    if (entityId === ALL) return this._t("every_light");
     return this._hass.states[entityId]?.attributes?.friendly_name || entityId;
   }
 
@@ -1485,9 +1490,9 @@ class BetterLightingPanel extends HTMLElement {
         const state = this._hass.states[entityId];
         const detail =
           spec.action === "off"
-            ? "Off"
+            ? this._t("off")
             : spec.action === "leave"
-              ? "Left alone"
+              ? this._t("left_alone")
               : live && state?.state === "on"
                 ? `${Math.round(((state.attributes.brightness || 0) / 255) * 100)}%`
                 : spec.brightness_pct != null
@@ -1501,9 +1506,9 @@ class BetterLightingPanel extends HTMLElement {
             </span>
             <select data-action="${entityId}">
               ${[
-                ["apply", "Set it"],
-                ["off", "Switch it off"],
-                ["leave", "Leave it alone"],
+                ["apply", this._t("set_it")],
+                ["off", this._t("switch_it_off")],
+                ["leave", this._t("leave_it_alone")],
               ]
                 .map(
                   ([value, label]) =>
@@ -1515,8 +1520,8 @@ class BetterLightingPanel extends HTMLElement {
             </select>
             <select data-colour="${entityId}">
               ${[
-                ["inherit", "Colour as set"],
-                ["none", "Colour follows the sun"],
+                ["inherit", this._t("colour_as_set")],
+                ["none", this._t("colour_follows_sun")],
               ]
                 .map(
                   ([value, label]) =>
@@ -1528,7 +1533,7 @@ class BetterLightingPanel extends HTMLElement {
                 )
                 .join("")}
             </select>
-            <button class="flat" data-remove="${entityId}" title="Remove">🗑</button>
+            <button class="flat" data-remove="${entityId}" title="${this._t("remove")}">🗑</button>
           </div>`;
       })
       .join("");

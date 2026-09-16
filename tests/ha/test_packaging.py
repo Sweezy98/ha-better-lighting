@@ -270,3 +270,44 @@ def test_the_panel_covers_every_settings_surface() -> None:
         name for name, marker in surfaces.items() if marker not in panel_js
     )
     assert not missing, f"the panel cannot reach: {missing}"
+
+
+def test_the_panel_has_no_untranslated_chrome() -> None:
+    """Every word the panel writes itself must come from its string table."""
+    from custom_components.better_lighting import panel_schema
+
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    # Strip comments and CSS, which are not shown to anybody.
+    body = re.sub(r"/\*.*?\*/", "", panel_js, flags=re.S)
+    body = re.sub(r"^\s*//.*$", "", body, flags=re.M)
+    body = re.sub(r"<style>.*?</style>", "", body, flags=re.S)
+
+    english = set(
+        re.findall(r">([A-Z][a-z][^<>{}$]{4,60})<", body)
+        + re.findall(r'"([A-Z][a-z][^"<>{}$]{4,60})"', body)
+    )
+    allowed = {"Better Lighting"}
+    assert english <= allowed, (
+        f"untranslated panel strings: {sorted(english - allowed)}"
+    )
+
+    # And every key it asks for exists.
+    used = set(re.findall(r'_t\("([a-z_]+)"\)', panel_js))
+    available = set(panel_schema.ui_strings("en"))
+    assert used <= available, (
+        f"panel asks for unknown strings: {sorted(used - available)}"
+    )
+
+
+def test_the_panel_strings_are_translated_as_completely_as_the_forms() -> None:
+    from custom_components.better_lighting import panel_schema
+
+    assert set(panel_schema.ui_strings("de")) == set(panel_schema.ui_strings("en"))
+    german = panel_schema.ui_strings("de")
+    english = panel_schema.ui_strings("en")
+    untranslated = sorted(
+        key
+        for key, value in german.items()
+        if value == english[key] and len(value) > 6 and value != "—"
+    )
+    assert not untranslated, f"still English in German: {untranslated}"

@@ -193,6 +193,28 @@ def labels(language: str) -> dict[str, Any]:
     }
 
 
+@lru_cache(maxsize=8)
+def ui_strings(language: str) -> dict[str, str]:
+    """The panel's own chrome, in the requested language.
+
+    Kept apart from strings.json because these are not a config flow's
+    strings and hassfest validates that file against a schema they do not
+    fit -- an unknown key there is an error, not an extension point.
+    """
+    base = Path(__file__).parent / "panel_strings"
+    english = json.loads((base / "en.json").read_text(encoding="utf-8"))
+    for candidate in (language, language.split("-")[0]):
+        path = base / f"{candidate}.json"
+        if path.is_file():
+            try:
+                # English underneath, so a half-finished translation shows
+                # the odd English word rather than a missing one.
+                return {**english, **json.loads(path.read_text(encoding="utf-8"))}
+            except ValueError:  # pragma: no cover - a corrupt file
+                _LOGGER.warning("Could not read %s; falling back", path)
+    return english
+
+
 def _runtime_choices(
     table: list[dict[str, Any]], keys: dict[str, str]
 ) -> list[dict[str, Any]]:
@@ -208,6 +230,7 @@ def _runtime_choices(
 def schema(language: str = "en") -> dict[str, Any]:
     """Every form the panel can draw, plus the words to draw it with."""
     return {
+        "ui": ui_strings(language),
         "labels": labels(language),
         "forms": {
             "hub": _table(HUB_SPECS, HUB_SECTIONS),

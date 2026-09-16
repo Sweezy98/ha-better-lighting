@@ -276,6 +276,12 @@ place in the cycle or another switch.
 When a switch does nothing, the panel's diagnostics page shows what it published and what each
 value was read as; anything read as *nothing* is a word it has not been told about.
 
+Holding keeps going. Almost every button reports being held once and then says nothing until it
+is let go, so a hold that moved the room one step and stopped would be a press with a long name;
+instead the room keeps moving, one step every 400 ms by default, until the button reports being
+released — about four seconds for a full sweep. A button that never reports letting go stops
+after ten seconds.
+
 Holding to dim shifts the whole room by a **bias** rather than fixing a brightness, so a room
 held down two steps keeps tracking the sun all evening — two steps below where it would
 otherwise be. Holding the dimmer in a dark room sets where it will come back on rather than

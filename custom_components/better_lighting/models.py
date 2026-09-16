@@ -70,6 +70,8 @@ from .const import (
     CONF_ENABLED,
     CONF_EXPAND_LIGHT_GROUPS,
     CONF_HIDE_MEMBERS,
+    CONF_HOLD_INTERVAL_MS,
+    CONF_HOLD_RAMP,
     CONF_ICON,
     CONF_IGNORE_PRESENCE,
     CONF_INITIAL_TRANSITION,
@@ -120,6 +122,7 @@ from .const import (
     CONF_PRESENCE_RESPECTS_MANUAL,
     CONF_PRESS_ATTRIBUTE,
     CONF_PRESS_STATES,
+    CONF_RELEASE_STATES,
     CONF_REMEMBER_ON_STATE,
     CONF_RESTORE_MODE,
     CONF_RESTORE_ON_POWER_CYCLE,
@@ -633,6 +636,11 @@ class ControllerConfig:
     down_double_press_window_ms: int = 400
     # For a switch whose words we have none of: any change is a press.
     any_change_is_a_press: bool = False
+    # Holding: keep going until the finger comes off, rather than moving one
+    # step and stopping.
+    hold_ramp: bool = True
+    hold_interval_ms: int = 400
+    release_states: frozenset[str] = frozenset()
 
     @property
     def slug(self) -> str:
@@ -721,6 +729,9 @@ class ControllerConfig:
                 raw.get(CONF_DOWN_DOUBLE_PRESS_WINDOW_MS, 400)
             ),
             any_change_is_a_press=bool(raw.get(CONF_ANY_CHANGE_IS_PRESS, False)),
+            hold_ramp=bool(raw.get(CONF_HOLD_RAMP, True)),
+            hold_interval_ms=int(raw.get(CONF_HOLD_INTERVAL_MS, 400)),
+            release_states=frozenset(raw.get(CONF_RELEASE_STATES) or ()),
         )
 
 

@@ -447,7 +447,10 @@
                 "double_press_states": "Values that count as a double press",
                 "long_press_states": "Values that count as a long press",
                 "press_attribute": "Attribute carrying the press",
-                "any_change_is_a_press": "Any change counts as a press"
+                "any_change_is_a_press": "Any change counts as a press",
+                "hold_ramp": "Keep going while the button is held",
+                "hold_interval_ms": "One step every",
+                "release_states": "Values that mean the button was let go"
               },
               "data_description": {
                 "on_foreign_state": "'Restart' begins this switch's own list from the top, which lands on adaptive and is usually what you want.",
@@ -455,7 +458,10 @@
                 "double_press_window_ms": "Longer if the second tap is being missed; shorter if two deliberate single presses keep being read as one double.",
                 "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
                 "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
-                "any_change_is_a_press": "For a switch that alternates on and off, or publishes words this integration has none of. Everything it sends cycles the room, so switching the room off needs a place in the cycle or another switch. Wired straight to the room's light entity, that includes a dashboard or a voice command turning the room off."
+                "any_change_is_a_press": "For a switch that alternates on and off, or publishes words this integration has none of. Everything it sends cycles the room, so switching the room off needs a place in the cycle or another switch. Wired straight to the room's light entity, that includes a dashboard or a voice command turning the room off.",
+                "hold_ramp": "Almost every button says it is being held once and then says nothing until it is let go, so holding one would otherwise move the room a single step. Only applies where holding brightens or dims.",
+                "hold_interval_ms": "At the default step, a full sweep of the room takes about four seconds of holding.",
+                "release_states": "How the ramp knows to stop. A button that never says it was let go stops after ten seconds instead."
               }
             },
             "down": {
@@ -508,7 +514,10 @@
                 "double_press_states": "Values that count as a double press",
                 "long_press_states": "Values that count as a long press",
                 "press_attribute": "Attribute carrying the press",
-                "any_change_is_a_press": "Any change counts as a press"
+                "any_change_is_a_press": "Any change counts as a press",
+                "hold_ramp": "Keep going while the button is held",
+                "hold_interval_ms": "One step every",
+                "release_states": "Values that mean the button was let go"
               },
               "data_description": {
                 "on_foreign_state": "'Restart' begins this switch's own list from the top, which lands on adaptive and is usually what you want.",
@@ -516,7 +525,10 @@
                 "double_press_window_ms": "Longer if the second tap is being missed; shorter if two deliberate single presses keep being read as one double.",
                 "press_states": "Defaults cover most Zigbee and Z-Wave buttons. Add your device's own words if it uses different ones.",
                 "press_attribute": "Event entities keep the interesting value in an attribute rather than the state. Leave as event_type unless your device differs.",
-                "any_change_is_a_press": "For a switch that alternates on and off, or publishes words this integration has none of. Everything it sends cycles the room, so switching the room off needs a place in the cycle or another switch. Wired straight to the room's light entity, that includes a dashboard or a voice command turning the room off."
+                "any_change_is_a_press": "For a switch that alternates on and off, or publishes words this integration has none of. Everything it sends cycles the room, so switching the room off needs a place in the cycle or another switch. Wired straight to the room's light entity, that includes a dashboard or a voice command turning the room off.",
+                "hold_ramp": "Almost every button says it is being held once and then says nothing until it is let go, so holding one would otherwise move the room a single step. Only applies where holding brightens or dims.",
+                "hold_interval_ms": "At the default step, a full sweep of the room takes about four seconds of holding.",
+                "release_states": "How the ramp knows to stop. A button that never says it was let go stops after ten seconds instead."
               }
             },
             "down": {

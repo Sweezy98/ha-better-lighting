@@ -447,7 +447,10 @@
                 "double_press_states": "Werte, die als Doppeldruck gelten",
                 "long_press_states": "Werte, die als langer Druck gelten",
                 "press_attribute": "Attribut, das den Druck enthält",
-                "any_change_is_a_press": "Jede Änderung zählt als Tastendruck"
+                "any_change_is_a_press": "Jede Änderung zählt als Tastendruck",
+                "hold_ramp": "Weiterlaufen, solange die Taste gehalten wird",
+                "hold_interval_ms": "Ein Schritt alle",
+                "release_states": "Werte, die bedeuten, dass losgelassen wurde"
               },
               "data_description": {
                 "on_foreign_state": "„Neu beginnen“ startet die eigene Liste dieses Schalters von vorn, landet also auf „Adaptiv“ — meist das gewünschte Verhalten.",
@@ -455,7 +458,10 @@
                 "double_press_window_ms": "Länger, wenn der zweite Druck verschluckt wird; kürzer, wenn zwei bewusste Einzeldrücke als Doppeldruck gelesen werden.",
                 "press_states": "Die Vorgaben decken die meisten Zigbee- und Z-Wave-Taster ab. Eigene Begriffe ergänzen, falls das Gerät andere verwendet.",
                 "press_attribute": "Event-Entitäten führen den relevanten Wert in einem Attribut statt im Zustand. Auf event_type belassen, sofern das Gerät nichts anderes verwendet.",
-                "any_change_is_a_press": "Für Schalter, die zwischen an und aus wechseln oder Wörter melden, die diese Integration nicht kennt. Alles, was der Schalter sendet, schaltet dann weiter — der Raum lässt sich nur noch über einen Schritt in der Abfolge oder einen anderen Schalter ausschalten. Hängt der Schalter direkt an der Lampen-Entität des Raums, gilt das auch für Dashboard und Sprachbefehl."
+                "any_change_is_a_press": "Für Schalter, die zwischen an und aus wechseln oder Wörter melden, die diese Integration nicht kennt. Alles, was der Schalter sendet, schaltet dann weiter — der Raum lässt sich nur noch über einen Schritt in der Abfolge oder einen anderen Schalter ausschalten. Hängt der Schalter direkt an der Lampen-Entität des Raums, gilt das auch für Dashboard und Sprachbefehl.",
+                "hold_ramp": "Fast jeder Taster meldet das Halten genau einmal und danach nichts mehr, bis losgelassen wird — Halten würde den Raum sonst nur einen einzigen Schritt bewegen. Gilt nur, wo Halten heller oder dunkler macht.",
+                "hold_interval_ms": "Bei der Standard-Schrittweite dauert ein voller Durchlauf etwa vier Sekunden Halten.",
+                "release_states": "Woran das Weiterlaufen erkennt, dass Schluss ist. Meldet ein Taster das Loslassen nie, endet es nach zehn Sekunden."
               }
             },
             "down": {
@@ -508,7 +514,10 @@
                 "double_press_states": "Werte, die als Doppeldruck gelten",
                 "long_press_states": "Werte, die als langer Druck gelten",
                 "press_attribute": "Attribut, das den Druck enthält",
-                "any_change_is_a_press": "Jede Änderung zählt als Tastendruck"
+                "any_change_is_a_press": "Jede Änderung zählt als Tastendruck",
+                "hold_ramp": "Weiterlaufen, solange die Taste gehalten wird",
+                "hold_interval_ms": "Ein Schritt alle",
+                "release_states": "Werte, die bedeuten, dass losgelassen wurde"
               },
               "data_description": {
                 "on_foreign_state": "„Neu beginnen“ startet die eigene Liste dieses Schalters von vorn, landet also auf „Adaptiv“ — meist das gewünschte Verhalten.",
@@ -516,7 +525,10 @@
                 "double_press_window_ms": "Länger, wenn der zweite Druck verschluckt wird; kürzer, wenn zwei bewusste Einzeldrücke als Doppeldruck gelesen werden.",
                 "press_states": "Die Vorgaben decken die meisten Zigbee- und Z-Wave-Taster ab. Eigene Begriffe ergänzen, falls das Gerät andere verwendet.",
                 "press_attribute": "Event-Entitäten führen den relevanten Wert in einem Attribut statt im Zustand. Auf event_type belassen, sofern das Gerät nichts anderes verwendet.",
-                "any_change_is_a_press": "Für Schalter, die zwischen an und aus wechseln oder Wörter melden, die diese Integration nicht kennt. Alles, was der Schalter sendet, schaltet dann weiter — der Raum lässt sich nur noch über einen Schritt in der Abfolge oder einen anderen Schalter ausschalten. Hängt der Schalter direkt an der Lampen-Entität des Raums, gilt das auch für Dashboard und Sprachbefehl."
+                "any_change_is_a_press": "Für Schalter, die zwischen an und aus wechseln oder Wörter melden, die diese Integration nicht kennt. Alles, was der Schalter sendet, schaltet dann weiter — der Raum lässt sich nur noch über einen Schritt in der Abfolge oder einen anderen Schalter ausschalten. Hängt der Schalter direkt an der Lampen-Entität des Raums, gilt das auch für Dashboard und Sprachbefehl.",
+                "hold_ramp": "Fast jeder Taster meldet das Halten genau einmal und danach nichts mehr, bis losgelassen wird — Halten würde den Raum sonst nur einen einzigen Schritt bewegen. Gilt nur, wo Halten heller oder dunkler macht.",
+                "hold_interval_ms": "Bei der Standard-Schrittweite dauert ein voller Durchlauf etwa vier Sekunden Halten.",
+                "release_states": "Woran das Weiterlaufen erkennt, dass Schluss ist. Meldet ein Taster das Loslassen nie, endet es nach zehn Sekunden."
               }
             },
             "down": {

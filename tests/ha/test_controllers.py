@@ -902,6 +902,99 @@ class TestTwoButtonSwitches:
         # Still adaptive: the room keeps tracking the sun, ten points below.
         assert controller.mode is ZoneMode.ADAPTIVE
 
+    async def test_holding_keeps_dimming_until_released(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """A hold that moves one step and stops is a press with a long name."""
+        controller = await self._setup(
+            hass, hold_interval_ms=200, release_states=["release"]
+        )
+        await self._push(hass, "up")
+        assert controller.bias_pct == 0
+
+        await self._push(hass, "down_hold")
+        assert controller.bias_pct == -10  # the first step, at once
+
+        for expected in (-20, -30, -40):
+            freezer.tick(dt.timedelta(milliseconds=250))
+            async_fire_time_changed(hass)
+            await hass.async_block_till_done()
+            assert controller.bias_pct == expected
+
+        await self._push(hass, "release")
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert controller.bias_pct == -40
+
+    async def test_a_repeated_hold_does_not_dim_twice_as_fast(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """Some buttons repeat the hold while it is held rather than saying it
+        once. That is evidence the finger is still there, not another step."""
+        controller = await self._setup(
+            hass, hold_interval_ms=200, release_states=["release"]
+        )
+        await self._push(hass, "up")
+        await self._push(hass, "down_hold")
+        assert controller.bias_pct == -10
+
+        # The device says so again before our own repeat is due.
+        hass.states.async_set("sensor.rocker", "down_hold")
+        await hass.async_block_till_done()
+        assert controller.bias_pct == -10
+
+        freezer.tick(dt.timedelta(milliseconds=250))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert controller.bias_pct == -20
+
+    async def test_a_ramp_nobody_ends_stops_by_itself(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """A button that reports holding but not letting go must not dim the
+        room for ever."""
+        controller = await self._setup(hass, hold_interval_ms=200)
+        await self._push(hass, "up")
+        await self._push(hass, "down_hold")
+
+        freezer.tick(dt.timedelta(seconds=30))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        stopped = controller.bias_pct
+
+        freezer.tick(dt.timedelta(seconds=30))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert controller.bias_pct == stopped
+
+    async def test_a_hold_that_is_not_a_dimmer_happens_once(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """Holding to switch the room off means one thing, not one a second.
+
+        Written against an action that can be seen happening twice: a repeat
+        of "brighten" is indistinguishable from the ramp doing its job, while
+        a repeat of "switch the room off" darkens a room somebody has since
+        turned back on.
+        """
+        controller = await self._setup(
+            hass, down_long_press_action="zone_off", hold_interval_ms=200
+        )
+        await self._push(hass, "up")
+        assert controller.mode is ZoneMode.ADAPTIVE
+
+        await self._push(hass, "down_hold")
+        assert controller.mode is ZoneMode.OFF
+
+        await self._push(hass, "up")
+        assert controller.mode is ZoneMode.ADAPTIVE
+
+        freezer.tick(dt.timedelta(seconds=1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+        assert controller.mode is ZoneMode.ADAPTIVE
+
     async def test_holding_up_brightens(self, hass: HomeAssistant) -> None:
         controller = await self._setup(hass)
         await self._push(hass, "up")

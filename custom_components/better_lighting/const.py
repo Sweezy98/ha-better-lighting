@@ -887,6 +887,11 @@ CONF_DOUBLE_PRESS_WINDOW_MS = "double_press_window_ms"
 # alternates on and off, most often -- where the only thing a press has in
 # common with the last one is that something changed.
 CONF_ANY_CHANGE_IS_PRESS = "any_change_is_a_press"
+# Holding a dimmer should keep dimming. Most buttons say "held" once and then
+# say nothing until they say "released", so the repeating is ours to do.
+CONF_HOLD_RAMP = "hold_ramp"
+CONF_HOLD_INTERVAL_MS = "hold_interval_ms"
+CONF_RELEASE_STATES = "release_states"
 CONF_SCENE_ORDER = "scene_order"
 
 # A rocker publishes a second vocabulary for its lower half. Configured as its
@@ -916,6 +921,18 @@ PRESS_ACTIONS = [a.value for a in PressAction]
 DEFAULT_PRESS_STATES = ["on", "single", "press", "short_release", "initial_press"]
 DEFAULT_DOUBLE_PRESS_STATES = ["double", "double_press"]
 DEFAULT_LONG_PRESS_STATES = ["hold", "long_press"]
+# What a button says when the finger comes off. Both halves share one list: a
+# release is a release, and no switch distinguishes them in any way that
+# matters once the ramp it ends is already running.
+DEFAULT_RELEASE_STATES = [
+    "release",
+    "long_release",
+    "hold_release",
+    "up_hold_release",
+    "down_hold_release",
+    "brightness_stop",
+    "stop",
+]
 
 CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
@@ -1009,6 +1026,30 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         DEFAULT_LONG_PRESS_STATES,
         _select(DEFAULT_LONG_PRESS_STATES, "press_states", multiple=True, custom=True),
         section=Section.ADVANCED,
+    ),
+    # --- holding ---
+    FieldSpec(CONF_HOLD_RAMP, True, _boolean(), section=Section.ADVANCED),
+    FieldSpec(
+        CONF_HOLD_INTERVAL_MS,
+        400,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=100,
+                max=2000,
+                step=50,
+                unit_of_measurement="ms",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.ADVANCED,
+        depends_on=(CONF_HOLD_RAMP, (True,)),
+    ),
+    FieldSpec(
+        CONF_RELEASE_STATES,
+        DEFAULT_RELEASE_STATES,
+        _select(DEFAULT_RELEASE_STATES, "press_states", multiple=True, custom=True),
+        section=Section.ADVANCED,
+        depends_on=(CONF_HOLD_RAMP, (True,)),
     ),
     # --- the lower half of a rocker ---
     FieldSpec(

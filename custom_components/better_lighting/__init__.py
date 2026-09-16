@@ -30,7 +30,11 @@ from .models import (
 )
 from .modes import ModeGroupRuntime
 from .openings import WindowWatcher
-from .panel import async_register_commands, async_setup_panel
+from .panel import (
+    async_register_commands,
+    async_remove_panel,
+    async_setup_panel,
+)
 from .presence import ZonePresence
 from .profiles import LightProfile
 from .repairs import async_check_references
@@ -315,6 +319,7 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: BetterLightingConfigEntry
 ) -> bool:
     """Tear down the hub entry."""
+    async_remove_panel(hass)
     runtime = entry.runtime_data
     if runtime is not None and runtime.sessions is not None:
         # A reload is a restart in miniature. Flushing past the debounce here

@@ -15,13 +15,14 @@ integration -- no build step, because HACS copies files and does not run one.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.components import panel_custom, websocket_api
+from homeassistant.components import frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import HomeAssistant, callback
@@ -66,6 +67,25 @@ ELEMENT = "better-lighting-panel"
 # the real thing and cleaned up by name.
 DRAFT_ID = "__draft__"
 
+# Where we note that the panel's route is already on the HTTP app.
+_STATIC_REGISTERED = f"{DOMAIN}_panel_static"
+
+
+def _fingerprint() -> str:
+    """A short hash of the panel script, for the module URL.
+
+    The browser -- and Home Assistant's own service worker -- are told to
+    cache this file hard, so the URL has to change when the file does or an
+    upgrade silently keeps serving the old page. Hashing the contents rather
+    than using the version means it is right even when the same version is
+    installed twice, which is what happens to anybody tracking main.
+    """
+    path = Path(__file__).parent / "www" / PANEL_FILE
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except OSError:  # pragma: no cover - the file ships with the integration
+        return "dev"
+
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
     """Serve the panel's JavaScript and put it in the sidebar.
@@ -75,8 +95,6 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     frontend that will not load, should cost the user their scene editor and
     nothing else.
     """
-    if DOMAIN in hass.data.get("frontend_panels", {}):
-        return
     if not await async_setup_component(hass, "panel_custom", {}):
         _LOGGER.warning(
             "The frontend is unavailable, so the Better Lighting panel was not "
@@ -85,23 +103,39 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         )
         return
 
-    await hass.http.async_register_static_paths(
-        [
-            StaticPathConfig(
-                f"{PANEL_URL}/{PANEL_FILE}",
-                str(Path(__file__).parent / "www" / PANEL_FILE),
-                # Cache-busting is handled by the query string on the module
-                # URL, so the file itself may be cached.
-                True,
-            )
-        ]
-    )
+    fingerprint = await hass.async_add_executor_job(_fingerprint)
+    module_url = f"{PANEL_URL}/{PANEL_FILE}?v={fingerprint}"
+
+    if (existing := hass.data.get("frontend_panels", {}).get(DOMAIN)) is not None:
+        if (existing.config or {}).get("_panel_custom", {}).get(
+            "module_url"
+        ) == module_url:
+            return
+        # Registered from an older copy of the script. Replace it rather than
+        # leaving the sidebar pointing at a URL nothing will fetch again.
+        frontend.async_remove_panel(hass, DOMAIN)
+
+    # The route is registered once per run; aiohttp refuses a second one for
+    # the same path, and the fingerprint lives in the query string anyway.
+    if not hass.data.get(_STATIC_REGISTERED):
+        hass.data[_STATIC_REGISTERED] = True
+        await hass.http.async_register_static_paths(
+            [
+                StaticPathConfig(
+                    f"{PANEL_URL}/{PANEL_FILE}",
+                    str(Path(__file__).parent / "www" / PANEL_FILE),
+                    # Safe to cache hard: the URL carries the file's
+                    # fingerprint, so a changed file is a different URL.
+                    True,
+                )
+            ]
+        )
 
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=DOMAIN,
         webcomponent_name=ELEMENT,
-        module_url=f"{PANEL_URL}/{PANEL_FILE}",
+        module_url=module_url,
         sidebar_title="Better Lighting",
         sidebar_icon="mdi:lightbulb-group",
         require_admin=True,
@@ -542,3 +576,15 @@ async def websocket_save_collection(
         entry, subentry, data={**subentry.data, msg["key"]: items}
     )
     connection.send_result(msg["id"], {"saved": len(items)})
+
+
+@callback
+def async_remove_panel(hass: HomeAssistant) -> None:
+    """Take the page out of the sidebar.
+
+    Panels are not tied to a config entry, so nothing removes this one for
+    us: uninstalling the integration otherwise left a sidebar item that
+    loaded a script for an integration that was no longer there.
+    """
+    if DOMAIN in hass.data.get("frontend_panels", {}):
+        frontend.async_remove_panel(hass, DOMAIN)

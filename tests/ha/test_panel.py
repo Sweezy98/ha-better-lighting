@@ -571,3 +571,78 @@ class TestThePanelReplacesTheFlows:
         assert fields["mode_states"]["options_key"] == "mode_states"
         assert fields["zones"]["options_key"] == "zones"
         assert fields["scene_id"]["options_key"] == "scenes"
+
+
+class TestThePanelScriptIsNotCachedForever:
+    """An upgrade must not keep serving the previous page."""
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_the_module_url_carries_the_scripts_fingerprint(
+        self, hass: HomeAssistant
+    ) -> None:
+        from custom_components.better_lighting.panel import _fingerprint
+
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+
+        panel = hass.data["frontend_panels"][DOMAIN]
+        module_url = panel.config["_panel_custom"]["module_url"]
+        assert module_url.endswith(f"?v={_fingerprint()}")
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_a_changed_script_gets_a_different_url(
+        self, hass: HomeAssistant, monkeypatch
+    ) -> None:
+        """The whole point: same URL after an upgrade means the old page."""
+        from custom_components.better_lighting import panel
+
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+        before = hass.data["frontend_panels"][DOMAIN].config["_panel_custom"][
+            "module_url"
+        ]
+
+        monkeypatch.setattr(panel, "_fingerprint", lambda: "deadbeefcafe")
+        await panel.async_setup_panel(hass)
+        after = hass.data["frontend_panels"][DOMAIN].config["_panel_custom"][
+            "module_url"
+        ]
+
+        assert after != before
+        assert after.endswith("?v=deadbeefcafe")
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_unloading_takes_the_page_out_of_the_sidebar(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Uninstalling otherwise left a sidebar item loading a dead script."""
+        await setup_members(hass, [MemberLight("One")])
+        entry = await setup_hub(hass, hub_entry())
+        assert DOMAIN in hass.data["frontend_panels"]
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert DOMAIN not in hass.data["frontend_panels"]
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_it_comes_back_on_a_reload(self, hass: HomeAssistant) -> None:
+        await setup_members(hass, [MemberLight("One")])
+        entry = await setup_hub(hass, hub_entry())
+
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert DOMAIN in hass.data["frontend_panels"]

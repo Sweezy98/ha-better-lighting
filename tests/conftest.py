@@ -16,7 +16,7 @@ from homeassistant.components.light import (
 from homeassistant.components.light import (
     DOMAIN as LIGHT_DOMAIN,
 )
-from homeassistant.config_entries import ConfigSubentryData
+from homeassistant.config_entries import ConfigEntryState, ConfigSubentryData
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from homeassistant.util import slugify
@@ -42,6 +42,23 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 # Midday at Home Assistant's default test coordinates, so the sun is well up
 # and the adaptive curve sits at its bright end.
 FIXED_NOW = "2026-06-15 20:00:00+00:00"
+
+
+@pytest.fixture(autouse=True)
+async def unload_entries(hass):
+    """Unload our config entries when a test ends.
+
+    A zone schedules a staggered tick, cancelled by the controller's shutdown
+    on unload. A test that creates a room through the flow and then simply
+    ends never unloads, so the timer outlives it and the harness rightly
+    complains. Nothing to do with the code under test; everything to do with
+    leaving the kitchen tidy.
+    """
+    yield
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state is ConfigEntryState.LOADED:
+            await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
 
 
 @pytest.fixture(autouse=True)

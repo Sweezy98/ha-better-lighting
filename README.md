@@ -119,6 +119,29 @@ without flashing through the two in between.
 
 ---
 
+## The scene editor
+
+Better Lighting adds a **Better Lighting** page to the sidebar. It is where
+scenes are worth building, because it does the two things a configuration form
+cannot:
+
+- **A real colour wheel**, a brightness slider and a temperature slider with the
+  gradient on it — plus a number box beside each, since a slider cannot hit
+  2700 K on purpose.
+- **Show it** applies what you are editing to the actual bulbs as you drag, and
+  puts the room back when you stop. Nothing is saved until you press Save, so a
+  draft you dislike costs you nothing.
+
+Pick a room, pick a scene or start a new one, and set each light: a brightness,
+a colour, *leave the colour to the sun*, off, or left alone entirely. **Capture
+from the room** fills the whole scene in from what the room is doing right now,
+which is usually faster than setting anything by hand.
+
+The settings screens still do everything they did — the panel is an easier way
+to do the part that benefits from seeing it.
+
+---
+
 ## Scenes
 
 Scenes belong to a room. You will find them under that room in **Settings → Devices &
@@ -158,13 +181,12 @@ Four things make that work:
 - **Capture the room as it is now** builds the whole list from what the room is doing this
   second. Set the room up with Home Assistant's normal light controls, then name it.
 
-### Capturing beats typing
+### Building one
 
-Home Assistant gives configuration forms a colour picker and a colour-temperature slider, but
-not the colour wheel from the light dialog — that is frontend code and out of reach. So the
-quickest way to build a scene is to light the room the way you want it, using the controls you
-already know, and then capture it. For colours you use repeatedly, define a **colour preset**
-in the global config and pick it by name.
+Use [the scene editor](#the-scene-editor) in the sidebar: it has the colour wheel and shows
+the room changing as you work. The settings screens can do the same job without the wheel —
+there, capture the room as it stands, or define a **colour preset** in the global config and
+pick it by name.
 
 #### RGBWW strips
 

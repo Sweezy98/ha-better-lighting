@@ -1256,7 +1256,10 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         options = ["add_switch"]
         if self._switches:
-            options += ["edit_switch", "remove_switch"]
+            # "What it cycles" as its own entry: it used to be reachable only
+            # by re-submitting the switch's settings, which is not somewhere
+            # anybody thinks to look for a running order.
+            options += ["order_switch", "edit_switch", "remove_switch"]
         options.append("menu")
         return self.async_show_menu(
             step_id="switches",
@@ -1369,6 +1372,20 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             return await self.async_step_switches()
         return self.async_show_form(
             step_id="remove_switch",
+            data_schema=self._switch_picker(),
+            description_placeholders={"switches": self._switches_summary()},
+        )
+
+    async def async_step_order_switch(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Pick a switch, then edit the list it cycles."""
+        if user_input is not None:
+            self._editing_switch = int(user_input["switch"])
+            self._switch = dict(self._switches[self._editing_switch])
+            return await self.async_step_order()
+        return self.async_show_form(
+            step_id="order_switch",
             data_schema=self._switch_picker(),
             description_placeholders={"switches": self._switches_summary()},
         )

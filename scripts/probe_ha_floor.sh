@@ -33,6 +33,7 @@ for VERSION in "$@"; do
 
     if ! VIRTUAL_ENV="$VENV" uv pip install -q \
             "homeassistant==$VERSION" pytest-homeassistant-custom-component \
+            home-assistant-frontend \
             >"$WORK/install-$VERSION.log" 2>&1; then
         echo "RESULT $VERSION: SKIP (dependency resolution failed)"
         tail -3 "$WORK/install-$VERSION.log" | sed 's/^/    /'

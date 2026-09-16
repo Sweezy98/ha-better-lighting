@@ -550,6 +550,7 @@
           "description": "Switches on this room's walls:\n\n{switches}",
           "menu_options": {
             "add_switch": "Add a switch",
+            "order_switch": "What a switch cycles",
             "edit_switch": "Change a switch",
             "remove_switch": "Remove a switch",
             "menu": "⬅️ Back"
@@ -711,6 +712,13 @@
           "description": "{summary}",
           "menu_options": {
             "menu": "⬅️ Back"
+          }
+        },
+        "order_switch": {
+          "title": "What a switch cycles",
+          "description": "Switches on this room's walls:\n\n{switches}",
+          "data": {
+            "switch": "Switch"
           }
         }
       },

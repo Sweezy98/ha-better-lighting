@@ -550,6 +550,7 @@
           "description": "Schalter an den Wänden dieses Raums:\n\n{switches}",
           "menu_options": {
             "add_switch": "Schalter hinzufügen",
+            "order_switch": "Was ein Schalter durchschaltet",
             "edit_switch": "Schalter ändern",
             "remove_switch": "Schalter entfernen",
             "menu": "⬅️ Zurück"
@@ -711,6 +712,13 @@
           "description": "{summary}",
           "menu_options": {
             "menu": "⬅️ Zurück"
+          }
+        },
+        "order_switch": {
+          "title": "Was ein Schalter durchschaltet",
+          "description": "Schalter an den Wänden dieses Raums:\n\n{switches}",
+          "data": {
+            "switch": "Schalter"
           }
         }
       },

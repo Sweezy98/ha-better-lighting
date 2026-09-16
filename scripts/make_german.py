@@ -364,6 +364,7 @@ DE |= {
     "Used when the room goes warm.": "Wird verwendet, wenn der Raum auf Warmweiß wechselt.",
     "What this room does": "Was dieser Raum tut",
     "When a window or door opens, this room stops attracting whatever is outside. It goes back to normal once the opening is closed again.": "Wenn ein Fenster oder eine Tür geöffnet wird, hört dieser Raum auf, anzuziehen, was draußen ist. Sobald wieder geschlossen ist, kehrt er zum Normalzustand zurück.",
+    "What a switch cycles": "Was ein Schalter durchschaltet",
     "A mode needs at least one state.": "Ein Modus braucht mindestens einen Zustand.",
     "Choose the scene to apply.": "Die anzuwendende Szene auswählen.",
     # --- entities ---------------------------------------------------------

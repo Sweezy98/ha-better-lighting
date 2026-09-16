@@ -15,9 +15,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 
-from .const import PLATFORMS, BindingType, SubentryType
+from .const import DOMAIN, PLATFORMS, BindingType, SubentryType
 from .context import ContextRegistry
 from .controllers import ControllerRuntime
 from .models import (
@@ -29,6 +30,7 @@ from .models import (
 )
 from .modes import ModeGroupRuntime
 from .openings import WindowWatcher
+from .panel import async_register_commands, async_setup_panel
 from .presence import ZonePresence
 from .profiles import LightProfile
 from .repairs import async_check_references
@@ -181,10 +183,35 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
     )
 
 
+@callback
+def _async_prune_devices(
+    hass: HomeAssistant, entry: ConfigEntry, runtime: BetterLightingRuntime
+) -> None:
+    """Remove devices for objects that no longer exist.
+
+    Switches used to own a device each. They are part of their room now, and a
+    switch deleted under the old arrangement left its device and a dead entity
+    behind -- so anything of ours not matching a room or a mode is swept up.
+    """
+    known = {*runtime.zones, *runtime.modes}
+    registry = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        ours = {
+            identifier for domain, identifier in device.identifiers if domain == DOMAIN
+        }
+        if ours and not ours & known:
+            _LOGGER.debug("Removing device left behind by %s", ", ".join(sorted(ours)))
+            registry.async_update_device(
+                device.id, remove_config_entry_id=entry.entry_id
+            )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: BetterLightingConfigEntry
 ) -> bool:
     """Set up the hub entry."""
+    await async_setup_panel(hass)
+    async_register_commands(hass)
     runtime = build_runtime(entry)
     entry.runtime_data = runtime
     _LOGGER.debug(
@@ -255,6 +282,8 @@ async def async_setup_entry(
         runtime.mode_runtimes[subentry_id] = mode_runtime
         await mode_runtime.async_setup()
         entry.async_on_unload(mode_runtime.async_shutdown)
+
+    _async_prune_devices(hass, entry, runtime)
 
     async_check_references(hass, entry.entry_id, runtime)
 

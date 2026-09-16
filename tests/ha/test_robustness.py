@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 
 from custom_components.better_lighting.const import DOMAIN
@@ -282,3 +283,23 @@ class TestDiagnostics:
         zone = next(iter(data["zones"].values()))
         # The first question a surprising-behaviour report needs answered.
         assert "light.one" in zone["manual"]
+
+
+async def test_a_device_with_no_owner_is_swept_up(hass: HomeAssistant) -> None:
+    """Switches used to own a device each; deleting one left it behind."""
+    await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+    entry = await setup_hub(hass, hub_entry())
+
+    registry = dr.async_get(hass)
+    orphan = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "a-switch-that-was-deleted")},
+        name="Old switch",
+    )
+    assert entry.entry_id in orphan.config_entries
+
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Ours was its only entry, so the registry drops the device altogether.
+    assert registry.async_get(orphan.id) is None

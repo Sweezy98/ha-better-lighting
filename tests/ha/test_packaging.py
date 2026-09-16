@@ -137,3 +137,31 @@ def test_repair_issues_are_described() -> None:
     source = (COMPONENT / "repairs.py").read_text()
     used = set(re.findall(r'^ISSUE_\w+ = "(\w+)"', source, re.M))
     assert used == set(STRINGS["issues"])
+
+
+def test_the_panel_javascript_ships_with_the_integration() -> None:
+    """HACS copies files and runs no build, so the panel must be plain JS."""
+    panel = COMPONENT / "www" / "better_lighting_panel.js"
+    assert panel.is_file(), "panel script missing from the integration"
+    source = panel.read_text()
+    assert 'customElements.define("better-lighting-panel"' in source
+    # Nothing that would need bundling or fetching at runtime.
+    assert "import " not in source.split("*/")[-1], "panel must have no imports"
+
+
+def test_every_menu_option_has_a_step_behind_it() -> None:
+    """A menu entry naming a step that does not exist is a dead end."""
+    source = (COMPONENT / "config_flow.py").read_text()
+    defined = set(re.findall(r"async def async_step_(\w+)\(", source))
+    # These are Home Assistant's own, not ours to define.
+    defined |= {"finish", "done"}
+
+    for area in ("config_subentries", "options"):
+        block = STRINGS.get(area, {})
+        groups = block.values() if area == "config_subentries" else [block]
+        for group in groups:
+            for step_id, step in (group.get("step") or {}).items():
+                for option in step.get("menu_options") or {}:
+                    assert option in defined, (
+                        f"{area}.{step_id} offers {option!r}, which has no step"
+                    )

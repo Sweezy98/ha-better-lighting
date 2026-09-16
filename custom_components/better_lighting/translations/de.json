@@ -1051,10 +1051,12 @@
       "options": {}
     },
     "insect_action": {
-      "scene": "Eine Szene anwenden",
-      "color_temp": "Auf Warmweiß wechseln",
-      "rgb_color": "Auf Bernstein wechseln",
-      "turn_off": "Den Raum ausschalten"
+      "options": {
+        "scene": "Eine Szene anwenden",
+        "color_temp": "Auf Warmweiß wechseln",
+        "rgb_color": "Auf Bernstein wechseln",
+        "turn_off": "Den Raum ausschalten"
+      }
     }
   },
   "entity": {

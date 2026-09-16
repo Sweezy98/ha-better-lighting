@@ -1051,10 +1051,12 @@
       "options": {}
     },
     "insect_action": {
-      "scene": "Apply a scene",
-      "color_temp": "Go warm",
-      "rgb_color": "Go amber",
-      "turn_off": "Switch the room off"
+      "options": {
+        "scene": "Apply a scene",
+        "color_temp": "Go warm",
+        "rgb_color": "Go amber",
+        "turn_off": "Switch the room off"
+      }
     }
   },
   "entity": {

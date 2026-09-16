@@ -110,6 +110,27 @@ def test_every_translated_selector_has_options() -> None:
     assert used <= declared, f"untranslated selectors: {sorted(used - declared)}"
 
 
+def test_every_selector_wraps_its_values_in_options() -> None:
+    """hassfest rejects a selector block that is not {"options": {...}}.
+
+    Checking the key existed was not enough: a selector whose values sat at the
+    top level passed that and failed in CI, which is a poor division of labour.
+    """
+    for name, block in STRINGS["selector"].items():
+        assert set(block) == {"options"}, (
+            f"selector.{name} must hold exactly an 'options' mapping, got {sorted(block)}"
+        )
+        # Empty is legitimate for a select whose choices only exist at
+        # runtime -- which scenes are defined, which rooms -- since there is
+        # nothing fixed to label.
+        assert isinstance(block["options"], dict), (
+            f"selector.{name}.options must be a mapping"
+        )
+        assert all(isinstance(value, str) for value in block["options"].values()), (
+            f"selector.{name}.options must map each value to a label"
+        )
+
+
 def test_manifest_is_complete() -> None:
     for key in (
         "domain",

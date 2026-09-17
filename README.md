@@ -304,15 +304,15 @@ held down two steps keeps tracking the sun all evening — two steps below where
 otherwise be. Holding the dimmer in a dark room sets where it will come back on rather than
 lighting it.
 
-A rule that names no room at all is about the house rather than any one part of it: it runs its
+An action that names no room at all is about the house rather than any one part of it: it runs its
 scripts and nothing else, which is what a projector or an amplifier wants.
 
-A rule can also **run scripts**. A film is not only a lighting change — the amplifier, the
-blinds, a notification — and a rule already knows when the mode reaches a state, so it is the
-right place to say what else happens. The scripts run once per rule however many rooms it
+An action can also **run scripts**. A film is not only a lighting change — the amplifier, the
+blinds, a notification — and an action already knows when the mode reaches a state, so it is the
+right place to say what else happens. The scripts run once per action however many rooms it
 covers.
 
-One of the states a rule can name is **off**, which is the mode ending. Its scripts run then —
+One of the states an action can name is **off**, which is the mode ending. Its scripts run then —
 including when the mode is switched off part-way through a film, which is also when the rooms
 go back to how they were.
 
@@ -420,7 +420,7 @@ Presence can be silenced three ways, all meaning the same thing:
 
 - **Night mode ignores presence** — for a bedroom.
 - **A scene ignores presence** — for the living room during a film.
-- **A room a cross-zone mode is driving** follows that mode's rules instead.
+- **A room a cross-zone mode is driving** follows that mode's actions instead.
 
 It will also not switch off a room somebody has just set by hand.
 
@@ -521,7 +521,7 @@ what each mode session is waiting on. Those answer most "why is this light doing
 questions immediately.
 
 **Repair issues** appear when configuration comes apart — a scene deleted while a switch still
-cycles through it, a room deleted from under a mode rule, a light claimed by two rooms. Home
+cycles through it, a room deleted from under a mode's action, a light claimed by two rooms. Home
 Assistant cannot prevent the deletion, so the integration skips the broken reference rather
 than failing, and tells you instead of silently shortening your cycle.
 

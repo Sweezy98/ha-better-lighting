@@ -814,18 +814,18 @@
           }
         },
         "rules": {
-          "title": "Regeln",
-          "description": "Aktuelle Regeln:\n\n{rules}",
+          "title": "Aktionen",
+          "description": "Aktuelle Aktionen:\n\n{rules}",
           "menu_options": {
-            "add_rule": "🆕 Regel hinzufügen",
-            "edit_rule": "✏️ Regel ändern",
-            "remove_rule": "🗑️ Regel entfernen",
+            "add_rule": "🆕 Aktion hinzufügen",
+            "edit_rule": "✏️ Aktion ändern",
+            "remove_rule": "🗑️ Aktion entfernen",
             "menu": "⬅️ Zurück"
           }
         },
         "add_rule": {
-          "title": "Regel hinzufügen",
-          "description": "Aktuelle Regeln:\n\n{rules}",
+          "title": "Aktion hinzufügen",
+          "description": "Aktuelle Aktionen:\n\n{rules}",
           "data": {
             "mode_states": "In diesen Zuständen",
             "zones": "Dieser Raum",
@@ -850,26 +850,26 @@
             }
           },
           "data_description": {
-            "scripts": "Werden ausgeführt, wenn diese Regel greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Regel abdeckt. Eine Regel für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück."
+            "scripts": "Werden ausgeführt, wenn diese Aktion greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Aktion abdeckt. Eine Aktion für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück."
           }
         },
         "remove_rule": {
-          "title": "Regel entfernen",
-          "description": "Aktuelle Regeln:\n\n{rules}",
+          "title": "Aktion entfernen",
+          "description": "Aktuelle Aktionen:\n\n{rules}",
           "data": {
-            "rule": "Regel"
+            "rule": "Aktion"
           }
         },
         "edit_rule": {
-          "title": "Regel ändern",
-          "description": "Aktuelle Regeln:\n\n{rules}",
+          "title": "Aktion ändern",
+          "description": "Aktuelle Aktionen:\n\n{rules}",
           "data": {
-            "rule": "Regel"
+            "rule": "Aktion"
           }
         },
         "rule_form": {
-          "title": "Regel ändern",
-          "description": "Aktuelle Regeln:\n\n{rules}",
+          "title": "Aktion ändern",
+          "description": "Aktuelle Aktionen:\n\n{rules}",
           "data": {
             "mode_states": "In diesen Zuständen",
             "zones": "Dieser Raum",
@@ -894,7 +894,7 @@
             }
           },
           "data_description": {
-            "scripts": "Werden ausgeführt, wenn diese Regel greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Regel abdeckt. Eine Regel für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück."
+            "scripts": "Werden ausgeführt, wenn diese Aktion greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Aktion abdeckt. Eine Aktion für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück."
           }
         },
         "settings": {
@@ -925,10 +925,10 @@
         },
         "menu": {
           "title": "Modus",
-          "description": "Regeln:\n\n{rules}",
+          "description": "Aktionen:\n\n{rules}",
           "menu_options": {
             "settings": "🎬 Name und Zustände",
-            "rules": "📜 Regeln",
+            "rules": "⚡ Aktionen",
             "behaviour": "⚙️ Zwischenstand und Beenden",
             "finish": "✅ Speichern und schließen"
           }
@@ -1073,7 +1073,7 @@
       "options": {
         "turn_off": "Wieder ausschalten",
         "keep": "Angeschaltet lassen",
-        "reapply_mode_action": "Die Regel des Modus erneut anwenden"
+        "reapply_mode_action": "Die Aktion des Modus erneut anwenden"
       }
     },
     "scene": {

@@ -441,7 +441,7 @@ const SECTION_ICONS = {
   scenes: "mdi:palette",
   switches: "mdi:light-switch",
   calibrations: "mdi:tune-variant",
-  rules: "mdi:script-text-outline",
+  rules: "mdi:lightning-bolt-outline",
   presets: "mdi:palette-swatch",
 };
 
@@ -1926,7 +1926,10 @@ class BetterLightingPanel extends HTMLElement {
         .body[data-rail="1"] .nav-grip, .body[data-dragging="1"] .nav {
           transition:none; }
         @media (max-width:800px) { .nav-grip { display:none; } }
-        #main { min-height:0; display:flex; flex-direction:column; }
+        /* min-width:0, or a grid item refuses to be narrower than its
+           contents -- and one borrowed control that wants 400px then makes
+           the whole page wider than the phone it is on. */
+        #main { min-height:0; min-width:0; display:flex; flex-direction:column; }
         .scrim { display:none; }
         @media (max-width:800px) {
           /* Too narrow for two columns, so the menu slides over the content
@@ -1934,7 +1937,10 @@ class BetterLightingPanel extends HTMLElement {
              lets the content pane keep the full height of the window -- and
              so keeps its footer on the bottom of the window rather than
              somewhere the content can scroll underneath. */
-          .body { --gutter:12px; grid-template-columns:1fr; }
+          /* One column, and it may be no wider than the screen: the menu is
+             out of the flow here, so the content is the only thing left to
+             overflow it. */
+          .body { --gutter:12px; grid-template-columns:minmax(0, 1fr); }
           /* There is no rail here, only the drawer -- and these have to say
              so at the same weight as the rules above, which win on
              specificity rather than on being later in the sheet. */
@@ -1965,8 +1971,8 @@ class BetterLightingPanel extends HTMLElement {
         @media (max-width:500px) { .card { padding:12px 14px; } }
         /* One card per screen, the height of the pane: what is on it scrolls
            inside, and the buttons that act on it stay where they are. */
-        .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
-                padding:0; overflow:hidden; }
+        .page { display:flex; flex-direction:column; min-height:0; min-width:0;
+                flex:1 1 auto; padding:0; overflow:hidden; }
         .page-body { flex:1 1 auto; min-height:0; min-width:0; overflow:auto;
                      overflow-wrap:anywhere; padding:16px 20px;
                      display:flex; flex-direction:column; }
@@ -1988,7 +1994,8 @@ class BetterLightingPanel extends HTMLElement {
         /* Adding and deleting at one end, agreeing and backing out at the
            other, with the one that commits furthest from the one that does
            not. */
-        .page-foot { flex:0 0 auto; display:flex; gap:8px; flex-wrap:wrap;
+        .page-foot { flex:0 0 auto; min-width:0; display:flex; gap:8px;
+                     flex-wrap:wrap;
                      align-items:center; justify-content:space-between;
                      margin:0; padding:12px 20px;
                      border-top:1px solid var(--divider-color,#e0e0e0);
@@ -2103,7 +2110,12 @@ class BetterLightingPanel extends HTMLElement {
         details { border:1px solid var(--divider-color,#3d3d3d); border-radius:12px;
                   margin-bottom:12px; overflow:hidden;
                   background:var(--ha-card-background, var(--card-background-color)); }
-        details:last-of-type { margin-bottom:0; }
+        /* Not :last-of-type, which is the last accordion *among its
+           siblings* -- so an accordion at the end of one box lost its margin
+           and sat flush against the next box's first one. The last thing in
+           a container drops its margin whatever kind of thing it is. */
+        .page-body > :last-child, .fold-body > :last-child,
+        #diag-state > :last-child { margin-bottom:0; }
         summary { cursor:pointer; padding:14px 16px; font-size:15px; font-weight:500;
                   list-style:none; display:flex; align-items:center;
                   justify-content:space-between; gap:12px; }
@@ -2821,10 +2833,12 @@ class BetterLightingPanel extends HTMLElement {
     const roomRows = this._rooms
       .map((room) => {
         const open = this._expanded === room.id;
-        // Two rooms can be unfolded at once now, and only one of them is the
+        // Two rooms can be unfolded at once, and only one of them is the
         // room you are in -- so which screen is current is a question about
-        // this room, not about the view alone.
-        const here = room.id === this._roomId;
+        // this room, not about the view alone. And the room last visited is
+        // not the room you are in once you have gone to a mode or the global
+        // settings, which is what left a dot on it afterwards.
+        const here = inRoom && room.id === this._roomId;
         const children = open
           ? `<ul class="sub">${[
               ...sections.map(
@@ -2926,7 +2940,7 @@ class BetterLightingPanel extends HTMLElement {
             this._collapsed.modes && this._view.kind === "mode" ? "1" : "0"
           }" aria-selected="${
             this._view.kind === "modes"
-          }">${icon("mdi:movie-open-outline")}<span class="grow">${this._t(
+          }">${icon("mdi:auto-mode")}<span class="grow">${this._t(
             "modes"
           )}</span>${twist("modes")}</li>
         </ul>

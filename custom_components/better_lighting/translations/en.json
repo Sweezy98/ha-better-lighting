@@ -814,18 +814,18 @@
           }
         },
         "rules": {
-          "title": "Rules",
-          "description": "Current rules:\n\n{rules}",
+          "title": "Actions",
+          "description": "Current actions:\n\n{rules}",
           "menu_options": {
-            "add_rule": "🆕 Add a rule",
-            "edit_rule": "✏️ Change a rule",
-            "remove_rule": "🗑️ Remove a rule",
+            "add_rule": "🆕 Add an action",
+            "edit_rule": "✏️ Change an action",
+            "remove_rule": "🗑️ Remove an action",
             "menu": "⬅️ Back"
           }
         },
         "add_rule": {
-          "title": "Add a rule",
-          "description": "Current rules:\n\n{rules}",
+          "title": "Add an action",
+          "description": "Current actions:\n\n{rules}",
           "data": {
             "mode_states": "In these states",
             "zones": "This room",
@@ -850,26 +850,26 @@
             }
           },
           "data_description": {
-            "scripts": "Run when this rule takes effect, alongside whatever it does to the lights, and once however many rooms the rule covers. A rule for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were."
+            "scripts": "Run when this action takes effect, alongside whatever it does to the lights, and once however many rooms the action covers. An action for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were."
           }
         },
         "remove_rule": {
-          "title": "Remove a rule",
-          "description": "Current rules:\n\n{rules}",
+          "title": "Remove an action",
+          "description": "Current actions:\n\n{rules}",
           "data": {
-            "rule": "Rule"
+            "rule": "Action"
           }
         },
         "edit_rule": {
-          "title": "Change a rule",
-          "description": "Current rules:\n\n{rules}",
+          "title": "Change an action",
+          "description": "Current actions:\n\n{rules}",
           "data": {
-            "rule": "Rule"
+            "rule": "Action"
           }
         },
         "rule_form": {
-          "title": "Change a rule",
-          "description": "Current rules:\n\n{rules}",
+          "title": "Change an action",
+          "description": "Current actions:\n\n{rules}",
           "data": {
             "mode_states": "In these states",
             "zones": "This room",
@@ -894,7 +894,7 @@
             }
           },
           "data_description": {
-            "scripts": "Run when this rule takes effect, alongside whatever it does to the lights, and once however many rooms the rule covers. A rule for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were."
+            "scripts": "Run when this action takes effect, alongside whatever it does to the lights, and once however many rooms the action covers. An action for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were."
           }
         },
         "settings": {
@@ -925,10 +925,10 @@
         },
         "menu": {
           "title": "Mode",
-          "description": "Rules:\n\n{rules}",
+          "description": "Actions:\n\n{rules}",
           "menu_options": {
             "settings": "🎬 Name & states",
-            "rules": "📜 Rules",
+            "rules": "⚡ Actions",
             "behaviour": "⚙️ Snapshots & ending",
             "finish": "✅ Save & close"
           }

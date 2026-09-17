@@ -105,5 +105,12 @@
   "no_colour_to_keep": "This light has no colour of its own in this scene.",
   "adaptive_scene_hint": "The room's own default. Every light in it, following the sun, unless you say otherwise.",
   "clear_log": "Clear the log",
-  "whole_house": "The whole house"
+  "whole_house": "The whole house",
+  "about": "About",
+  "about_blurb": "One integration for adaptive lighting, scenes, switches and house-wide modes.",
+  "about_version": "Integration",
+  "about_page": "This page",
+  "about_repo": "Source and documentation",
+  "about_issues": "Report a problem",
+  "close": "Close"
 }

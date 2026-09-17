@@ -551,3 +551,32 @@ def test_movement_can_be_turned_off() -> None:
     # Including the one that is done in script rather than in the stylesheet,
     # which a stylesheet rule cannot reach.
     assert 'window.matchMedia?.("(prefers-reduced-motion: reduce)").matches' in panel_js
+
+
+def test_nothing_is_deleted_from_a_list_without_being_asked_about() -> None:
+    """Row actions put Delete one tap from a list of things you open, so the
+    confirmation matters more there than it does on a settings screen."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    wiring = panel_js[panel_js.index("_wireRowActions(main, {") :]
+    assert "_wireRowActions" in panel_js
+    # The one place the buttons are wired asks, so every list that uses them
+    # asks -- which is the reason they are wired in one place.
+    handler = panel_js[
+        panel_js.index("  _wireRowActions(") : panel_js.index("  _empty(")
+    ]
+    assert "if (!this._confirm()) return;" in handler
+    # And a click on one is not also a click into the row.
+    assert wiring.count('closest("[data-delete],[data-duplicate]")') >= 4
+
+
+def test_every_stylesheet_in_the_panel_is_closed_exactly_once() -> None:
+    """An extra </style> ends the sheet early and the rest of it is drawn as
+    text across the top of the page -- which is what happened, and which no
+    test could see because nothing here renders the page.
+    """
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    assert panel_js.count("<style>") == panel_js.count("</style>"), (
+        "a stylesheet is opened or closed more times than the other"
+    )

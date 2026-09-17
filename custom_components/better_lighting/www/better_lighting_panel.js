@@ -1637,6 +1637,9 @@ class BetterLightingPanel extends HTMLElement {
     this.shadowRoot.getElementById("go-import").innerHTML = `${this._icon(
       "mdi:download"
     )}<span class="grow">${this._t("import_scenes")}</span>`;
+    this.shadowRoot.getElementById("go-about").innerHTML = `${this._icon(
+      "mdi:information-outline"
+    )}<span class="grow">${this._t("about")}</span>`;
 
     holder.innerHTML = crumbs
       .map((crumb, index) => {
@@ -1815,7 +1818,14 @@ class BetterLightingPanel extends HTMLElement {
           content:""; flex:0 0 auto; width:8px; height:8px; margin-left:4px;
           border-right:2px solid currentColor; border-bottom:2px solid currentColor;
           transform:rotate(-45deg); opacity:.4; }
-        .page-body li .moves { display:flex; gap:2px; flex:0 0 auto; }
+        .page-body li .moves, .page-body li .row-actions {
+          display:flex; gap:2px; flex:0 0 auto; }
+        /* Quiet until the row is under the pointer: a list of things to open
+           should not read as a list of things to delete. */
+        .row-actions button { padding:0 6px; min-height:32px; opacity:.55; }
+        li:hover .row-actions button, .row-actions button:focus-visible { opacity:1; }
+        .row-actions button:hover { color:var(--error-color,#db4437); }
+        .row-actions button[data-duplicate]:hover { color:var(--primary-color); }
         /* Nothing here yet, said plainly and in the middle rather than as a
            dash somebody has to interpret. */
         /* In the middle of whatever space the page has, rather than tucked
@@ -1937,6 +1947,18 @@ class BetterLightingPanel extends HTMLElement {
                         border:1px solid var(--divider-color,#ccc);
                         background:var(--card-background-color); color:inherit; }
         .live { background:var(--success-color,#43a047); }
+        .modal { position:fixed; inset:0; z-index:9; display:flex;
+                 align-items:center; justify-content:center; padding:16px;
+                 background:rgba(0,0,0,.45); animation:reveal .15s ease both; }
+        .modal-card { width:min(420px, 100%); border-radius:12px; overflow:hidden;
+                      background:var(--card-background-color,#fff);
+                      box-shadow:0 8px 32px rgba(0,0,0,.4); }
+        .modal-card > :not(.page-foot) { margin:0 20px 12px; }
+        .modal-card > h2 { margin-top:20px; }
+        .modal-card a { color:var(--primary-color); }
+        table.about { width:calc(100% - 40px); }
+        table.about th { text-align:left; font-weight:400; padding:2px 12px 2px 0;
+                         color:var(--secondary-text-color); white-space:nowrap; }
         /* A few small movements, and none of them in anybody's way. */
         @keyframes reveal {
           from { opacity:0; transform:translateY(-4px); }
@@ -1951,7 +1973,6 @@ class BetterLightingPanel extends HTMLElement {
         @media (prefers-reduced-motion:reduce) {
           *, .page, ul.sub { animation:none !important; transition:none !important; }
         }
-      </style>
         /* Inside the box now that these are boxed accordions, rather than
            running up against its edges. */
         details.diag table { width:100%; border-collapse:collapse; margin:8px 0 12px; }
@@ -1993,6 +2014,7 @@ class BetterLightingPanel extends HTMLElement {
           <button class="icon-btn" id="more"></button>
           <div class="menu" id="more-menu" hidden>
             <button class="menu-item" id="go-import"></button>
+            <button class="menu-item" id="go-about"></button>
           </div>
         </div>
       </header>
@@ -2034,6 +2056,10 @@ class BetterLightingPanel extends HTMLElement {
       event.stopPropagation();
       overflow.hidden = !overflow.hidden;
     });
+    this.shadowRoot.getElementById("go-about").addEventListener("click", () => {
+      overflow.hidden = true;
+      this._showAbout();
+    });
     this.shadowRoot.getElementById("go-import").addEventListener("click", () => {
       overflow.hidden = true;
       this._leave(() => {
@@ -2047,6 +2073,46 @@ class BetterLightingPanel extends HTMLElement {
     };
     this.shadowRoot.addEventListener("click", this._closeOverflow);
     window.addEventListener("click", this._closeOverflow);
+  }
+
+  /**
+   * The buttons at the end of a row in a list.
+   *
+   * Deleting from the list rather than from the screen behind it: the thing
+   * you want rid of is the one you are looking at, and going into it to get
+   * out of it again is a detour.
+   */
+  _rowActions(index, { duplicate = false, remove = true } = {}) {
+    return `<span class="row-actions">${
+      duplicate
+        ? `<button class="flat" data-duplicate="${index}" title="${this._t(
+            "duplicate"
+          )}">${this._icon("mdi:content-copy")}</button>`
+        : ""
+    }${
+      remove
+        ? `<button class="flat" data-delete="${index}" title="${this._t(
+            "delete"
+          )}">${this._icon("mdi:delete-outline")}</button>`
+        : ""
+    }</span>`;
+  }
+
+  /** Wire those buttons, with nothing deleted without being asked about. */
+  _wireRowActions(main, { duplicate, remove }) {
+    main.querySelectorAll("[data-duplicate]").forEach((button) =>
+      button.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        await duplicate(Number(event.currentTarget.dataset.duplicate));
+      })
+    );
+    main.querySelectorAll("[data-delete]").forEach((button) =>
+      button.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        if (!this._confirm()) return;
+        await remove(Number(event.currentTarget.dataset.delete));
+      })
+    );
   }
 
   /**
@@ -2106,6 +2172,58 @@ class BetterLightingPanel extends HTMLElement {
       // Refused at the prompt, so put back the entry the browser took.
       history.pushState({ ...history.state, blDepth: crumbs.length - 1 }, "");
     }
+  }
+
+  /**
+   * What this is, and which version of it you are looking at.
+   *
+   * Two versions, because they can differ: the integration that Home
+   * Assistant loaded, and the page the browser is running -- which is
+   * whatever it was served, and stays that way until it is reloaded.
+   */
+  async _showAbout() {
+    let about = {};
+    try {
+      about = await this._call("version");
+    } catch {
+      // Offline or an older backend; the dialog still says what it can.
+    }
+    const stale = about.panel && OWN_VERSION && about.panel !== OWN_VERSION;
+    const link = (href, label) =>
+      href
+        ? `<a href="${href}" target="_blank" rel="noopener">${label}</a>`
+        : "";
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal";
+    backdrop.innerHTML = `
+      <div class="modal-card">
+        <h2>${about.name || "Better Lighting"}</h2>
+        <p class="muted">${this._t("about_blurb")}</p>
+        <table class="about">
+          <tr><th>${this._t("about_version")}</th>
+              <td>${about.version || "—"}</td></tr>
+          <tr><th>${this._t("about_page")}</th>
+              <td>${OWN_VERSION || "—"}${
+                stale ? ` · ${this._t("update_available")}` : ""
+              }</td></tr>
+        </table>
+        <p>${link(about.documentation, this._t("about_repo"))}${
+          about.documentation && about.issues ? " · " : ""
+        }${link(about.issues, this._t("about_issues"))}</p>
+        <div class="page-foot">
+          <div class="foot-end"></div>
+          <div class="foot-end"><button id="about-close">${this._t(
+            "close"
+          )}</button></div>
+        </div>
+      </div>`;
+    this.shadowRoot.appendChild(backdrop);
+    const shut = () => backdrop.remove();
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) shut();
+    });
+    backdrop.querySelector("#about-close").addEventListener("click", shut);
   }
 
   /** Ask before something that cannot be undone. */
@@ -2562,7 +2680,7 @@ class BetterLightingPanel extends HTMLElement {
             ).replace(
               "{count}",
               String((room.scenes || []).length)
-            )}</div></span></li>`
+            )}</div></span>${this._rowActions(this._rooms.indexOf(room))}</li>`
           )
           .join("")}</ul>
        ${this._rooms.length ? "" : this._empty(this._t("no_rooms"))}`,
@@ -2571,8 +2689,17 @@ class BetterLightingPanel extends HTMLElement {
       )}</span></button>`
     );
 
+    this._wireRowActions(main, {
+      duplicate: () => {},
+      remove: async (index) => {
+        await this._call("delete_zone", { zone_id: this._rooms[index].id });
+        if (this._roomId === this._rooms[index].id) this._roomId = null;
+        await this._load();
+      },
+    });
     main.querySelectorAll("li[data-room]").forEach((row) =>
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("[data-delete],[data-duplicate]")) return;
         this._roomId = row.dataset.room;
         // Same as walking into it from the menu: its screens are showing.
         this._expanded = row.dataset.room;
@@ -2599,7 +2726,7 @@ class BetterLightingPanel extends HTMLElement {
             ).join(", ") || this._t("none")} \u00b7 ${this._t("n_rules").replace(
               "{count}",
               String((mode.data?.rules || []).length)
-            )}</div></span></li>`
+            )}</div></span>${this._rowActions(this._modes.indexOf(mode))}</li>`
           )
           .join("")}</ul>
        ${this._modes.length ? "" : this._empty(this._t("no_modes"))}`,
@@ -2608,8 +2735,17 @@ class BetterLightingPanel extends HTMLElement {
       )}</span></button>`
     );
 
+    this._wireRowActions(main, {
+      duplicate: () => {},
+      remove: async (index) => {
+        await this._call("delete_mode", { mode_id: this._modes[index].id });
+        if (this._modeId === this._modes[index].id) this._modeId = null;
+        await this._load();
+      },
+    });
     main.querySelectorAll("li[data-mode]").forEach((row) =>
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("[data-delete],[data-duplicate]")) return;
         this._modeId = row.dataset.mode;
         this._view = { kind: "mode" };
         this._paint();
@@ -2748,7 +2884,7 @@ class BetterLightingPanel extends HTMLElement {
                     .map((id) => this._name(id))
                     .join(", ")}`
                 : ""
-            }</div></span></li>`
+            }</div></span>${this._rowActions(index)}</li>`
         )
         .join("")}</ul>
        ${rules.length ? "" : this._empty(this._t("no_rules"))}`,
@@ -2757,8 +2893,19 @@ class BetterLightingPanel extends HTMLElement {
       )}</span></button>`
     );
 
+    this._wireRowActions(main, {
+      duplicate: () => {},
+      remove: async (index) => {
+        await this._call("save_mode", {
+          mode_id: mode.id,
+          data: { ...mode.data, rules: rules.filter((_, i) => i !== index) },
+        });
+        await this._load();
+      },
+    });
     main.querySelectorAll("li[data-rule]").forEach((row) =>
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("[data-delete],[data-duplicate]")) return;
         this._view = { ...this._view, rule: Number(row.dataset.rule) };
         this._paint();
       })
@@ -2782,7 +2929,9 @@ class BetterLightingPanel extends HTMLElement {
         `<ul>${items
           .map(
             (item, i) =>
-              `<li data-index="${i}">${item.name || item.light_entity || "—"}</li>`
+              `<li data-index="${i}"><span class="grow">${
+                item.name || item.light_entity || "—"
+              }</span>${this._rowActions(i)}</li>`
           )
           .join("")}</ul>
          ${items.length ? "" : this._empty()}`,
@@ -2790,8 +2939,20 @@ class BetterLightingPanel extends HTMLElement {
           "add"
         )}</span></button>`
       );
+      this._wireRowActions(main, {
+        duplicate: () => {},
+        remove: async (index) => {
+          await this._call("save_zone_collection", {
+            zone_id: room.id,
+            key: storageKey,
+            items: items.filter((_, i) => i !== index),
+          });
+          await this._load();
+        },
+      });
       main.querySelectorAll("li").forEach((row) =>
-        row.addEventListener("click", () => {
+        row.addEventListener("click", (event) => {
+          if (event.target.closest("[data-delete],[data-duplicate]")) return;
           this._view = { ...this._view, index: Number(row.dataset.index) };
           this._paint();
         })
@@ -2863,6 +3024,7 @@ class BetterLightingPanel extends HTMLElement {
                        </span>`
                     : ""
                 }
+                ${this._rowActions(i, { duplicate: true })}
               </li>`
           )
           .join("")}</ul>
@@ -2872,9 +3034,27 @@ class BetterLightingPanel extends HTMLElement {
         )}</span></button>`
       );
 
+      this._wireRowActions(main, {
+        duplicate: async (index) => {
+          const copy = { ...items[index] };
+          copy.name = `${copy.name || ""} ${this._t("copy_suffix")}`.trim();
+          const next = [...items];
+          next.splice(index + 1, 0, copy);
+          await onSave(next);
+          await this._load();
+        },
+        remove: async (index) => {
+          await onSave(items.filter((_, i) => i !== index));
+          await this._load();
+        },
+      });
       main.querySelectorAll("li").forEach((row) =>
         row.addEventListener("click", (event) => {
-          if (event.target.closest("[data-up],[data-down]")) return;
+          if (
+            event.target.closest("[data-up],[data-down],[data-delete],[data-duplicate]")
+          ) {
+            return;
+          }
           this._view = { ...this._view, index: Number(row.dataset.index) };
           this._paint();
         })
@@ -3386,7 +3566,7 @@ class BetterLightingPanel extends HTMLElement {
               ).replace(
                 "{count}",
                 String(Object.keys(scene.lights || {}).length)
-              )}</div></span></li>`
+              )}</div></span>${this._rowActions(index, { duplicate: true })}</li>`
           )
           .join("")}</ul>
        ${room.scenes.length ? "" : this._empty(this._t("no_scenes"))}`,
@@ -3402,8 +3582,25 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "room", section: "adaptive" };
       this._paint();
     });
+    this._wireRowActions(main, {
+      duplicate: async (index) => {
+        const copy = JSON.parse(JSON.stringify(room.scenes[index]));
+        delete copy.scene_id;
+        copy.name = `${copy.name} ${this._t("copy_suffix")}`;
+        await this._call("save_scene", { zone_id: room.id, scene: copy });
+        await this._load();
+      },
+      remove: async (index) => {
+        await this._call("delete_scene", {
+          zone_id: room.id,
+          scene_id: room.scenes[index].scene_id,
+        });
+        await this._load();
+      },
+    });
     main.querySelectorAll("li[data-index]").forEach((item) =>
-      item.addEventListener("click", () => {
+      item.addEventListener("click", (event) => {
+        if (event.target.closest("[data-delete],[data-duplicate]")) return;
         this._scene = JSON.parse(JSON.stringify(room.scenes[Number(item.dataset.index)]));
         this._selectedLight = room.lights[0] || null;
         this._paint();

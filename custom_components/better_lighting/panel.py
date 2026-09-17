@@ -815,7 +815,19 @@ def websocket_version(
     loaded under is how it finds out, so it can offer the reload rather than
     leaving somebody to wonder why their new settings are missing.
     """
-    connection.send_result(msg["id"], {"panel": _fingerprint()})
+    manifest = json.loads(
+        (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+    )
+    connection.send_result(
+        msg["id"],
+        {
+            "panel": _fingerprint(),
+            "version": manifest.get("version"),
+            "name": manifest.get("name"),
+            "documentation": manifest.get("documentation"),
+            "issues": manifest.get("issue_tracker"),
+        },
+    )
 
 
 @websocket_api.require_admin

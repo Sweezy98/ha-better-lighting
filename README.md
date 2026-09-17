@@ -588,6 +588,25 @@ To add a language, copy the mapping in that script and translate the values. A t
 that each translation covers exactly the same keys as English and keeps every `{placeholder}`
 intact.
 
+## Standing on
+
+Three integrations each solved a third of this, and none of them talked to the others. This one
+exists because of them, and parts of it are their work rather than mine.
+
+| Project | What it does | What came from it |
+|---|---|---|
+| [adaptive-lighting](https://github.com/basnijholt/adaptive-lighting) | Brightness and colour temperature from the sun's position | The sun and curve mathematics in `adaptive.py` is a port of its `color_and_brightness.py`, and its `tests/test_color_and_brightness.py` was repointed at ours. The `FieldSpec` table generalises its `VALIDATION_TUPLES` plus side-car `EXTRA_VALIDATION`. |
+| [relative-light-group](https://github.com/lorenzo-deluca/relative-light-group) | A light group that dims members relative to their own brightness | The headroom algorithm in `brightness.py`, and the decision to vendor a group base rather than subclass Home Assistant's non-public `LightGroup`. |
+| [scenery](https://github.com/nicolaiwolf/scenery) | Named colour and brightness presets, cycled by a select | The colour model and the tolerance-based state comparators in `scenes.py`, ported from its `light_utils.py`. |
+
+Where this integration disagrees with them it is written down: per-`(zone, light)` manual-override
+tracking rather than a global dictionary keyed by light, zero-flash turn-on from a structural
+invariant rather than by patching `hass.services`, and a zone select whose value is derived from
+state we own rather than guessed by matching light attributes.
+
+Please check each project's own licence before reusing what came from it; this repository's
+licence covers this repository's work.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

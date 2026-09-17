@@ -105,5 +105,12 @@
   "no_colour_to_keep": "Diese Lampe hat in dieser Szene keine eigene Farbe.",
   "adaptive_scene_hint": "Die Voreinstellung des Raums. Jede Lampe darin folgt der Sonne, sofern nichts anderes festgelegt ist.",
   "clear_log": "Protokoll leeren",
-  "whole_house": "Das ganze Haus"
+  "whole_house": "Das ganze Haus",
+  "about": "Über",
+  "about_blurb": "Eine Integration für adaptives Licht, Szenen, Schalter und hausweite Modi.",
+  "about_version": "Integrationsversion",
+  "about_page": "Diese Seite",
+  "about_repo": "Quellcode und Dokumentation",
+  "about_issues": "Problem melden",
+  "close": "Schließen"
 }

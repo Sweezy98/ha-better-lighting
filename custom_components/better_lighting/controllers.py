@@ -258,8 +258,22 @@ class ControllerRuntime:
         if old is None:
             # The entity has only just appeared; there is nothing to compare.
             return None
-        if old.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            # Recovering from unavailable is not somebody pressing a button.
+        if old.state == STATE_UNAVAILABLE:
+            # A device coming back online republishes whatever it last said,
+            # which is not somebody pressing a button.
+            return None
+        if (
+            old.state == STATE_UNKNOWN
+            and self._started_at
+            and time.monotonic() - self._started_at < STARTUP_GRACE
+        ):
+            # Unknown is two different things. Just after a restart it is an
+            # entity that has not reported yet, and the first value it writes
+            # is history rather than a finger. At any other time it is how
+            # plenty of buttons *clear* themselves between presses -- publish
+            # the action, then blank, then unknown -- and treating that as
+            # "recovering" swallowed every press that followed one, which is
+            # exactly as baffling from the wall as it sounds.
             return None
         if (
             self._started_at

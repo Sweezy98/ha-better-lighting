@@ -39,7 +39,7 @@
   "all_scenes_used": "Every scene in this room is already in the list.",
   "add_scene": "Add a scene…",
   "adaptive": "Adaptive",
-  "import_scenes": "Import from Home Assistant",
+  "import_scenes": "Import scenes from Home Assistant",
   "import_hint": "Home Assistant's own scenes. A scene covering several rooms becomes one scene in each, holding only that room's lights.",
   "import": "Import",
   "in_no_room": "not in any room",

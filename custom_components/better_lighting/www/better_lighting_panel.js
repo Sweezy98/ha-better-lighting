@@ -420,13 +420,17 @@ class BlForm extends HTMLElement {
     this._values = {};
     this._labels = { data: {}, descriptions: {}, options: {} };
     this._choices = {};
+    this._disabled = new Set();
   }
 
-  configure({ fields, values, labels, choices, states, hass }) {
+  configure({ fields, values, labels, choices, states, hass, disabled }) {
     this._fields = fields || [];
     this._values = values || {};
     this._labels = labels || this._labels;
     this._choices = choices || {};
+    // Fields that cannot be answered yet, because the answer they depend on
+    // has not been given.
+    this._disabled = new Set(disabled || []);
     this._states = states || {};
     this._hass = hass;
     // Re-render once Home Assistant's picker is available, so the first paint
@@ -502,6 +506,7 @@ class BlForm extends HTMLElement {
       <style>
         :host { display:block; }
         .field { margin-bottom:20px; }
+        .field.disabled { opacity:.5; pointer-events:none; }
         label { display:block; font-weight:500; margin-bottom:6px; }
         .hint { color:var(--secondary-text-color); font-size:13px; margin-bottom:8px; }
         input[type=text], input[type=number], select {
@@ -538,7 +543,15 @@ class BlForm extends HTMLElement {
       wrap.innerHTML = `<label>${this._label(field.key)}</label>${
         hint ? `<div class="hint">${hint}</div>` : ""
       }`;
-      wrap.appendChild(this._control(field, value));
+      const control = this._control(field, value);
+      if (this._disabled.has(field.key)) {
+        wrap.classList.add("disabled");
+        control.disabled = true;
+        for (const input of control.querySelectorAll?.("input,select,button") || []) {
+          input.disabled = true;
+        }
+      }
+      wrap.appendChild(control);
       holder.appendChild(wrap);
     }
   }
@@ -1127,35 +1140,32 @@ class BetterLightingPanel extends HTMLElement {
       )
       .join("");
 
-    main.innerHTML = `
-      <div class="card">
-        <div class="bar" style="margin-top:0"><button class="flat" id="refresh">${this._t(
-          "refresh"
-        )}</button></div>
-        ${rooms}
-        ${modes}
-      </div>
-      ${
-        switches
-          ? `<div class="card">
-               <h2>${this._labels.sections.switches || this._t("switches")}</h2>
-               <p class="muted">${this._t("seen_hint")}</p>
-               ${switches}
-             </div>`
-          : ""
-      }
-      <div class="card">
-        <details open>
-          <summary>${this._t("the_curve")}</summary>
-          <div class="fold-body" id="curve"></div>
-        </details>
-      </div>
-      <div class="card">
-        <h2>${this._t("live_events")}</h2>
-        <div id="events" class="log"><p class="muted">${this._t(
-          "waiting_for_events"
-        )}</p></div>
-      </div>`;
+    // One card, grouped inside it: this was four stacked cards, which reads
+    // as four pages that happen to be underneath each other.
+    this._page(
+      `${rooms}
+       ${modes}
+       ${
+         switches
+           ? `<h3>${this._labels.sections.switches || this._t("switches")}</h3>
+              <p class="muted">${this._t("seen_hint")}</p>
+              ${switches}`
+           : ""
+       }
+       <details open>
+         <summary>${this._t("the_curve")}</summary>
+         <div class="fold-body" id="curve"></div>
+       </details>
+       <details open>
+         <summary>${this._t("live_events")}</summary>
+         <div class="fold-body log" id="events"><p class="muted">${this._t(
+           "waiting_for_events"
+         )}</p></div>
+       </details>`,
+      `<button class="flat" id="refresh">${this._icon(
+        "mdi:refresh"
+      )}<span>${this._t("refresh")}</span></button>`
+    );
 
     main.querySelector("#refresh").addEventListener("click", () =>
       this._paintDiagnostics()
@@ -1212,9 +1222,10 @@ class BetterLightingPanel extends HTMLElement {
 
     const marker = (iso, label, dashed) => {
       const at = x(iso);
-      return `<line x1="${at}" y1="0" x2="${at}" y2="${height}"
-                stroke="currentColor" stroke-opacity="0.5"
-                ${dashed ? 'stroke-dasharray="4 4"' : ""}/>
+      const stroke = dashed
+        ? 'stroke="currentColor" stroke-opacity="0.5" stroke-dasharray="4 4"'
+        : 'stroke="var(--primary-color,#03a9f4)" stroke-width="2"';
+      return `<line x1="${at}" y1="0" x2="${at}" y2="${height}" ${stroke}/>
         <text x="${at + 4}" y="14" font-size="11" fill="currentColor"
               fill-opacity="0.7">${label}</text>`;
     };
@@ -1267,7 +1278,11 @@ class BetterLightingPanel extends HTMLElement {
       const mark = (iso, label, dashed) => ({
         xAxis: at(iso),
         label: { formatter: label, position: "insideEndTop" },
-        lineStyle: { type: dashed ? "dashed" : "solid" },
+        lineStyle: dashed
+          ? { type: "dashed", opacity: 0.5 }
+          : // Now is the line people are looking for, so it is the one line
+            // that does not look like the others.
+            { type: "solid", width: 2, color: "var(--primary-color, #03a9f4)" },
       });
       const chart = document.createElement("ha-chart-base");
       chart.hass = this._hass;
@@ -1437,14 +1452,12 @@ class BetterLightingPanel extends HTMLElement {
         const top = { label: named("switches"), go: to({ kind: "switches" }) };
         const item = (room?.data.switches || [])[view.index];
         if (view.index === undefined) return [rooms, theRoom, top];
-        const one = {
-          label: item?.name || this._t("switch"),
-          go: to({ kind: "switches", index: view.index }),
-        };
-        if (view.sub === "order") {
-          return [rooms, theRoom, top, one, { label: this._t("what_it_cycles") }];
-        }
-        return [rooms, theRoom, top, { ...one, go: undefined }];
+        return [
+          rooms,
+          theRoom,
+          top,
+          { label: item?.name || this._t("switch") },
+        ];
       }
       case "calibrations": {
         const top = {
@@ -1462,11 +1475,23 @@ class BetterLightingPanel extends HTMLElement {
       }
       case "mode": {
         if (view.creating) return [modes, { label: this._t("add_mode") }];
-        const one = { label: mode?.name, go: to({ kind: "mode" }) };
-        if (view.rule !== undefined) {
-          return [modes, one, { label: named("rules") }];
+        const one = {
+          label: mode?.name,
+          go: to({ kind: "mode", section: "settings" }),
+        };
+        if (view.section === "rules") {
+          const list = {
+            label: named("rules"),
+            go: to({ kind: "mode", section: "rules" }),
+          };
+          if (view.rule !== undefined) {
+            const rule = (mode?.data.rules || [])[view.rule];
+            const room = this._rooms.find((r) => r.id === rule?.zones);
+            return [modes, one, list, { label: room?.name || this._t("add") }];
+          }
+          return [modes, one, { ...list, go: undefined }];
         }
-        return [modes, { ...one, go: undefined }];
+        return [modes, one, { label: this._t("basics") }];
       }
       default: {
         if (view.creating) return [rooms, { label: this._t("add_room") }];
@@ -1564,7 +1589,9 @@ class BetterLightingPanel extends HTMLElement {
                  min-height:56px; padding:6px 12px; box-sizing:border-box;
                  background:var(--app-header-background-color, var(--primary-color));
                  color:var(--app-header-text-color, #fff);
-                 box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.15)); }
+                 /* A line rather than a shadow, which is what Home Assistant
+                    draws under its own toolbar. */
+                 border-bottom:1px solid var(--divider-color, rgba(0,0,0,.12)); }
         header .titles { display:flex; align-items:baseline; gap:6px 14px;
                          flex-wrap:wrap; min-width:0; }
         .app-title { font-size:20px; white-space:nowrap; }
@@ -1600,16 +1627,19 @@ class BetterLightingPanel extends HTMLElement {
         .menu-item:hover { background:var(--secondary-background-color); }
         .body { flex:1 1 auto; min-height:0;
                 display:grid; grid-template-columns:260px 1fr; gap:16px; padding:16px;
-                align-items:start; overflow:hidden; }
-        /* Each column keeps its own scrollbar and neither is taller than the
-           window. */
-        .nav, #main { max-height:100%; overflow:auto; }
+                /* Stretch, not start: the menu runs the height of the window
+                   and the content pane is a frame with its own scrollbar. */
+                align-items:stretch; overflow:hidden; }
+        .nav { overflow:auto; }
+        #main { min-height:0; display:flex; flex-direction:column; }
         .nav-head { display:none; }
         @media (max-width:800px) {
-          /* Too narrow for two columns, so the menu goes back to being a
-             drawer above the content and the page scrolls as one. */
-          .body { grid-template-columns:1fr; padding:12px; overflow:auto; }
-          .nav, #main { max-height:none; overflow:visible; }
+          /* Too narrow for two columns. The menu becomes a drawer at the top
+             and the content begins directly underneath it rather than being
+             centred in what is left. */
+          .body { display:block; padding:12px; overflow:auto; }
+          .nav { margin-bottom:12px; }
+          #main { display:block; }
           .nav-head { display:block; }
           .nav-body[data-collapsed="1"] { display:none; }
         }
@@ -1618,6 +1648,28 @@ class BetterLightingPanel extends HTMLElement {
                 padding:16px 20px;
                 box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.1)); }
         @media (max-width:500px) { .card { padding:12px 14px; } }
+        /* One card per screen, the height of the pane: what is on it scrolls
+           inside, and the buttons that act on it stay where they are. */
+        .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
+                padding:0; overflow:hidden; }
+        .page-body { flex:1 1 auto; min-height:0; overflow:auto; padding:16px 20px; }
+        .page-foot { flex:0 0 auto; display:flex; gap:8px; flex-wrap:wrap;
+                     align-items:center; margin:0; padding:12px 20px;
+                     border-top:1px solid var(--divider-color,#e0e0e0);
+                     background:var(--card-background-color,#fff); }
+        .page-body > :first-child { margin-top:0; }
+        @media (max-width:800px) {
+          /* The page scrolls as a whole here, so the footer is pinned to the
+             bottom of the window instead of to the card. */
+          .page { display:block; overflow:visible; padding:16px 20px 0; }
+          .page-body { overflow:visible; padding:0; }
+          .page-foot { position:sticky; bottom:0; z-index:2;
+                       margin:16px -20px 0; border-radius:0 0 12px 12px; }
+        }
+        @media (max-width:500px) {
+          .page { padding:12px 14px 0; }
+          .page-foot { margin:12px -14px 0; padding:12px 14px; }
+        }
         /* Stacked cards -- a mode and its rules, the diagnostics tables and
            the curve -- were flush against each other, which read as one card
            with a line through it rather than two things. */
@@ -1646,6 +1698,9 @@ class BetterLightingPanel extends HTMLElement {
                                                      var(--primary-color)); }
         li[aria-expanded="true"] { font-weight:500; }
         li.add ha-icon { color:inherit; }
+        li[draggable="true"] { cursor:grab; }
+        li.dragging { opacity:.4; }
+        li.drop-target { outline:2px dashed var(--primary-color); }
         .twist { display:inline-flex; align-items:center; cursor:pointer;
                  opacity:.6; margin:-4px -4px -4px 0; padding:4px; }
         .twist:hover { opacity:1; }
@@ -1703,6 +1758,8 @@ class BetterLightingPanel extends HTMLElement {
         .pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px;
                 background:var(--secondary-background-color); }
         .banner { display:flex; align-items:center; gap:16px; margin-bottom:16px;
+                  padding:12px 16px; border-radius:8px;
+                  background:var(--secondary-background-color);
                   border-left:4px solid var(--info-color,#3f9bd4); flex-wrap:wrap; }
         .banner.live { border-left-color:var(--success-color,#43a047); }
         .light select { font:inherit; padding:5px 8px; border-radius:8px;
@@ -1891,14 +1948,36 @@ class BetterLightingPanel extends HTMLElement {
         </ul>
         <ul class="group"${this._collapsed.modes ? " hidden" : ""}>
           ${this._modes
-            .map(
-              (mode) =>
-                `<li data-mode="${mode.id}" aria-selected="${
-                  this._view.kind === "mode" && this._modeId === mode.id
-                }">${icon(mode.data?.icon || "mdi:movie-open")}<span class="grow">${
-                  mode.name
-                }</span></li>`
-            )
+            .map((mode) => {
+              const here = this._view.kind === "mode" && this._modeId === mode.id;
+              const open = Boolean(this._expanded[mode.id]);
+              const section = this._view.section || "settings";
+              const children = open
+                ? `<ul class="sub">${[
+                    ["settings", "mdi:cog-outline", this._t("basics")],
+                    [
+                      "rules",
+                      SECTION_ICONS.rules,
+                      this._labels.sections.rules || this._t("rules"),
+                    ],
+                  ]
+                    .map(
+                      ([key, name, label]) =>
+                        `<li data-mode-section="${key}" data-mode="${mode.id}"
+                          aria-selected="${here && section === key}">${icon(
+                            name
+                          )}<span class="grow">${label}</span></li>`
+                    )
+                    .join("")}</ul>`
+                : "";
+              return `<li class="mode" data-mode="${mode.id}"
+                aria-expanded="${open}" aria-selected="false">${icon(
+                  mode.data?.icon || "mdi:movie-open"
+                )}<span class="grow">${mode.name}</span><span class="twist"
+                  data-room-twist="${mode.id}">${icon(
+                  open ? "mdi:chevron-down" : "mdi:chevron-right"
+                )}</span></li>${children}`;
+            })
             .join("")}
           <li class="add" id="add-mode">${icon("mdi:plus")}<span class="grow">${this._t(
             "add_mode"
@@ -1971,11 +2050,21 @@ class BetterLightingPanel extends HTMLElement {
         this._paint();
       })
     );
-    nav.querySelectorAll("li[data-mode]").forEach((item) =>
+    nav.querySelectorAll("li.mode").forEach((item) =>
       item.addEventListener("click", () => {
         chosen();
         this._modeId = item.dataset.mode;
-        this._view = { kind: "mode" };
+        this._expanded[item.dataset.mode] = true;
+        this._view = { kind: "mode", section: "settings" };
+        this._paint();
+      })
+    );
+    nav.querySelectorAll("li[data-mode-section]").forEach((item) =>
+      item.addEventListener("click", (event) => {
+        event.stopPropagation();
+        chosen();
+        this._modeId = item.dataset.mode;
+        this._view = { kind: "mode", section: item.dataset.modeSection };
         this._paint();
       })
     );
@@ -2051,7 +2140,6 @@ class BetterLightingPanel extends HTMLElement {
       case "scenes":
         return this._paintScenes();
       case "switches":
-        if (this._view.sub === "order") return this._paintSwitchOrder();
         return this._paintCollection("switches", "switch");
       case "calibrations":
         return this._paintCollection("light_profiles", "calibration");
@@ -2069,10 +2157,8 @@ class BetterLightingPanel extends HTMLElement {
    * before you opened it.
    */
   _paintRooms() {
-    const main = this.shadowRoot.getElementById("main");
-    main.innerHTML = `
-      <div class="card">
-        <ul>${this._rooms
+    const main = this._page(
+      `<ul>${this._rooms
           .map(
             (room) => `<li data-room="${room.id}">${this._icon(
               room.data?.icon || "mdi:lightbulb-group"
@@ -2086,11 +2172,11 @@ class BetterLightingPanel extends HTMLElement {
             )}</div></span></li>`
           )
           .join("")}</ul>
-        ${this._rooms.length ? "" : `<p class="muted">${this._t("no_rooms")}</p>`}
-        <div class="bar"><button id="add">${this._icon("mdi:plus")}<span>${this._t(
-          "add_room"
-        )}</span></button></div>
-      </div>`;
+       ${this._rooms.length ? "" : `<p class="muted">${this._t("no_rooms")}</p>`}`,
+      `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+        "add_room"
+      )}</span></button>`
+    );
 
     main.querySelectorAll("li[data-room]").forEach((row) =>
       row.addEventListener("click", () => {
@@ -2110,10 +2196,8 @@ class BetterLightingPanel extends HTMLElement {
 
   /** Every mode at once, with what each of them does. */
   _paintModes() {
-    const main = this.shadowRoot.getElementById("main");
-    main.innerHTML = `
-      <div class="card">
-        <ul>${this._modes
+    const main = this._page(
+      `<ul>${this._modes
           .map(
             (mode) => `<li data-mode="${mode.id}">${this._icon(
               mode.data?.icon || "mdi:movie-open"
@@ -2125,11 +2209,11 @@ class BetterLightingPanel extends HTMLElement {
             )}</div></span></li>`
           )
           .join("")}</ul>
-        ${this._modes.length ? "" : `<p class="muted">${this._t("no_modes")}</p>`}
-        <div class="bar"><button id="add">${this._icon("mdi:plus")}<span>${this._t(
-          "add_mode"
-        )}</span></button></div>
-      </div>`;
+       ${this._modes.length ? "" : `<p class="muted">${this._t("no_modes")}</p>`}`,
+      `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+        "add_mode"
+      )}</span></button>`
+    );
 
     main.querySelectorAll("li[data-mode]").forEach((row) =>
       row.addEventListener("click", () => {
@@ -2152,11 +2236,12 @@ class BetterLightingPanel extends HTMLElement {
     const main = this.shadowRoot.getElementById("main");
 
     if (creating && !this._view.creating && !this._rooms.length) {
-      main.innerHTML = `<div class="card"><p class="muted">${this._t(
-        "no_rooms"
-      )}</p><div class="bar"><button id="add">${this._t(
-        "add_room"
-      )}</button></div></div>`;
+      this._page(
+        `<p class="muted">${this._t("no_rooms")}</p>`,
+        `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+          "add_room"
+        )}</span></button>`
+      );
       main.querySelector("#add").addEventListener("click", () => {
         this._view = { kind: "room", section: null, creating: true };
         this._paint();
@@ -2214,12 +2299,17 @@ class BetterLightingPanel extends HTMLElement {
 
   _paintMode() {
     const mode = this._mode;
-    // A rule being edited is still the mode's screen: sending it somewhere
-    // else left the sidebar with nothing selected and no way back but the
-    // browser's.
-    if (mode && this._view.rule !== undefined) return this._paintRules();
-
     const creating = this._view.creating || !mode;
+
+    // Rules are a screen of their own with an entry in the menu, the way a
+    // room's screens are. Underneath the settings they were a second page
+    // stapled to the bottom of the first.
+    if (!creating && this._view.section === "rules") {
+      return this._view.rule !== undefined
+        ? this._paintRules()
+        : this._paintRuleList();
+    }
+
     this._paintSettings({
       form: this._schema?.forms.mode || [],
       values: creating ? { states: [] } : { ...mode.data },
@@ -2230,7 +2320,7 @@ class BetterLightingPanel extends HTMLElement {
           mode_id: creating ? null : mode.id,
           data: { ...base, ...next },
         });
-        this._view = { kind: "mode" };
+        this._view = { kind: "mode", section: "settings" };
         return result;
       },
       remove: creating
@@ -2238,44 +2328,43 @@ class BetterLightingPanel extends HTMLElement {
         : async () => {
             await this._call("delete_mode", { mode_id: mode.id });
             this._modeId = null;
+            this._view = { kind: "modes" };
           },
     });
-
-    if (!creating) this._appendRules();
   }
 
-  /** The mode's rules, listed under its settings on the same screen. */
-  _appendRules() {
+  /** The mode's rules, on their own screen. */
+  _paintRuleList() {
     const mode = this._mode;
-    const main = this.shadowRoot.getElementById("main");
     const rules = mode.data.rules || [];
     const roomName = Object.fromEntries(
       this._rooms.map((room) => [room.id, room.name])
     );
 
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `
-      <h2>${this._labels.sections.rules || this._t("rules")}</h2>
-      <ul>${rules
+    const main = this._page(
+      `<ul>${rules
         .map(
           (rule, index) =>
-            `<li data-rule="${index}">${
+            `<li data-rule="${index}"><span class="grow">${
               roomName[rule.zones] || rule.zones || "—"
-            }: ${rule.action || "keep"} (${(rule.mode_states || []).join(", ") || "—"})</li>`
+            }<div class="muted">${rule.action || "keep"} · ${
+              (rule.mode_states || []).join(", ") || "—"
+            }</div></span></li>`
         )
         .join("")}</ul>
-      ${rules.length ? "" : `<p class="muted">${this._t("none")}</p>`}
-      <div class="bar"><button id="add-rule">${this._t("add")}</button></div>`;
-    main.appendChild(card);
+       ${rules.length ? "" : `<p class="muted">${this._t("none")}</p>`}`,
+      `<button id="add-rule">${this._icon("mdi:plus")}<span>${this._t(
+        "add"
+      )}</span></button>`
+    );
 
-    card.querySelectorAll("li[data-rule]").forEach((row) =>
+    main.querySelectorAll("li[data-rule]").forEach((row) =>
       row.addEventListener("click", () => {
         this._view = { ...this._view, rule: Number(row.dataset.rule) };
         this._paint();
       })
     );
-    card.querySelector("#add-rule").addEventListener("click", () => {
+    main.querySelector("#add-rule").addEventListener("click", () => {
       this._view = { ...this._view, rule: rules.length };
       this._paint();
     });
@@ -2290,16 +2379,18 @@ class BetterLightingPanel extends HTMLElement {
     const index = this._view.index;
 
     if (index === undefined) {
-      main.innerHTML = `
-        <div class="card">
-          <ul>${items
-            .map(
-              (item, i) =>
-                `<li data-index="${i}">${item.name || item.light_entity || "—"}</li>`
-            )
-            .join("")}</ul>
-          <div class="bar"><button id="add">${this._t("add")}</button></div>
-        </div>`;
+      this._page(
+        `<ul>${items
+          .map(
+            (item, i) =>
+              `<li data-index="${i}">${item.name || item.light_entity || "—"}</li>`
+          )
+          .join("")}</ul>
+         ${items.length ? "" : `<p class="muted">${this._t("none")}</p>`}`,
+        `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+          "add"
+        )}</span></button>`
+      );
       main.querySelectorAll("li").forEach((row) =>
         row.addEventListener("click", () => {
           this._view = { ...this._view, index: Number(row.dataset.index) };
@@ -2339,17 +2430,7 @@ class BetterLightingPanel extends HTMLElement {
       },
       extra:
         storageKey === "switches" && index < items.length
-          ? {
-              // Counting adaptive, which is a step of every cycle and not a
-              // scene anybody put there.
-              label: `${this._t("what_it_cycles")} (${
-                ((room.switch_orders || [])[index] || []).length + 1
-              })`,
-              go: () => {
-                this._view = { ...this._view, sub: "order" };
-                this._paint();
-              },
-            }
+          ? (into) => this._paintSwitchOrder(into, index)
           : null,
     });
   }
@@ -2366,34 +2447,35 @@ class BetterLightingPanel extends HTMLElement {
     const index = this._view.index;
 
     if (index === undefined) {
-      main.innerHTML = `
-        <div class="card">
-          <ul id="items">${items
-            .map(
-              (item, i) => `<li data-index="${i}">
-                  <span class="grow">${describe(item, i)}</span>
-                  ${
-                    reorder
-                      ? `<span class="moves">
-                           <button class="flat" data-up="${i}" ${
-                             i === 0 ? "disabled" : ""
-                           }>${this._icon("mdi:arrow-up")}</button>
-                           <button class="flat" data-down="${i}" ${
-                             i === items.length - 1 ? "disabled" : ""
-                           }>${this._icon("mdi:arrow-down")}</button>
-                         </span>`
-                      : ""
-                  }
-                </li>`
-            )
-            .join("")}</ul>
-          ${items.length ? "" : `<p class="muted">${this._t("none")}</p>`}
-          <div class="bar"><button id="add">${this._t("add")}</button></div>
-        </div>`;
+      this._page(
+        `<ul id="items">${items
+          .map(
+            (item, i) => `<li data-index="${i}">
+                <span class="grow">${describe(item, i)}</span>
+                ${
+                  reorder
+                    ? `<span class="moves">
+                         <button class="flat" data-up="${i}" ${
+                           i === 0 ? "disabled" : ""
+                         }>${this._icon("mdi:arrow-up")}</button>
+                         <button class="flat" data-down="${i}" ${
+                           i === items.length - 1 ? "disabled" : ""
+                         }>${this._icon("mdi:arrow-down")}</button>
+                       </span>`
+                    : ""
+                }
+              </li>`
+          )
+          .join("")}</ul>
+         ${items.length ? "" : `<p class="muted">${this._t("none")}</p>`}`,
+        `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+          "add"
+        )}</span></button>`
+      );
 
       main.querySelectorAll("li").forEach((row) =>
         row.addEventListener("click", (event) => {
-          if (event.target.dataset.up || event.target.dataset.down) return;
+          if (event.target.closest("[data-up],[data-down]")) return;
           this._view = { ...this._view, index: Number(row.dataset.index) };
           this._paint();
         })
@@ -2401,8 +2483,11 @@ class BetterLightingPanel extends HTMLElement {
       main.querySelectorAll("[data-up],[data-down]").forEach((button) =>
         button.addEventListener("click", async (event) => {
           event.stopPropagation();
-          const from = Number(event.target.dataset.up ?? event.target.dataset.down);
-          const to = event.target.dataset.up ? from - 1 : from + 1;
+          // currentTarget, not target: the click lands on the icon inside the
+          // button, which carries none of these attributes.
+          const data = event.currentTarget.dataset;
+          const from = Number(data.up ?? data.down);
+          const to = data.up ? from - 1 : from + 1;
           const next = [...items];
           [next[from], next[to]] = [next[to], next[from]];
           await onSave(next);
@@ -2453,18 +2538,13 @@ class BetterLightingPanel extends HTMLElement {
     );
 
     if (!scenes.length) {
-      main.innerHTML = `<div class="card"><p class="muted">${this._t(
-        "nothing_to_import"
-      )}</p></div>`;
+      this._page(`<p class="muted">${this._t("nothing_to_import")}</p>`);
       return;
     }
 
-    main.innerHTML = `
-      <div class="card">
-        <p class="muted">${this._t("import_hint")}</p>
-        <div id="list"></div>
-
-      </div>`;
+    this._page(
+      `<p class="muted">${this._t("import_hint")}</p><div id="list"></div>`
+    );
 
     const list = main.querySelector("#list");
     for (const item of scenes) {
@@ -2549,17 +2629,32 @@ class BetterLightingPanel extends HTMLElement {
     });
   }
 
-  /** One rule of the current mode, edited in place. */
-  _paintRules() {
+  /**
+   * One rule of the current mode, edited in place.
+   *
+   * ``draft`` carries answers given since the screen was drawn. A rule's
+   * scenes are the scenes of the room it names, which is not known when the
+   * form is first built -- so naming a room redraws the form, and until one
+   * is named the two questions that depend on it are there but not yet
+   * answerable.
+   */
+  _paintRules(draft = null) {
     const mode = this._mode;
     const rules = mode.data.rules || [];
     const index = this._view.rule;
-    const current = rules[index] || {};
+    const current = { ...(rules[index] || {}), ...(draft || {}) };
     const ruleRoom = this._rooms.find((room) => room.id === current.zones) || null;
 
     this._paintSettings({
       form: this._schema?.forms.rule || [],
       values: { ...current },
+      // Greyed out rather than hidden: they are part of the question, and a
+      // form that grows as you answer it is harder to read than one that
+      // waits.
+      disabled: ruleRoom ? [] : ["action", "scene_id", "presence_entry_action"],
+      onChange: (key, values) => {
+        if (key === "zones") this._paintRules(values);
+      },
       choices: {
         ...this._choices(ruleRoom),
         // "off" first: it is what the mode's own select calls the end of a
@@ -2579,7 +2674,7 @@ class BetterLightingPanel extends HTMLElement {
           mode_id: mode.id,
           data: { ...mode.data, rules: next },
         });
-        this._view = { kind: "mode" };
+        this._view = { kind: "mode", section: "rules" };
         return result;
       },
       remove:
@@ -2592,33 +2687,36 @@ class BetterLightingPanel extends HTMLElement {
                   rules: rules.filter((_, i) => i !== index),
                 },
               });
-              this._view = { kind: "mode" };
+              this._view = { kind: "mode", section: "rules" };
             }
           : null,
     });
   }
 
-  /** The scenes one switch cycles, in order. */
-  _paintSwitchOrder() {
+  /**
+   * The scenes one switch cycles, in order, folded into the switch's own page.
+   *
+   * A screen of its own was one click too many for something you want to see
+   * while deciding what the switch is for. Dragged rather than nudged with
+   * arrows, because that is what reordering a short list is; the arrows stay
+   * for anyone who cannot drag.
+   */
+  _paintSwitchOrder(into, index) {
     const room = this._room;
     const switches = room.data.switches || [];
-    const item = switches[this._view.index];
+    const item = switches[index];
     if (!item) return;
-    // What this switch cycles today, which is every scene in the room until
-    // somebody takes one out. Worked out by the backend, so the page and the
-    // press agree about what the list is.
-    const order = (room.switch_orders || [])[this._view.index] || [];
+    const order = (room.switch_orders || [])[index] || [];
     const names = Object.fromEntries(
       (room.scenes || []).map((scene) => [scene.scene_id, scene.name])
     );
     const unused = (room.scenes || []).filter(
       (scene) => !order.includes(scene.scene_id)
     );
-    const main = this.shadowRoot.getElementById("main");
 
     const save = async (next) => {
       const list = [...switches];
-      list[this._view.index] = {
+      list[index] = {
         ...item,
         scene_order: next,
         // Everything the room has that this switch no longer lists was taken
@@ -2636,8 +2734,10 @@ class BetterLightingPanel extends HTMLElement {
       await this._load();
     };
 
-    main.innerHTML = `
-      <div class="card">
+    const fold = document.createElement("details");
+    fold.innerHTML = `
+      <summary>${this._t("what_it_cycles")} (${order.length + 1})</summary>
+      <div class="fold-body">
         <p class="muted">${this._t("cycle_hint")}</p>
         <ul id="order">
           <li>${this._icon("mdi:weather-sunny")}<span class="grow">1. ${this._t(
@@ -2645,7 +2745,8 @@ class BetterLightingPanel extends HTMLElement {
           )}</span></li>
           ${order
             .map(
-              (id, i) => `<li>
+              (id, i) => `<li draggable="true" data-step="${i}">
+                ${this._icon("mdi:drag")}
                 <span class="grow">${i + 2}. ${names[id] || id}</span>
                 <span class="moves">
                   <button class="flat" data-up="${i}" ${
@@ -2668,10 +2769,14 @@ class BetterLightingPanel extends HTMLElement {
             : `<p class="muted">${this._t("all_scenes_used")}</p>`
         }
       </div>`;
+    into.appendChild(fold);
 
-    main.querySelectorAll("[data-up],[data-down],[data-remove]").forEach((button) =>
+    fold.querySelectorAll("[data-up],[data-down],[data-remove]").forEach((button) =>
       button.addEventListener("click", async (event) => {
-        const data = event.target.dataset;
+        // currentTarget, not target: the click lands on the icon inside the
+        // button, which carries none of these attributes -- which is why
+        // removing a scene from this list only sometimes worked.
+        const data = event.currentTarget.dataset;
         const next = [...order];
         if (data.remove !== undefined) {
           next.splice(Number(data.remove), 1);
@@ -2683,7 +2788,35 @@ class BetterLightingPanel extends HTMLElement {
         await save(next);
       })
     );
-    const sceneAdder = main.querySelector("#add-scene");
+
+    let dragged = null;
+    fold.querySelectorAll("li[data-step]").forEach((row) => {
+      row.addEventListener("dragstart", (event) => {
+        dragged = Number(row.dataset.step);
+        event.dataTransfer.effectAllowed = "move";
+        // Firefox will not start a drag without something on the transfer.
+        event.dataTransfer.setData("text/plain", String(dragged));
+        row.classList.add("dragging");
+      });
+      row.addEventListener("dragend", () => row.classList.remove("dragging"));
+      row.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        row.classList.add("drop-target");
+      });
+      row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
+      row.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        row.classList.remove("drop-target");
+        const to = Number(row.dataset.step);
+        if (dragged === null || dragged === to) return;
+        const next = [...order];
+        next.splice(to, 0, ...next.splice(dragged, 1));
+        dragged = null;
+        await save(next);
+      });
+    });
+
+    const sceneAdder = fold.querySelector("#add-scene");
     if (sceneAdder) {
       sceneAdder.appendChild(
         this._choiceControl(
@@ -2696,26 +2829,43 @@ class BetterLightingPanel extends HTMLElement {
     }
   }
 
-  /** The one settings screen: a form, a Save, and sometimes a Delete. */
-  _paintSettings({ form, values, choices, save, remove, extra }) {
+  /**
+   * The one card a screen is drawn in.
+   *
+   * Every screen is a single container the height of the pane: what is on it
+   * scrolls inside, and the buttons that act on it stay where they are
+   * instead of being somewhere below the fold. Screens used to be a stack of
+   * cards, which read as several things rather than one.
+   */
+  _page(body, footer = "") {
     const main = this.shadowRoot.getElementById("main");
     main.innerHTML = `
-      <div class="card">
-        <div id="error" class="muted"></div>
-        <div id="form"></div>
-        ${
-          extra
-            ? `<div class="bar"><button class="flat" id="extra">${this._icon(
-                "mdi:format-list-numbered"
-              )}<span>${extra.label}</span></button></div>`
-            : ""
-        }
-        <div class="bar">
-          <button id="save">${this._t("save")}</button>
-          <button class="flat" id="cancel">${this._t("cancel")}</button>
-          ${remove ? `<button class="danger" id="remove">${this._t("delete")}</button>` : ""}
-        </div>
+      <div class="card page">
+        <div class="page-body">${body}</div>
+        ${footer ? `<div class="page-foot">${footer}</div>` : ""}
       </div>`;
+    return main;
+  }
+
+  /** The one settings screen: a form, a Save, and sometimes a Delete. */
+  _paintSettings({
+    form,
+    values,
+    choices,
+    save,
+    remove,
+    extra,
+    onChange,
+    disabled,
+  }) {
+    const main = this._page(
+      `<div id="error" class="muted"></div>
+       <div id="form"></div>
+       <div id="extra"></div>`,
+      `<button id="save">${this._t("save")}</button>
+       <button class="flat" id="cancel">${this._t("cancel")}</button>
+       ${remove ? `<button class="danger" id="remove">${this._t("delete")}</button>` : ""}`
+    );
 
     const holder = main.querySelector("#form");
     let pending = {};
@@ -2742,11 +2892,16 @@ class BetterLightingPanel extends HTMLElement {
         choices,
         states: this._hass.states,
         hass: this._hass,
+        disabled,
       });
       element.addEventListener("value-changed", (event) => {
         pending = { ...pending, [event.detail.key]: event.detail.value };
+        // Some screens have to redraw when an answer changes: which scenes a
+        // rule may pick from is a question about the room it just named.
+        onChange?.(event.detail.key, { ...values, ...pending });
       });
     }
+    if (extra) extra(main.querySelector("#extra"));
 
     main.querySelector("#save").addEventListener("click", async () => {
       try {
@@ -2769,21 +2924,17 @@ class BetterLightingPanel extends HTMLElement {
       await remove();
       await this._load();
     });
-    // A screen of its own rather than a field: an ordered list of scenes is
-    // not something a form can hold.
-    main.querySelector("#extra")?.addEventListener("click", () => extra.go());
   }
 
   _paintScenes() {
     const room = this._room;
     const main = this.shadowRoot.getElementById("main");
     if (!room) {
-      main.innerHTML = `<div class="card"><p class="muted">No rooms yet. Add one in Settings → Devices &amp; services → Better Lighting.</p></div>`;
+      this._page(`<p class="muted">${this._t("no_rooms")}</p>`);
       return;
     }
-    main.innerHTML = `
-      <div class="card">
-        <ul>${room.scenes
+    this._page(
+      `<ul>${room.scenes
           .map(
             (scene, index) =>
               `<li data-index="${index}">${this._icon(
@@ -2796,12 +2947,11 @@ class BetterLightingPanel extends HTMLElement {
               )}</div></span></li>`
           )
           .join("")}</ul>
-        <div class="bar">
-          <button id="new">${this._icon("mdi:plus")}<span>${this._t(
-            "new_scene"
-          )}</span></button>
-        </div>
-      </div>`;
+       ${room.scenes.length ? "" : `<p class="muted">${this._t("none")}</p>`}`,
+      `<button id="new">${this._icon("mdi:plus")}<span>${this._t(
+        "new_scene"
+      )}</span></button>`
+    );
 
     main.querySelectorAll("li").forEach((item) =>
       item.addEventListener("click", () => {
@@ -2896,40 +3046,36 @@ class BetterLightingPanel extends HTMLElement {
     const entries = Object.keys(this._scene.lights || {});
     const available = (room.lights || []).filter((id) => !entries.includes(id));
 
-    main.innerHTML = `
-      <div class="card banner ${live ? "live" : ""}">
-        <div class="grow">
-          <strong>${live ? this._t("live_mode") : this._t("review_mode")}</strong>
-          <div class="muted">${
-            live
-              ? this._t("live_hint")
-              : this._t("review_hint")
-          }</div>
-        </div>
-        <button id="mode">${live ? this._t("to_review_mode") : this._t("live_mode")}</button>
-      </div>
+    this._page(
+      `<div class="banner ${live ? "live" : ""}">
+         <div class="grow">
+           <strong>${live ? this._t("live_mode") : this._t("review_mode")}</strong>
+           <div class="muted">${
+             live ? this._t("live_hint") : this._t("review_hint")
+           }</div>
+         </div>
+         <button id="mode">${
+           live ? this._t("to_review_mode") : this._t("live_mode")
+         }</button>
+       </div>
 
-      <div class="card">
-        <h2>${this._t("scene")}</h2>
-        <input type="text" id="name" value="${this._scene.name || ""}">
-      </div>
+       <h3>${this._t("scene")}</h3>
+       <input type="text" id="name" value="${this._scene.name || ""}">
 
-      <div class="card">
-        <h2>${this._t("lights")}</h2>
-        <div class="muted" style="margin-bottom:12px">
-          ${this._t("light_treatment")}
-        </div>
-        <div id="rows"></div>
-        <div class="bar" id="add-light"></div>
-      </div>
-
-      <div class="card">
-        <div class="bar">
-          <button id="save">${this._t("save")}</button>
-          <button class="flat" id="cancel">${this._t("cancel")}</button>
-          ${this._scene.scene_id ? `<button class="danger" id="delete">${this._t("delete")}</button>` : ""}
-        </div>
-      </div>`;
+       <h3>${this._t("lights")}</h3>
+       <div class="muted" style="margin-bottom:12px">${this._t(
+         "light_treatment"
+       )}</div>
+       <div id="rows"></div>
+       <div class="bar" id="add-light"></div>`,
+      `<button id="save">${this._t("save")}</button>
+       <button class="flat" id="cancel">${this._t("cancel")}</button>
+       ${
+         this._scene.scene_id
+           ? `<button class="danger" id="delete">${this._t("delete")}</button>`
+           : ""
+       }`
+    );
 
     main.querySelector("#name").addEventListener("input", (event) => {
       this._scene.name = event.target.value;

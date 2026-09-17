@@ -288,6 +288,28 @@ class TestEntityBinding:
         # Only the unknown -> value transition happened, which is ignored.
         assert hass.states.get("light.one").state == "off"
 
+    async def test_a_button_that_clears_itself_still_presses(
+        self, hass: HomeAssistant, freezer
+    ) -> None:
+        """The pattern that cost real presses.
+
+        Plenty of buttons publish the action, then blank themselves, then go
+        unknown -- so every press after the first began at "unknown", which
+        was read as an entity recovering rather than a finger, and was
+        dropped. Long after startup, unknown is a cleared button.
+        """
+        await self._setup(hass, scenes=("Cosy", "Bright"))
+        freezer.tick(dt.timedelta(minutes=5))
+
+        for expected in ("Adaptive", "Cosy", "Bright"):
+            self._fire(hass, "single")
+            await hass.async_block_till_done()
+            assert hass.states.get(SELECT).state == expected
+            hass.states.async_set("event.button", "", {})
+            await hass.async_block_till_done()
+            hass.states.async_set("event.button", "unknown", {})
+            await hass.async_block_till_done()
+
     async def test_a_stale_timestamp_is_not_a_press(self, hass: HomeAssistant) -> None:
         """Some integrations restore an event entity's state across a restart."""
         await self._setup(hass)

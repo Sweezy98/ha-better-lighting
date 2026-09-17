@@ -444,19 +444,48 @@ ZONE_POWER_SPECS: tuple[FieldSpec, ...] = (
     ),
 )
 
+# Every value the room's own curve is made of, shown only once the room has
+# said it wants one.
+_OVERRIDDEN = (CONF_ADAPTIVE_OVERRIDE, (True,))
+
 ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
     # When False every value below is ignored and the hub defaults apply, so a
     # zone only carries its own curve when the user deliberately asked for one.
     FieldSpec(CONF_ADAPTIVE_OVERRIDE, False, _boolean(), section=Section.ADAPTIVE),
-    FieldSpec(CONF_MIN_BRIGHTNESS_PCT, 1, _pct(), section=Section.ADAPTIVE),
-    FieldSpec(CONF_MAX_BRIGHTNESS_PCT, 100, _pct(), section=Section.ADAPTIVE),
-    FieldSpec(CONF_MIN_COLOR_TEMP_K, 2000, _kelvin(), section=Section.ADAPTIVE),
-    FieldSpec(CONF_MAX_COLOR_TEMP_K, 5500, _kelvin(), section=Section.ADAPTIVE),
+    FieldSpec(
+        CONF_MIN_BRIGHTNESS_PCT,
+        1,
+        _pct(),
+        section=Section.ADAPTIVE,
+        depends_on=_OVERRIDDEN,
+    ),
+    FieldSpec(
+        CONF_MAX_BRIGHTNESS_PCT,
+        100,
+        _pct(),
+        section=Section.ADAPTIVE,
+        depends_on=_OVERRIDDEN,
+    ),
+    FieldSpec(
+        CONF_MIN_COLOR_TEMP_K,
+        2000,
+        _kelvin(),
+        section=Section.ADAPTIVE,
+        depends_on=_OVERRIDDEN,
+    ),
+    FieldSpec(
+        CONF_MAX_COLOR_TEMP_K,
+        5500,
+        _kelvin(),
+        section=Section.ADAPTIVE,
+        depends_on=_OVERRIDDEN,
+    ),
     FieldSpec(
         CONF_BRIGHTNESS_MODE,
         BrightnessMode.TANH.value,
         _select([m.value for m in BrightnessMode], "brightness_mode"),
         section=Section.ADAPTIVE,
+        depends_on=_OVERRIDDEN,
     ),
     FieldSpec(
         CONF_TRANSITION,
@@ -464,8 +493,15 @@ ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
         _seconds(0, 300, 0.5),
         validator=VALID_TRANSITION,
         section=Section.ADAPTIVE,
+        depends_on=_OVERRIDDEN,
     ),
-    FieldSpec(CONF_INTERVAL, 90, _seconds(10, 3600), section=Section.ADAPTIVE),
+    FieldSpec(
+        CONF_INTERVAL,
+        90,
+        _seconds(10, 3600),
+        section=Section.ADAPTIVE,
+        depends_on=_OVERRIDDEN,
+    ),
     FieldSpec(CONF_ADAPTIVE_BRIGHTNESS_ON, True, _boolean(), section=Section.ADAPTIVE),
     FieldSpec(CONF_ADAPTIVE_COLOR_ON, True, _boolean(), section=Section.ADAPTIVE),
 )
@@ -1431,7 +1467,13 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
             ZoneAction.KEEP.value,
             _select(ZONE_ACTIONS, "zone_action"),
         ),
-        FieldSpec(CONF_RULE_SCENE, None, _select([], "scene"), options_key="scenes"),
+        FieldSpec(
+            CONF_RULE_SCENE,
+            None,
+            _select([], "scene"),
+            options_key="scenes",
+            depends_on=(CONF_RULE_ACTION, (ZoneAction.APPLY_SCENE.value,)),
+        ),
         FieldSpec(
             CONF_RULE_SCRIPTS,
             [],
@@ -1458,6 +1500,7 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
             None,
             _select([], "scene"),
             options_key="scenes",
+            depends_on=(CONF_RULE_ENTRY_ACTION, (ZoneAction.APPLY_SCENE.value,)),
             section=Section.ADVANCED,
         ),
         FieldSpec(

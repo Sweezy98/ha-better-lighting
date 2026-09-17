@@ -274,7 +274,7 @@ def test_the_panel_covers_every_settings_surface() -> None:
         "the adaptive curve, drawn": "_paintCurve",
         "the curve in Home Assistant's own chart": "_haChart",
         "the way back to Home Assistant on a phone": "hass-toggle-menu",
-        "a mode's rules, on the mode's own screen": "_appendRules",
+        "a mode's rules, on a screen of their own": "_paintRuleList",
     }
     missing = sorted(
         name for name, marker in surfaces.items() if marker not in panel_js
@@ -471,3 +471,30 @@ def test_every_select_option_has_a_name() -> None:
                 if value not in named:
                     missing.append(f"{key}.{value}")
     assert not missing, f"unnamed select options: {sorted(set(missing))}"
+
+
+def test_every_screen_is_one_container() -> None:
+    """Screens were a stack of cards, which reads as several pages that
+    happen to be underneath each other -- and left the buttons somewhere
+    below the fold. One card per screen, built in one place."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    # The content pane is only ever written by the helper that builds a page.
+    assert panel_js.count("main.innerHTML = `") == 1, (
+        "a screen is painting the content pane directly instead of using _page"
+    )
+    assert "_page(body, footer" in panel_js
+    # And the shape the helper produces is the one the stylesheet dresses.
+    for marker in ('class="card page"', "page-body", "page-foot"):
+        assert marker in panel_js, f"the page frame is missing {marker}"
+
+
+def test_a_click_on_an_icon_still_counts_as_a_click_on_its_button() -> None:
+    """Every button in a list carries an icon now, so the click lands on the
+    icon and event.target has none of the button's attributes. That is how
+    removing a scene from a switch's list quietly stopped working."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    assert "event.target.dataset.up" not in panel_js
+    assert "event.target.dataset.remove" not in panel_js
+    assert panel_js.count("event.currentTarget.dataset") >= 2

@@ -39,7 +39,7 @@
   "all_scenes_used": "Alle Szenen dieses Raums sind bereits in der Liste.",
   "add_scene": "Szene hinzufügen …",
   "adaptive": "Adaptiv",
-  "import_scenes": "Aus Home Assistant importieren",
+  "import_scenes": "Szenen aus Home Assistant importieren",
   "import_hint": "Die eigenen Szenen von Home Assistant. Eine Szene über mehrere Räume wird zu je einer Szene pro Raum, die nur dessen Lampen enthält.",
   "import": "Importieren",
   "in_no_room": "in keinem Raum",

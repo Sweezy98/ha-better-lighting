@@ -2063,6 +2063,11 @@ class BetterLightingPanel extends HTMLElement {
         ul { list-style:none; margin:0 0 4px; padding:0; }
         ul.nav-group { margin-top:12px; }
         ul.nav-last { margin-top:20px; }
+        /* That extra space separates a group's rows from the next heading.
+           With the group folded away there are no rows to separate, and the
+           space reads as one entry being further from its neighbour than the
+           rest are from theirs. */
+        ul.group[hidden] + ul.nav-group { margin-top:0; }
         /* Rows on the content pane are a list of things you can open, so they
            are ruled, they light up, and they say so with a chevron. The menu
            keeps its own quieter shape. */
@@ -3107,16 +3112,30 @@ class BetterLightingPanel extends HTMLElement {
       });
     nav.querySelectorAll("li[data-overview]").forEach((item) =>
       go(item, () => {
+        const kind = item.dataset.overview;
+        // Already looking at it, so there is nowhere to go: the click means
+        // the only other thing the row can do.
+        if (this._view.kind === kind) {
+          this._collapsed[kind] = !this._collapsed[kind];
+          this._paintNav();
+          return;
+        }
         this._stopPreview();
         this._scene = null;
-        this._view = { kind: item.dataset.overview };
+        this._view = { kind };
         this._paint();
       })
     );
     nav.querySelectorAll("li.room").forEach((item) =>
       go(item, () => {
+        const id = item.dataset.room;
+        if (inRoom && this._roomId === id) {
+          this._expanded = this._expanded === id ? null : id;
+          this._paintNav();
+          return;
+        }
         this._stopPreview();
-        this._roomId = item.dataset.room;
+        this._roomId = id;
         // A room you have just walked into shows its screens, and whatever
         // was open before folds away behind you.
         this._expanded = item.dataset.room;
@@ -3141,16 +3160,27 @@ class BetterLightingPanel extends HTMLElement {
           this._paint();
           return;
         }
-        this._view = { kind: section };
         if (chosenItem === undefined) {
           // The entry itself leads to the list of them, which is not inside
-          // the branch -- so it does not unfold it. The chevron does that,
-          // and so does arriving at one of the entries underneath. Clicking
-          // it while it is already unfolded is not a request to fold it.
+          // the branch -- so going there does not unfold it. The chevron
+          // does that, and so does arriving at one of the entries
+          // underneath. And a click on the list you are already looking at
+          // is a request to fold or unfold, there being nowhere to go.
+          const alreadyHere =
+            (item.dataset.room || this._roomId) === this._roomId &&
+            this._view.kind === section &&
+            this._view.index === undefined;
+          if (alreadyHere) {
+            this._expandedSub = previous === branch ? null : branch;
+            this._paintNav();
+            return;
+          }
+          this._view = { kind: section };
           if (previous === branch) this._expandedSub = branch;
           this._paint();
           return;
         }
+        this._view = { kind: section };
         this._expandedSub = branch;
         if (section !== "scenes") {
           // Switches and calibrations are both a list with a form behind
@@ -3185,8 +3215,14 @@ class BetterLightingPanel extends HTMLElement {
     );
     nav.querySelectorAll("li.mode").forEach((item) =>
       go(item, () => {
-        this._modeId = item.dataset.mode;
-        this._expanded = item.dataset.mode;
+        const id = item.dataset.mode;
+        if (this._view.kind === "mode" && this._modeId === id) {
+          this._expanded = this._expanded === id ? null : id;
+          this._paintNav();
+          return;
+        }
+        this._modeId = id;
+        this._expanded = id;
         this._view = { kind: "mode", section: "settings" };
         this._paint();
       })

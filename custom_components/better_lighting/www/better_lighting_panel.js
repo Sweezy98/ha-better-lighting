@@ -1796,7 +1796,8 @@ class BetterLightingPanel extends HTMLElement {
         nav.crumbs .crumb[data-crumb] { cursor:pointer; }
         nav.crumbs .crumb[data-crumb]:hover { text-decoration:underline; }
         .icon-btn { background:transparent; color:inherit; border:none; padding:0;
-                    width:40px; height:40px; border-radius:50%; flex:0 0 auto;
+                    width:40px; height:40px; min-height:0; border-radius:50%;
+                    flex:0 0 auto;
                     display:inline-flex; align-items:center; justify-content:center;
                     cursor:pointer; }
         .icon-btn:hover:not([disabled]) { background:rgba(255,255,255,.12); }
@@ -1838,7 +1839,7 @@ class BetterLightingPanel extends HTMLElement {
         /* Where the button that folds it lives: on the menu, since it is the
            menu it folds. */
         .nav-top { display:flex; justify-content:flex-end; margin:-8px -8px 4px; }
-        .nav-top .icon-btn { width:36px; height:36px;
+        .nav-top .icon-btn { width:36px; height:36px; min-height:0;
                              color:var(--secondary-text-color); }
         .nav-top .icon-btn:hover { background:var(--secondary-background-color);
                                    color:var(--primary-text-color); }
@@ -2138,8 +2139,9 @@ class BetterLightingPanel extends HTMLElement {
         /* Nothing to decide here, so there is nothing to confirm: the corner
            and the backdrop are both ways out and neither needs a footer. */
         .modal-card { position:relative; }
-        .shut { position:absolute; top:14px; right:14px; margin:0; width:32px; height:32px;
-                padding:0; border-radius:50%; font-size:22px; line-height:1;
+        .shut { position:absolute; top:14px; right:14px; margin:0;
+                width:34px; height:34px; min-height:0; padding:0;
+                border-radius:50%; font-size:22px; line-height:1;
                 background:transparent; color:var(--secondary-text-color); }
         .shut:hover { background:var(--secondary-background-color);
                       color:var(--primary-text-color); }
@@ -2767,8 +2769,6 @@ class BetterLightingPanel extends HTMLElement {
                       : [];
                 const shown = here && this._view.kind === key;
                 const open = this._expandedSub === branch;
-                // Rendered whether or not it is open, so opening and closing
-                // it is something that can be watched happening.
                 const children = open
                   ? `<div class="sub-wrap" data-branch="${branch}">
                       <ul class="sub">${items
@@ -2793,14 +2793,10 @@ class BetterLightingPanel extends HTMLElement {
                     shown && this._view.index === undefined
                   }">${icon(SECTION_ICONS[key])}<span class="grow">${
                     this._labels.sections[key] || fallback
-                  }</span>${
-                    children
-                      ? `<span class="twist ${open ? "open" : ""}"
-                          data-sub-twist="${branch}">${icon(
-                          "mdi:chevron-right"
-                        )}</span>`
-                      : ""
-                  }</li>${children}`;
+                  }</span><span class="twist ${open ? "open" : ""}"
+                    data-sub-twist="${branch}">${icon(
+                    "mdi:chevron-right"
+                  )}</span></li>${children}`;
               }),
             ].join("")}</ul>`
           : "";

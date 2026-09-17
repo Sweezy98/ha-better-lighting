@@ -112,5 +112,8 @@
   "about_page": "Diese Seite",
   "about_repo": "Quellcode und Dokumentation",
   "about_issues": "Problem melden",
-  "close": "Schließen"
+  "close": "Schließen",
+  "confirm_delete_hint": "Das lässt sich nicht rückgängig machen.",
+  "discard_changes_hint": "Was auf dieser Seite geändert wurde, geht verloren.",
+  "discard": "Verwerfen"
 }

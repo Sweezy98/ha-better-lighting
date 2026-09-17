@@ -112,5 +112,8 @@
   "about_page": "This page",
   "about_repo": "Source and documentation",
   "about_issues": "Report a problem",
-  "close": "Close"
+  "close": "Close",
+  "confirm_delete_hint": "This cannot be undone.",
+  "discard_changes_hint": "What was changed on this screen will be lost.",
+  "discard": "Discard"
 }

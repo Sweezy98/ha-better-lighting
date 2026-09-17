@@ -24,6 +24,31 @@ const OWN_VERSION = new URL(import.meta.url).searchParams.get("v");
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
+// The menu narrower than this is not a menu, so dragging past it means the
+// rail instead; and never wider than a quarter, since the content is what the
+// page is for.
+const NAV_MIN = 260;
+const NAV_RAIL = 56;
+const navMax = () => Math.max(NAV_MIN, Math.round(window.innerWidth / 4));
+
+/** A remembered number, or the default. Storage can be blocked or empty. */
+function _remembered(key, fallback) {
+  try {
+    const stored = Number(window.localStorage.getItem(key));
+    return Number.isFinite(stored) && stored ? stored : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function _remember(key, value) {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // A private window, or storage turned off. The menu simply forgets.
+  }
+}
+
 /** Kelvin to an approximate sRGB triplet, for painting the temperature slider. */
 function kelvinToRgb(kelvin) {
   const t = clamp(kelvin, 1000, 12000) / 100;
@@ -846,6 +871,11 @@ class BetterLightingPanel extends HTMLElement {
     // And the one list *inside* a room that is open: its scenes, or its
     // switches. Same rule one level down.
     this._expandedSub = null;
+    // How the menu is shown on a wide screen, remembered per browser. A
+    // rail of icons is for somebody who knows their way around; the width
+    // is for somebody whose rooms have long names.
+    this._navWidth = _remembered("bl-nav-width", 260);
+    this._railed = _remembered("bl-nav-rail", 0) === 1;
     this._scene = null;
     this._selectedLight = null;
     this._previewing = false;
@@ -1191,7 +1221,7 @@ class BetterLightingPanel extends HTMLElement {
       this._paintDiagnostics()
     );
     main.querySelector("#clear-log").addEventListener("click", async () => {
-      if (!this._confirm(this._t("clear_log"))) return;
+      if (!(await this._confirm(this._t("clear_log")))) return;
       await this._call("activity", { clear: true });
       this._events = null;
       await this._watchEvents();
@@ -1718,10 +1748,9 @@ class BetterLightingPanel extends HTMLElement {
         /* Home Assistant hides its own sidebar on a narrow screen and expects
            the page to offer the way out. Without this the panel is a room with
            no door. */
-        #menu, #drawer { display:none; }
+        #menu { display:none; }
         @media (max-width:870px) { #menu { display:inline-flex; } }
         @media (max-width:800px) {
-          #drawer { display:inline-flex; }
           /* No room for them, and the phone's own back button does the job
              now that it walks the trail rather than leaving the panel. */
           #crumb-back, nav.crumbs { display:none; }
@@ -1740,12 +1769,52 @@ class BetterLightingPanel extends HTMLElement {
                      padding:12px 16px; background:transparent; color:inherit;
                      border-radius:0; text-align:left; }
         .menu-item:hover { background:var(--secondary-background-color); }
-        .body { flex:1 1 auto; min-height:0;
-                display:grid; grid-template-columns:260px 1fr; gap:16px; padding:16px;
+        .body { --gutter:16px; --nav:260px; --rail:56px;
+                flex:1 1 auto; min-height:0; position:relative;
+                display:grid; grid-template-columns:var(--nav) 1fr; gap:16px;
+                padding:var(--gutter);
                 /* Stretch, not start: the menu runs the height of the window
                    and the content pane is a frame with its own scrollbar. */
                 align-items:stretch; overflow:hidden; }
-        .nav { overflow:auto; }
+        .nav { overflow:auto; position:relative;
+               transition:width .2s ease, box-shadow .2s ease; }
+        /* Folded to a column of icons. The labels are not hidden, they are
+           simply outside a menu this narrow -- which is what lets the width
+           animate rather than things blinking in and out of it. */
+        .body[data-rail="1"] { grid-template-columns:var(--rail) 1fr; }
+        .body[data-rail="1"] .nav { position:absolute; z-index:5;
+               top:var(--gutter); bottom:var(--gutter); left:var(--gutter);
+               width:var(--rail); overflow:hidden; padding:16px 10px; }
+        /* Taken out of the flow to let it overlap the content, which leaves
+           the content as the only item left to fill column one. */
+        .body[data-rail="1"] #main { grid-column:2; }
+        .body[data-rail="1"] .nav:hover { width:var(--nav); overflow:auto;
+               padding:16px 20px; box-shadow:4px 0 16px rgba(0,0,0,.35); }
+        /* Clipped by the edge of the rail rather than wrapped inside it,
+           which is what makes the width worth animating. */
+        .body[data-rail="1"] .nav li, .body[data-rail="1"] .nav li .grow,
+        .body[data-rail="1"] .nav button { white-space:nowrap; }
+        .body[data-rail="1"] .nav li .grow { overflow:hidden; }
+        .body[data-rail="1"] .nav:not(:hover) ul.sub,
+        .body[data-rail="1"] .nav:not(:hover) .bar {
+          max-height:0; margin-top:0; margin-bottom:0; opacity:0;
+          overflow:hidden; transition:max-height .2s ease, opacity .15s ease; }
+        .body[data-rail="1"] .nav ul.sub, .body[data-rail="1"] .nav .bar {
+          max-height:640px; opacity:1;
+          transition:max-height .25s ease, opacity .2s ease; }
+        /* The edge you drag to make it wider, which follows whatever width
+           the menu is set to rather than being told separately. */
+        .nav-grip { position:absolute; top:var(--gutter); bottom:var(--gutter);
+                    left:calc(var(--gutter) + var(--nav) - 4px); width:8px;
+                    cursor:col-resize; z-index:6; }
+        .nav-grip::after { content:""; position:absolute; top:0; bottom:0;
+                           right:3px; width:2px; background:var(--primary-color);
+                           opacity:0; transition:opacity .15s ease; }
+        .nav-grip:hover::after, .body[data-dragging="1"] .nav-grip::after {
+          opacity:.6; }
+        .body[data-rail="1"] .nav-grip, .body[data-dragging="1"] .nav {
+          transition:none; }
+        @media (max-width:800px) { .nav-grip { display:none; } }
         #main { min-height:0; display:flex; flex-direction:column; }
         .scrim { display:none; }
         @media (max-width:800px) {
@@ -1754,7 +1823,19 @@ class BetterLightingPanel extends HTMLElement {
              lets the content pane keep the full height of the window -- and
              so keeps its footer on the bottom of the window rather than
              somewhere the content can scroll underneath. */
-          .body { grid-template-columns:1fr; padding:12px; }
+          .body { --gutter:12px; grid-template-columns:1fr; }
+          /* There is no rail here, only the drawer -- and these have to say
+             so at the same weight as the rules above, which win on
+             specificity rather than on being later in the sheet. */
+          .body[data-rail="1"] { grid-template-columns:1fr; }
+          .body[data-rail="1"] #main { grid-column:auto; }
+          .body[data-rail="1"] .nav, .body[data-rail="1"] .nav:hover {
+            position:fixed; top:0; bottom:0; left:0; z-index:7;
+            width:min(320px, 85vw); padding:16px 20px; overflow:auto;
+            box-shadow:2px 0 12px rgba(0,0,0,.35); }
+          .body[data-rail="1"] .nav:not(:hover) ul.sub,
+          .body[data-rail="1"] .nav:not(:hover) .bar {
+            max-height:none; opacity:1; overflow:visible; }
           /* Flush against the edge of the screen, so no corners. */
           .nav { position:fixed; top:0; bottom:0; left:0; z-index:7;
                  width:min(320px, 85vw); border-radius:0 !important;
@@ -1766,7 +1847,7 @@ class BetterLightingPanel extends HTMLElement {
                    transition:opacity .2s ease; }
           .scrim[data-open="1"] { opacity:1; pointer-events:auto; }
         }
-        @media (max-width:500px) { .body { padding:8px; gap:12px; } }
+        @media (max-width:500px) { .body { --gutter:8px; gap:12px; } }
         .card { background:var(--card-background-color,#fff); border-radius:12px;
                 padding:16px 20px;
                 box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.1)); }
@@ -1822,10 +1903,20 @@ class BetterLightingPanel extends HTMLElement {
           display:flex; gap:2px; flex:0 0 auto; }
         /* Quiet until the row is under the pointer: a list of things to open
            should not read as a list of things to delete. */
-        .row-actions button { padding:0 6px; min-height:32px; opacity:.55; }
+        .row-actions button { padding:0 8px; min-height:34px; border-radius:8px;
+                              opacity:.55; }
         li:hover .row-actions button, .row-actions button:focus-visible { opacity:1; }
-        .row-actions button:hover { color:var(--error-color,#db4437); }
-        .row-actions button[data-duplicate]:hover { color:var(--primary-color); }
+        /* Filled rather than merely recoloured on hover: at this size a change
+           of text colour is easy to miss, and one of these is destructive. */
+        .row-actions button[data-delete]:hover,
+        .row-actions button[data-delete]:focus-visible {
+          background:var(--error-color,#db4437); color:#fff; opacity:1; }
+        .row-actions button[data-duplicate]:hover,
+        .row-actions button[data-duplicate]:focus-visible {
+          background:var(--secondary-background-color);
+          color:var(--primary-color); opacity:1; }
+        .moves button:hover:not([disabled]) {
+          background:var(--secondary-background-color); }
         /* Nothing here yet, said plainly and in the middle rather than as a
            dash somebody has to interpret. */
         /* In the middle of whatever space the page has, rather than tucked
@@ -1867,15 +1958,7 @@ class BetterLightingPanel extends HTMLElement {
         .twist.open { transform:rotate(90deg); }
         li.section { font-size:15px; font-weight:500; }
         ul.sub { margin:2px 0 8px 14px; padding-left:8px;
-                 border-left:2px solid var(--divider-color,#ddd);
-                 animation:reveal .18s ease both; }
-        /* A list that folds rather than blinking out of existence. The rows
-           stay in the document while it is shut, which is what gives the
-           height something to animate between. */
-        .sub-wrap { display:grid; grid-template-rows:0fr;
-                    transition:grid-template-rows .2s ease; }
-        .sub-wrap[data-open="1"] { grid-template-rows:1fr; }
-        .sub-wrap > ul { min-height:0; overflow:hidden; animation:none; }
+                 border-left:2px solid var(--divider-color,#ddd); }
         /* The padding is on the list rather than the rows: a highlighted row
            with none of it is glued to the line it hangs from. */
         ul.sub li { font-size:14px; padding:7px 10px; }
@@ -2021,6 +2104,7 @@ class BetterLightingPanel extends HTMLElement {
       <div class="body">
         <div class="scrim" id="scrim"></div>
         <div class="card nav" id="rooms"></div>
+        <div class="nav-grip" id="nav-grip"></div>
         <div id="main"></div>
       </div>`;
 
@@ -2038,11 +2122,15 @@ class BetterLightingPanel extends HTMLElement {
       .getElementById("drawer")
       .addEventListener("click", (event) => {
         event.stopPropagation();
-        this._setDrawer(!this._navOpen);
+        this._toggleNav();
       });
     this.shadowRoot
       .getElementById("scrim")
       .addEventListener("click", () => this._setDrawer(false));
+    this.shadowRoot
+      .getElementById("nav-grip")
+      .addEventListener("pointerdown", (event) => this._startResize(event));
+    this._applyNavLayout();
 
     // Accordions fold rather than jumping. Delegated, so it covers every
     // one of them however and whenever it was drawn, and does nothing at all
@@ -2109,7 +2197,7 @@ class BetterLightingPanel extends HTMLElement {
     main.querySelectorAll("[data-delete]").forEach((button) =>
       button.addEventListener("click", async (event) => {
         event.stopPropagation();
-        if (!this._confirm()) return;
+        if (!(await this._confirm())) return;
         await remove(Number(event.currentTarget.dataset.delete));
       })
     );
@@ -2135,8 +2223,16 @@ class BetterLightingPanel extends HTMLElement {
    * and one question asked about it, rather than a rule each way out has to
    * remember.
    */
-  _leave(go) {
-    if (this._dirty && !window.confirm(this._t("discard_changes"))) return false;
+  async _leave(go) {
+    if (this._dirty) {
+      const leaving = await this._ask({
+        title: this._t("discard_changes"),
+        text: this._t("discard_changes_hint"),
+        confirm: this._t("discard"),
+        danger: true,
+      });
+      if (!leaving) return false;
+    }
     this._dirty = false;
     go();
     return true;
@@ -2162,13 +2258,13 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /** The browser went back. Walk one step up the trail, or let it leave. */
-  _handlePop() {
+  async _handlePop() {
     const crumbs = this._trail().filter(Boolean);
     const parent = crumbs[crumbs.length - 2];
     // Nothing above this screen: the entry that was popped was not ours, and
     // the browser is right to be leaving.
     if (!parent?.go) return;
-    if (!this._leave(parent.go)) {
+    if (!(await this._leave(parent.go))) {
       // Refused at the prompt, so put back the entry the browser took.
       history.pushState({ ...history.state, blDepth: crumbs.length - 1 }, "");
     }
@@ -2226,9 +2322,102 @@ class BetterLightingPanel extends HTMLElement {
     backdrop.querySelector("#about-close").addEventListener("click", shut);
   }
 
+  /**
+   * Ask, in a dialog of the page's own rather than the browser's.
+   *
+   * Home Assistant's confirmation dialog is reached through an import from
+   * its own module graph, which a panel loaded on its own cannot do -- so
+   * this is built from the same card, divider and button the rest of the
+   * page is built from, and behaves the way its dialogs do: escape or the
+   * backdrop to back out, and the destructive answer coloured as such.
+   */
+  _ask({ title, text, confirm, danger = false }) {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement("div");
+      backdrop.className = "modal";
+      backdrop.innerHTML = `
+        <div class="modal-card" role="alertdialog" aria-modal="true">
+          <h2>${title || this._t("confirm_delete")}</h2>
+          ${text ? `<p class="muted">${text}</p>` : ""}
+          <div class="page-foot">
+            <div class="foot-end"></div>
+            <div class="foot-end">
+              <button class="flat" id="ask-no">${this._t("cancel")}</button>
+              <button class="${danger ? "danger" : ""}" id="ask-yes">${
+                confirm || this._t("delete")
+              }</button>
+            </div>
+          </div>
+        </div>`;
+      this.shadowRoot.appendChild(backdrop);
+
+      const answer = (value) => {
+        window.removeEventListener("keydown", onKey);
+        backdrop.remove();
+        resolve(value);
+      };
+      const onKey = (event) => {
+        if (event.key === "Escape") answer(false);
+        if (event.key === "Enter") answer(true);
+      };
+      window.addEventListener("keydown", onKey);
+      backdrop.addEventListener("click", (event) => {
+        if (event.target === backdrop) answer(false);
+      });
+      backdrop.querySelector("#ask-no").addEventListener("click", () => answer(false));
+      backdrop.querySelector("#ask-yes").addEventListener("click", () => answer(true));
+      backdrop.querySelector("#ask-yes").focus();
+    });
+  }
+
+  /** Ask for a word, in the same dialog as everything else. */
+  _askName(title, suggestion = "") {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement("div");
+      backdrop.className = "modal";
+      backdrop.innerHTML = `
+        <div class="modal-card" role="dialog" aria-modal="true">
+          <h2>${title}</h2>
+          <input type="text" id="ask-name" value="${suggestion}">
+          <div class="page-foot">
+            <div class="foot-end"></div>
+            <div class="foot-end">
+              <button class="flat" id="ask-no">${this._t("cancel")}</button>
+              <button id="ask-yes">${this._t("save")}</button>
+            </div>
+          </div>
+        </div>`;
+      this.shadowRoot.appendChild(backdrop);
+      const field = backdrop.querySelector("#ask-name");
+      const answer = (value) => {
+        window.removeEventListener("keydown", onKey);
+        backdrop.remove();
+        resolve(value);
+      };
+      const onKey = (event) => {
+        if (event.key === "Escape") answer(null);
+        if (event.key === "Enter") answer(field.value.trim() || null);
+      };
+      window.addEventListener("keydown", onKey);
+      backdrop.addEventListener("click", (event) => {
+        if (event.target === backdrop) answer(null);
+      });
+      backdrop.querySelector("#ask-no").addEventListener("click", () => answer(null));
+      backdrop
+        .querySelector("#ask-yes")
+        .addEventListener("click", () => answer(field.value.trim() || null));
+      field.focus();
+      field.select();
+    });
+  }
+
   /** Ask before something that cannot be undone. */
   _confirm(text) {
-    return window.confirm(text || this._t("confirm_delete"));
+    return this._ask({
+      title: text || this._t("confirm_delete"),
+      text: text ? undefined : this._t("confirm_delete_hint"),
+      danger: true,
+    });
   }
 
   /**
@@ -2239,11 +2428,60 @@ class BetterLightingPanel extends HTMLElement {
    * browsers still do not have. So the open is deferred until the animation
    * has run, and the close until it has finished running.
    */
+  /**
+   * Animate one element's height open or shut, and say when it is done.
+   *
+   * The same movement the accordions make, which is the one that looks like
+   * something folding rather than something being swapped for something
+   * else. The height is measured rather than guessed, so a list of two and a
+   * list of twenty each take the same time and neither jumps.
+   */
+  _foldHeight(element, opening) {
+    if (!element || this._reducedMotion()) return Promise.resolve();
+    const height = element.scrollHeight;
+    element.style.overflow = "hidden";
+    const animation = element.animate(
+      {
+        height: opening ? ["0px", `${height}px`] : [`${height}px`, "0px"],
+        opacity: opening ? [0, 1] : [1, 0],
+      },
+      { duration: 180, easing: "ease" }
+    );
+    return animation.finished
+      .catch(() => {})
+      .then(() => {
+        element.style.overflow = "";
+      });
+  }
+
+  _reducedMotion() {
+    return Boolean(
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    );
+  }
+
+  /**
+   * Fold a branch of the menu, showing it happening.
+   *
+   * Closing has to run before the repaint that removes the rows, and opening
+   * after the one that adds them -- which is the whole reason this is not
+   * simply a class on a wrapper.
+   */
+  async _foldBranch(find, change) {
+    const nav = this.shadowRoot.getElementById("rooms");
+    const showing = find(nav);
+    if (showing) await this._foldHeight(showing, false);
+    change();
+    this._paintNav();
+    const opened = find(nav);
+    if (opened) await this._foldHeight(opened, true);
+  }
+
   _foldClick(event) {
     const summary = event.target.closest?.("summary");
     const fold = summary?.parentElement;
     if (!summary || fold?.tagName !== "DETAILS") return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (this._reducedMotion()) return;
     const body = [...fold.children].find((child) => child !== summary);
     if (!body || fold.dataset.busy) return;
 
@@ -2251,22 +2489,10 @@ class BetterLightingPanel extends HTMLElement {
     fold.dataset.busy = "1";
     const opening = !fold.open;
     if (opening) fold.open = true;
-    const height = body.scrollHeight;
-    body.style.overflow = "hidden";
-    const animation = body.animate(
-      {
-        height: opening ? ["0px", `${height}px`] : [`${height}px`, "0px"],
-        opacity: opening ? [0, 1] : [1, 0],
-      },
-      { duration: 180, easing: "ease" }
-    );
-    const done = () => {
-      body.style.overflow = "";
+    this._foldHeight(body, opening).then(() => {
       if (!opening) fold.open = false;
       delete fold.dataset.busy;
-    };
-    animation.addEventListener("finish", done);
-    animation.addEventListener("cancel", done);
+    });
   }
 
   /** Open or shut the menu drawer. Nothing at all on a wide screen. */
@@ -2274,6 +2500,72 @@ class BetterLightingPanel extends HTMLElement {
     this._navOpen = open;
     this.shadowRoot.getElementById("rooms").dataset.open = open ? "1" : "0";
     this.shadowRoot.getElementById("scrim").dataset.open = open ? "1" : "0";
+  }
+
+  /** Put the menu at whatever width and shape it was left in. */
+  _applyNavLayout() {
+    const body = this.shadowRoot.querySelector(".body");
+    if (!body) return;
+    body.style.setProperty("--nav", `${this._navWidth}px`);
+    body.dataset.rail = this._railed ? "1" : "0";
+  }
+
+  /**
+   * Fold the menu down to a column of icons, or back out again.
+   *
+   * On a narrow screen there is no room for either shape, so the same button
+   * opens the drawer instead -- one button that means "the menu", whichever
+   * of the two that is here.
+   */
+  _toggleNav() {
+    if (window.innerWidth <= 800) {
+      this._setDrawer(!this._navOpen);
+      return;
+    }
+    this._railed = !this._railed;
+    _remember("bl-nav-rail", this._railed ? 1 : 0);
+    this._applyNavLayout();
+  }
+
+  /**
+   * Drag the menu's edge to give it more room, or less.
+   *
+   * Never more than a quarter of the window, because the content is what the
+   * page is for; and dragged in past the point where it stops being readable,
+   * letting go folds it to the rail rather than leaving a sliver.
+   */
+  _startResize(event) {
+    const body = this.shadowRoot.querySelector(".body");
+    if (!body || window.innerWidth <= 800) return;
+    event.preventDefault();
+    body.dataset.dragging = "1";
+    const gutter = parseFloat(getComputedStyle(body).paddingLeft) || 0;
+    let width = this._navWidth;
+    let folding = false;
+
+    const move = (moved) => {
+      const wanted = moved.clientX - body.getBoundingClientRect().left - gutter;
+      folding = wanted < NAV_MIN - 40;
+      width = clamp(wanted, NAV_MIN, navMax());
+      body.style.setProperty("--nav", `${folding ? NAV_MIN : width}px`);
+      body.style.opacity = folding ? ".85" : "";
+    };
+    const done = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", done);
+      delete body.dataset.dragging;
+      body.style.opacity = "";
+      if (folding) {
+        this._railed = true;
+        _remember("bl-nav-rail", 1);
+      } else {
+        this._navWidth = width;
+        _remember("bl-nav-width", width);
+      }
+      this._applyNavLayout();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", done);
   }
 
   /** An mdi icon, when Home Assistant's element for drawing one is here. */
@@ -2363,8 +2655,8 @@ class BetterLightingPanel extends HTMLElement {
                 const open = this._expandedSub === branch;
                 // Rendered whether or not it is open, so opening and closing
                 // it is something that can be watched happening.
-                const children = items.length || open
-                  ? `<div class="sub-wrap" data-open="${open ? "1" : "0"}">
+                const children = open
+                  ? `<div class="sub-wrap" data-branch="${branch}">
                       <ul class="sub">${items
                         .map(
                           ([index, label, name]) =>
@@ -2601,16 +2893,33 @@ class BetterLightingPanel extends HTMLElement {
       handle.addEventListener("click", (event) => {
         event.stopPropagation();
         const id = handle.dataset.roomTwist;
-        this._expanded = this._expanded === id ? null : id;
-        this._paintNav();
+        // The list is whatever follows the row the chevron sits on, which
+        // is only there while the branch is open -- so it is looked up again
+        // on the far side of the repaint rather than held on to.
+        this._foldBranch(
+          (nav) => {
+            const twist = nav.querySelector(
+              `[data-room-twist="${CSS.escape(id)}"]`
+            );
+            const list = twist?.closest("li")?.nextElementSibling;
+            return list?.matches("ul.sub") ? list : null;
+          },
+          () => {
+            this._expanded = this._expanded === id ? null : id;
+          }
+        );
       })
     );
     nav.querySelectorAll("[data-sub-twist]").forEach((handle) =>
       handle.addEventListener("click", (event) => {
         event.stopPropagation();
         const id = handle.dataset.subTwist;
-        this._expandedSub = this._expandedSub === id ? null : id;
-        this._paintNav();
+        this._foldBranch(
+          (nav) => nav.querySelector(`.sub-wrap[data-branch="${CSS.escape(id)}"]`),
+          () => {
+            this._expandedSub = this._expandedSub === id ? null : id;
+          }
+        );
       })
     );
     nav.querySelectorAll("[data-twist]").forEach((handle) =>
@@ -3537,7 +3846,7 @@ class BetterLightingPanel extends HTMLElement {
       this._paintMain();
     });
     main.querySelector("#remove")?.addEventListener("click", async () => {
-      if (!this._confirm()) return;
+      if (!(await this._confirm())) return;
       this._dirty = false;
       await remove();
       await this._load();
@@ -3634,10 +3943,16 @@ class BetterLightingPanel extends HTMLElement {
       preset.color_format = "rgb_color";
       preset.rgb_color = [...spec.rgb_color];
     } else {
-      window.alert(this._t("no_colour_to_keep"));
+      await this._ask({
+        title: this._t("no_colour_to_keep"),
+        confirm: this._t("close"),
+      });
       return;
     }
-    const name = window.prompt(this._t("preset_name"), this._name(entityId));
+    const name = await this._askName(
+      this._t("preset_name"),
+      this._name(entityId)
+    );
     if (!name) return;
     await this._call("save_hub", {
       options: {
@@ -3794,7 +4109,7 @@ class BetterLightingPanel extends HTMLElement {
       await this._save();
     });
     main.querySelector("#delete")?.addEventListener("click", async () => {
-      if (!this._confirm()) return;
+      if (!(await this._confirm())) return;
       await this._call("delete_scene", {
         zone_id: room.id,
         scene_id: this._scene.scene_id,

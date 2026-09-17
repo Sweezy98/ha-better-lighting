@@ -296,7 +296,9 @@ def test_the_panel_has_no_untranslated_chrome() -> None:
         re.findall(r">([A-Z][a-z][^<>{}$]{4,60})<", body)
         + re.findall(r'"([A-Z][a-z][^"<>{}$]{4,60})"', body)
     )
-    allowed = {"Better Lighting"}
+    # The product's name, and the name of a key on the keyboard -- which is
+    # what the browser calls it, not what anybody reads.
+    allowed = {"Better Lighting", "Escape"}
     assert english <= allowed, (
         f"untranslated panel strings: {sorted(english - allowed)}"
     )
@@ -565,7 +567,7 @@ def test_nothing_is_deleted_from_a_list_without_being_asked_about() -> None:
     handler = panel_js[
         panel_js.index("  _wireRowActions(") : panel_js.index("  _empty(")
     ]
-    assert "if (!this._confirm()) return;" in handler
+    assert "if (!(await this._confirm())) return;" in handler
     # And a click on one is not also a click into the row.
     assert wiring.count('closest("[data-delete],[data-duplicate]")') >= 4
 
@@ -580,3 +582,15 @@ def test_every_stylesheet_in_the_panel_is_closed_exactly_once() -> None:
     assert panel_js.count("<style>") == panel_js.count("</style>"), (
         "a stylesheet is opened or closed more times than the other"
     )
+
+
+def test_the_panel_asks_in_its_own_dialog() -> None:
+    """The browser's own confirm box is a different application interrupting
+    this one. Home Assistant's dialog cannot be reached from a panel loaded on
+    its own, so the page has one built from its own parts."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    assert "window.confirm" not in panel_js and "window.alert(" not in panel_js
+    assert "_ask({" in panel_js
+    # Backing out has to be possible without answering the question.
+    assert 'event.key === "Escape"' in panel_js

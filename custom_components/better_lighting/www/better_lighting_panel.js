@@ -2184,9 +2184,11 @@ class BetterLightingPanel extends HTMLElement {
         /* Not :last-of-type, which is the last accordion *among its
            siblings* -- so an accordion at the end of one box lost its margin
            and sat flush against the next box's first one. The last thing in
-           a container drops its margin whatever kind of thing it is. */
-        .page-body > :last-child, .fold-body > :last-child,
-        #diag-state > :last-child { margin-bottom:0; }
+           a container drops its margin whatever kind of thing it is.
+           Deliberately only the containers that end a screen: a block in the
+           middle of one, like the diagnostics tables, has something after it
+           and needs the space kept. */
+        .page-body > :last-child, .fold-body > :last-child { margin-bottom:0; }
         summary { cursor:pointer; padding:14px 16px; font-size:15px; font-weight:500;
                   list-style:none; display:flex; align-items:center;
                   justify-content:space-between; gap:12px; }

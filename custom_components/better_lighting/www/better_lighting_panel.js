@@ -1915,7 +1915,12 @@ class BetterLightingPanel extends HTMLElement {
                transition:width .2s ease, box-shadow .2s ease, padding .2s ease; }
         /* Where the button that folds it lives: on the menu, since it is the
            menu it folds. */
-        .nav-top { display:flex; justify-content:flex-end; margin:-8px -8px 4px; }
+        /* Stays put while the menu scrolls: a button that folds the menu is
+           no use once it has been scrolled off the top of it. */
+        .nav-top { position:sticky; top:-16px; z-index:2;
+                   display:flex; justify-content:flex-end;
+                   margin:-16px -8px 4px; padding:8px 0 4px;
+                   background:var(--card-background-color,#fff); }
         .nav-top .icon-btn { width:36px; height:36px; min-height:0;
                              color:var(--secondary-text-color); }
         .nav-top .icon-btn:hover { background:var(--secondary-background-color);
@@ -1952,7 +1957,10 @@ class BetterLightingPanel extends HTMLElement {
         /* Folded, this button stays on the left whether the menu is hovered
            or not -- on the right it moved out from under the pointer as the
            hover widened the menu, which is a button you cannot press. */
-        .body[data-rail="1"] .nav-top { justify-content:flex-start; }
+        /* Folded, its icon lines up with the column of icons below it
+           rather than sitting eight pixels to their left. */
+        .body[data-rail="1"] .nav-top { justify-content:flex-start;
+                                        margin:-16px 0 4px; }
         /* The edge you drag to make it wider, which follows whatever width
            the menu is set to rather than being told separately. */
         .nav-grip { position:absolute; top:var(--gutter); bottom:var(--gutter);
@@ -2123,6 +2131,17 @@ class BetterLightingPanel extends HTMLElement {
           width:6px; height:6px; margin:-10px 0 0 10px; border-radius:50%;
           background:var(--primary-color); }
         li[data-inside="1"] .twist { position:relative; }
+        /* Folded to a rail, the rows underneath are not there to be lit, so
+           the top-level entry says where you are instead. */
+        .body[data-rail="1"] .nav:not(:hover) li[data-within="1"] {
+          color:var(--sidebar-selected-text-color, var(--primary-color)); }
+        .body[data-rail="1"] .nav:not(:hover) li[data-within="1"] ha-icon {
+          color:var(--sidebar-selected-icon-color, var(--primary-color)); }
+        .body[data-rail="1"] .nav:not(:hover) li[data-within="1"]::before {
+          content:""; position:absolute; inset:0; z-index:0; border-radius:8px;
+          pointer-events:none;
+          background-color:var(--sidebar-selected-icon-color, var(--primary-color));
+          opacity:var(--dark-divider-opacity, .12); }
         li.add ha-icon { color:inherit; }
         /* One of ours: shown so people know it exists, but not a row that
            opens onto anything, because there is nothing to change. */
@@ -2794,6 +2813,9 @@ class BetterLightingPanel extends HTMLElement {
     this._railed = !this._railed;
     _remember("bl-nav-rail", this._railed ? 1 : 0);
     this._applyNavLayout();
+    // The button carries the direction it will go next, so it is drawn again
+    // now that the direction has changed.
+    this._paintNav();
   }
 
   /**
@@ -2978,7 +3000,7 @@ class BetterLightingPanel extends HTMLElement {
         <ul>
           <li class="section" data-overview="rooms" data-inside="${
             this._collapsed.rooms && inRoom ? "1" : "0"
-          }" aria-selected="${
+          }" data-within="${inRoom ? "1" : "0"}" aria-selected="${
             this._view.kind === "rooms"
           }">${icon("mdi:home-group")}<span class="grow">${this._t(
             "rooms"
@@ -2993,7 +3015,7 @@ class BetterLightingPanel extends HTMLElement {
         <ul class="nav-group">
           <li class="section" data-overview="modes" data-inside="${
             this._collapsed.modes && this._view.kind === "mode" ? "1" : "0"
-          }" aria-selected="${
+          }" data-within="${this._view.kind === "mode" ? "1" : "0"}" aria-selected="${
             this._view.kind === "modes"
           }">${icon("mdi:auto-mode")}<span class="grow">${this._t(
             "modes"

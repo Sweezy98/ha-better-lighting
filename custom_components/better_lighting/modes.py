@@ -22,15 +22,14 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ServiceNotFound
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 from homeassistant.util import ulid as ulid_util
 
 from .const import DOMAIN, IDLE_STATE
 from .render import Trigger, ZoneMode
+from .scripts import async_run_scripts
 from .session import (
     DeferredAction,
     DeferredRegistry,
@@ -357,39 +356,8 @@ class ModeGroupRuntime:
                 await self._async_turn_off(zone_id, controller, rule)
 
     async def _async_run_scripts(self, rule: ModeRule) -> None:
-        """Whatever else this rule does to the house.
-
-        Fired rather than awaited: a script that dims for thirty seconds, or
-        waits for a door, must not hold up the room next to it. Deliberately
-        in no context of ours -- a script is somebody's own instruction, and
-        anything it turns on should be read as exactly that rather than
-        mistaken for our own command coming back.
-        """
-        if not rule.scripts:
-            return
-        _LOGGER.debug("%s: running %s", self.config.name, ", ".join(rule.scripts))
-
-        async def _run() -> None:
-            try:
-                await self.hass.services.async_call(
-                    "script",
-                    "turn_on",
-                    {"entity_id": list(rule.scripts)},
-                    blocking=False,
-                )
-            except (ServiceNotFound, vol.Invalid) as err:
-                # A script the user has since deleted, most likely. Worth
-                # saying once; not worth an unhandled task exception every
-                # time the film starts, and certainly not worth stopping the
-                # rest of the mode.
-                _LOGGER.warning(
-                    "%s could not run %s: %s",
-                    self.config.name,
-                    ", ".join(rule.scripts),
-                    err,
-                )
-
-        self.hass.async_create_task(_run())
+        """Whatever else this rule does to the house."""
+        async_run_scripts(self.hass, rule.scripts, self.config.name)
 
     async def _async_turn_off(
         self, zone_id: str, controller: ZoneController, rule: ModeRule

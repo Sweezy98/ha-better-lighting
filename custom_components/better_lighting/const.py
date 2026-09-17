@@ -773,6 +773,18 @@ CONF_SWITCH_ID = "switch_id"
 # Per-light calibration lives with the room whose lights it calibrates.
 CONF_ZONE_PROFILES = "light_profiles"
 
+# Whatever else a scene means. A film scene is not only the lights: the
+# amplifier goes on with it and off again when the room comes back.
+CONF_SCENE_ENTER_SCRIPTS = "enter_scripts"
+CONF_SCENE_LEAVE_SCRIPTS = "leave_scripts"
+
+
+def _scripts() -> Any:
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(domain="script", multiple=True)
+    )
+
+
 ZONE_SCENE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_NAME,
@@ -781,6 +793,8 @@ ZONE_SCENE_SPECS: tuple[FieldSpec, ...] = (
         required=True,
     ),
     FieldSpec(CONF_ICON, "mdi:palette", selector.IconSelector()),
+    FieldSpec(CONF_SCENE_ENTER_SCRIPTS, [], _scripts()),
+    FieldSpec(CONF_SCENE_LEAVE_SCRIPTS, [], _scripts()),
     FieldSpec(
         CONF_TRANSITION,
         1.5,

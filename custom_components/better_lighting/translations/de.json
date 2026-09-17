@@ -255,7 +255,9 @@
           "data": {
             "name": "Name",
             "icon": "Symbol",
-            "transition": "Übergangsdauer"
+            "transition": "Übergangsdauer",
+            "enter_scripts": "Skripte beim Start dieser Szene",
+            "leave_scripts": "Skripte beim Beenden"
           },
           "sections": {
             "advanced": {
@@ -267,6 +269,10 @@
                 "on_unsupported_color": "Wenn eine Lampe die Farbe nicht darstellen kann"
               }
             }
+          },
+          "data_description": {
+            "enter_scripts": "Eine Szene ist nicht nur ihr Licht. Wird ausgeführt, wenn der Raum in diese Szene wechselt — auch aus dem Live-Modus des Editors heraus.",
+            "leave_scripts": "Wird ausgeführt, wenn der Raum sie verlässt — für alles, was die Szene eingeschaltet hat."
           }
         },
         "edit_scene": {
@@ -312,7 +318,9 @@
           "data": {
             "name": "Name",
             "icon": "Symbol",
-            "transition": "Übergangsdauer"
+            "transition": "Übergangsdauer",
+            "enter_scripts": "Skripte beim Start dieser Szene",
+            "leave_scripts": "Skripte beim Beenden"
           },
           "sections": {
             "advanced": {
@@ -324,6 +332,10 @@
                 "on_unsupported_color": "Wenn eine Lampe die Farbe nicht darstellen kann"
               }
             }
+          },
+          "data_description": {
+            "enter_scripts": "Eine Szene ist nicht nur ihr Licht. Wird ausgeführt, wenn der Raum in diese Szene wechselt — auch aus dem Live-Modus des Editors heraus.",
+            "leave_scripts": "Wird ausgeführt, wenn der Raum sie verlässt — für alles, was die Szene eingeschaltet hat."
           }
         },
         "add_calibration": {

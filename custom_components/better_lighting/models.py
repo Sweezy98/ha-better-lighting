@@ -141,7 +141,9 @@ from .const import (
     CONF_RULE_STATES,
     CONF_RULE_ZONES,
     CONF_RULES,
+    CONF_SCENE_ENTER_SCRIPTS,
     CONF_SCENE_ID,
+    CONF_SCENE_LEAVE_SCRIPTS,
     CONF_SCENE_LIGHTS,
     CONF_SCENE_ORDER,
     CONF_SCENE_ORDER_EXCLUDED,
@@ -1068,6 +1070,8 @@ def zone_scene(raw: dict[str, Any], zone_id: str) -> Scene:
         on_unsupported_color=UnsupportedColorPolicy(
             raw.get(CONF_ON_UNSUPPORTED_COLOR, UnsupportedColorPolicy.ADAPTIVE.value)
         ),
+        enter_scripts=tuple(raw.get(CONF_SCENE_ENTER_SCRIPTS) or ()),
+        leave_scripts=tuple(raw.get(CONF_SCENE_LEAVE_SCRIPTS) or ()),
     )
 
 

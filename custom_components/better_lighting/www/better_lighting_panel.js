@@ -540,7 +540,11 @@ class BlForm extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         :host { display:block; max-width:100%; }
-        * { box-sizing:border-box; max-width:100%; }
+        * { box-sizing:border-box; max-width:100%; min-width:0; }
+        /* A control takes the width it is given rather than the width its
+           longest option would like, and says the rest with an ellipsis. */
+        ha-selector, ha-entity-picker, ha-entities-picker, ha-icon-picker,
+        ha-area-picker, ha-textfield, ha-select { display:block; width:100%; }
         .field { margin-bottom:20px; min-width:0; }
         .field-text { min-width:0; }
         .switch-row { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
@@ -1944,6 +1948,10 @@ class BetterLightingPanel extends HTMLElement {
         /* Nothing on a page is wider than the page. Borrowed controls bring
            their own widths, and a long entity id has no space to break at. */
         .page-body *, .page-body ha-selector { max-width:100%; box-sizing:border-box; }
+        /* And the page itself never grows to fit one, which is what turned a
+           long option name into a horizontal scrollbar. */
+        .page-body { max-width:100%; }
+        .page-body bl-form { display:block; width:100%; min-width:0; }
         /* Adding and deleting at one end, agreeing and backing out at the
            other, with the one that commits furthest from the one that does
            not. */
@@ -4182,6 +4190,9 @@ class BetterLightingPanel extends HTMLElement {
    */
   _paintEditor() {
     const room = this._room;
+    // A new scene is unsaved by definition; one opened for reading has
+    // nothing to save until something is changed.
+    if (!this._scene.scene_id) this._dirty = true;
     const main = this.shadowRoot.getElementById("main");
     const live = this._previewing;
     const entries = Object.keys(this._scene.lights || {});
@@ -4208,7 +4219,11 @@ class BetterLightingPanel extends HTMLElement {
          "light_treatment"
        )}</div>
        <div id="rows"></div>
-       <div class="bar" id="add-light"></div>`,
+       <div class="bar" id="add-light"></div>
+       <details id="scene-settings">
+         <summary>${this._sectionName("basic")}</summary>
+         <div class="fold-body" id="scene-form"></div>
+       </details>`,
       this._scene.scene_id
         ? `<button class="danger" id="delete">${this._icon(
              "mdi:delete-outline"
@@ -4217,12 +4232,34 @@ class BetterLightingPanel extends HTMLElement {
              "mdi:content-copy"
            )}<span>${this._t("duplicate")}</span></button>`
         : "",
-      `<button class="flat" id="cancel">${this._t("cancel")}</button>
-       <button id="save">${this._t("save")}</button>`
+      `<button class="flat" id="cancel" disabled>${this._t("cancel")}</button>
+       <button id="save" disabled>${this._t("save")}</button>`
     );
+
+    // Everything a scene holds beyond its lights -- how long it takes, what
+    // it does with the lights it does not name, and what else it means.
+    // There was nowhere to say any of it on this page before.
+    const settings = main.querySelector("#scene-form");
+    const form = document.createElement("bl-form");
+    settings.appendChild(form);
+    form.configure({
+      fields: (this._schema?.forms.scene || [])
+        .flatMap((group) => group.fields)
+        .filter((field) => !["name", "scene_lights"].includes(field.key)),
+      values: { ...this._scene },
+      labels: this._labels,
+      choices: this._choices(room),
+      states: this._hass.states,
+      hass: this._hass,
+    });
+    form.addEventListener("value-changed", (event) => {
+      this._scene[event.detail.key] = event.detail.value;
+      this._touchScene();
+    });
 
     main.querySelector("#name").addEventListener("input", (event) => {
       this._scene.name = event.target.value;
+      this._touchScene();
     });
     main.querySelector("#mode").addEventListener("click", () =>
       live ? this._stopPreview().then(() => this._paintEditor()) : this._preview()
@@ -4231,14 +4268,17 @@ class BetterLightingPanel extends HTMLElement {
       main.querySelector("#add-light").appendChild(
         this._entityControl(available, (chosen) => {
           this._spec(chosen);
+          this._touchScene();
           this._paintEditor();
           this._pushPreview();
         })
       );
     }
+    if (this._dirty) this._touchScene();
     main.querySelector("#save").addEventListener("click", () => this._save());
     main.querySelector("#cancel").addEventListener("click", async () => {
       await this._stopPreview();
+      this._dirty = false;
       this._scene = null;
       this._view = { kind: "scenes" };
       this._load();
@@ -4255,6 +4295,7 @@ class BetterLightingPanel extends HTMLElement {
     });
     main.querySelector("#delete")?.addEventListener("click", async () => {
       if (!(await this._confirm())) return;
+      this._dirty = false;
       await this._call("delete_scene", {
         zone_id: room.id,
         scene_id: this._scene.scene_id,
@@ -4265,6 +4306,16 @@ class BetterLightingPanel extends HTMLElement {
     });
 
     this._paintLightList();
+  }
+
+  /** Something about the scene changed, so there is something to save. */
+  _touchScene() {
+    this._dirty = true;
+    const main = this.shadowRoot.getElementById("main");
+    for (const id of ["save", "cancel"]) {
+      const button = main.querySelector(`#${id}`);
+      if (button) button.disabled = false;
+    }
   }
 
   _name(entityId) {
@@ -4324,6 +4375,7 @@ class BetterLightingPanel extends HTMLElement {
           spec.action || "apply",
           (chosen) => {
             this._spec(entityId).action = chosen;
+            this._touchScene();
             this._paintLightList();
             this._pushPreview();
           }
@@ -4340,6 +4392,7 @@ class BetterLightingPanel extends HTMLElement {
             const entry = this._spec(entityId);
             if (chosen === "none") entry.color_format = "none";
             else delete entry.color_format;
+            this._touchScene();
             this._pushPreview();
           }
         )
@@ -4362,6 +4415,7 @@ class BetterLightingPanel extends HTMLElement {
       remove.addEventListener("click", (event) => {
         event.stopPropagation();
         delete this._scene.lights[entityId];
+        this._touchScene();
         this._paintEditor();
         this._pushPreview();
       });
@@ -4410,6 +4464,7 @@ class BetterLightingPanel extends HTMLElement {
       scene: this._scene,
     });
     this._scene.scene_id = sceneId;
+    this._dirty = false;
     await this._stopPreview();
     this._scene = null;
     this._load();

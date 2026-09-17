@@ -255,7 +255,9 @@
           "data": {
             "name": "Name",
             "icon": "Icon",
-            "transition": "Transition"
+            "transition": "Transition",
+            "enter_scripts": "Scripts to run when this scene starts",
+            "leave_scripts": "Scripts to run when it ends"
           },
           "sections": {
             "advanced": {
@@ -267,6 +269,10 @@
                 "on_unsupported_color": "If a light cannot show the colour"
               }
             }
+          },
+          "data_description": {
+            "enter_scripts": "A scene is not only its lights. Run when the room enters this scene, including from the editor's live mode.",
+            "leave_scripts": "Run when the room leaves it, for whatever the scene turned on."
           }
         },
         "edit_scene": {
@@ -312,7 +318,9 @@
           "data": {
             "name": "Name",
             "icon": "Icon",
-            "transition": "Transition"
+            "transition": "Transition",
+            "enter_scripts": "Scripts to run when this scene starts",
+            "leave_scripts": "Scripts to run when it ends"
           },
           "sections": {
             "advanced": {
@@ -324,6 +332,10 @@
                 "on_unsupported_color": "If a light cannot show the colour"
               }
             }
+          },
+          "data_description": {
+            "enter_scripts": "A scene is not only its lights. Run when the room enters this scene, including from the editor's live mode.",
+            "leave_scripts": "Run when the room leaves it, for whatever the scene turned on."
           }
         },
         "add_calibration": {

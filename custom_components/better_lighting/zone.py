@@ -94,6 +94,7 @@ from .render import (
     render_zone,
 )
 from .scenes import Scene
+from .scripts import async_run_scripts
 from .util import clamp
 
 if TYPE_CHECKING:
@@ -450,8 +451,19 @@ class ZoneController:
             )
             return
         previous_mode = self.mode
+        previous_scene_id = self.active_scene_id
         self.mode = mode
         self.active_scene_id = scene_id if mode is ZoneMode.SCENE else None
+        # A scene is not only its lights. Leaving one and entering another is
+        # both things, in that order, and re-applying the same scene is
+        # neither.
+        if previous_scene_id != self.active_scene_id:
+            if (leaving := self.scenes.get(previous_scene_id or "")) is not None:
+                async_run_scripts(
+                    self.hass, leaving.leave_scripts, f"{leaving.name} (leaving)"
+                )
+            if (entering := self.scenes.get(self.active_scene_id or "")) is not None:
+                async_run_scripts(self.hass, entering.enter_scripts, entering.name)
         if mode is ZoneMode.SCENE and scene_id:
             self._last_scene_id = scene_id
             self._last_scene_at = dt_util.utcnow()

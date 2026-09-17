@@ -206,6 +206,10 @@ class Scene:
     ignore_presence: bool = False
     transition: float | None = None
     on_unsupported_color: UnsupportedColorPolicy = UnsupportedColorPolicy.ADAPTIVE
+    # Whatever else this scene means, beyond the lights. Entity ids, which is
+    # all this layer knows about them -- running one is the adapter's job.
+    enter_scripts: tuple[str, ...] = ()
+    leave_scripts: tuple[str, ...] = ()
 
     def offered_in(self, zone_id: str) -> bool:
         """Whether this scene should appear in a given room's choices."""

@@ -1866,8 +1866,15 @@ class BetterLightingPanel extends HTMLElement {
         .body[data-rail="1"] .nav:not(:hover) .bar { display:none; }
         .body[data-rail="1"] .nav:not(:hover) li { justify-content:center;
                                                    padding:10px 0; }
-        .body[data-rail="1"] .nav:not(:hover) ul { margin-top:0; }
-        .body[data-rail="1"] .nav:not(:hover) .nav-top { justify-content:center; }
+        /* Folded, the groupings are gone, so the spacing that marked them
+           goes too: one column of icons, evenly spaced. */
+        .body[data-rail="1"] .nav:not(:hover) ul,
+        .body[data-rail="1"] .nav:not(:hover) ul.nav-group,
+        .body[data-rail="1"] .nav:not(:hover) ul.nav-last { margin:0; }
+        /* Folded, this button stays on the left whether the menu is hovered
+           or not -- on the right it moved out from under the pointer as the
+           hover widened the menu, which is a button you cannot press. */
+        .body[data-rail="1"] .nav-top { justify-content:flex-start; }
         /* The edge you drag to make it wider, which follows whatever width
            the menu is set to rather than being told separately. */
         .nav-grip { position:absolute; top:var(--gutter); bottom:var(--gutter);
@@ -1915,7 +1922,7 @@ class BetterLightingPanel extends HTMLElement {
         }
         @media (max-width:500px) { .body { --gutter:8px; gap:12px; } }
         .card { background:var(--card-background-color,#fff); border-radius:12px;
-                padding:16px 20px;
+                padding:16px 20px; box-sizing:border-box;
                 box-shadow:var(--ha-card-box-shadow, 0 2px 4px rgba(0,0,0,.1)); }
         @media (max-width:500px) { .card { padding:12px 14px; } }
         /* One card per screen, the height of the pane: what is on it scrolls
@@ -1957,6 +1964,8 @@ class BetterLightingPanel extends HTMLElement {
         .card > :last-child { margin-bottom:0; }
         h2 { margin:0 0 12px; font-size:16px; font-weight:500; }
         ul { list-style:none; margin:0 0 4px; padding:0; }
+        ul.nav-group { margin-top:12px; }
+        ul.nav-last { margin-top:20px; }
         /* Rows on the content pane are a list of things you can open, so they
            are ruled, they light up, and they say so with a chevron. The menu
            keeps its own quieter shape. */
@@ -2829,7 +2838,7 @@ class BetterLightingPanel extends HTMLElement {
             "add_room"
           )}</span></li>
         </ul>
-        <ul style="margin-top:12px">
+        <ul class="nav-group">
           <li class="section" data-overview="modes" data-inside="${
             this._collapsed.modes && this._view.kind === "mode" ? "1" : "0"
           }" aria-selected="${
@@ -2877,7 +2886,7 @@ class BetterLightingPanel extends HTMLElement {
             "add_mode"
           )}</span></li>
         </ul>
-        <ul style="margin-top:20px">
+        <ul class="nav-group nav-last">
           <li class="section" data-hub="1" aria-selected="${
             this._view.kind === "hub"
           }">${icon("mdi:cog")}<span class="grow">${this._t(

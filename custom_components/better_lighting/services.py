@@ -36,6 +36,8 @@ SERVICE_END_MODE = "end_mode"
 SERVICE_REJOIN_MODE = "rejoin_mode"
 SERVICE_NIGHT_LIGHTS_OFF = "night_lights_off"
 SERVICE_NOTIFY = "notify"
+SERVICE_APPLY_EFFECT = "apply_effect"
+SERVICE_STOP_EFFECT = "stop_effect"
 
 # Every service this module defines, taken from the constants above rather
 # than written out a second time: the removal list was hand-kept and went out
@@ -99,27 +101,39 @@ REJOIN_MODE_SCHEMA = vol.Schema({**_TARGET, vol.Required(ATTR_MODE): cv.string})
 # wants: somebody in bed asking for whatever is still on to go off.
 NIGHT_LIGHTS_OFF_SCHEMA = vol.Schema(_TARGET)
 
-# Everything optional but the room: a notification with no colour is the
-# room's own light doing the shape, which is a perfectly good notification.
-NOTIFY_SCHEMA = vol.Schema(
-    {
-        **_TARGET,
-        vol.Optional(ATTR_LIGHTS): vol.All(cv.ensure_list, [cv.entity_id]),
-        vol.Optional(ATTR_EFFECT, default="flash"): cv.string,
-        vol.Optional(ATTR_DURATION, default=3): vol.All(
-            vol.Coerce(float), vol.Range(min=0.2, max=600)
-        ),
-        vol.Optional(ATTR_BRIGHTNESS_PCT): vol.All(
-            vol.Coerce(float), vol.Range(min=1, max=100)
-        ),
-        vol.Optional(ATTR_RGB_COLOR): vol.All(
-            cv.ensure_list, [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))]
-        ),
-        vol.Optional(ATTR_COLOR_TEMP): vol.All(
-            vol.Coerce(int), vol.Range(min=1000, max=10000)
-        ),
-    }
-)
+
+def _effect_schema(*, default_effect: str, default_duration: float) -> vol.Schema:
+    """The two effect services differ in their defaults and nothing else.
+
+    A notification is a thing that happens and then stops, so it has a
+    duration; applying an effect is a thing that goes on until something
+    stops it, so its duration is optional and zero means "until then".
+    """
+    return vol.Schema(
+        {
+            **_TARGET,
+            vol.Optional(ATTR_LIGHTS): vol.All(cv.ensure_list, [cv.entity_id]),
+            vol.Optional(ATTR_EFFECT, default=default_effect): cv.string,
+            vol.Optional(ATTR_DURATION, default=default_duration): vol.All(
+                vol.Coerce(float), vol.Range(min=0, max=3600)
+            ),
+            vol.Optional(ATTR_BRIGHTNESS_PCT): vol.All(
+                vol.Coerce(float), vol.Range(min=1, max=100)
+            ),
+            vol.Optional(ATTR_RGB_COLOR): vol.All(
+                cv.ensure_list,
+                [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+            ),
+            vol.Optional(ATTR_COLOR_TEMP): vol.All(
+                vol.Coerce(int), vol.Range(min=1000, max=10000)
+            ),
+        }
+    )
+
+
+NOTIFY_SCHEMA = _effect_schema(default_effect="flash", default_duration=3)
+APPLY_EFFECT_SCHEMA = _effect_schema(default_effect="breathe", default_duration=0)
+STOP_EFFECT_SCHEMA = vol.Schema(_TARGET)
 
 CLEAR_MANUAL_SCHEMA = vol.Schema(
     {**_TARGET, vol.Optional("lights"): vol.All(cv.ensure_list, [cv.entity_id])}
@@ -230,7 +244,8 @@ def async_register_services(hass: HomeAssistant) -> None:
         for controller in controllers:
             await controller.async_request_night_off()
 
-    async def _notify(call: ServiceCall) -> None:
+    async def _play_effect(call: ServiceCall) -> None:
+        """Both effect services: they differ in what they default to."""
         colour: dict[str, Any] = {}
         if rgb := call.data.get(ATTR_RGB_COLOR):
             colour[ATTR_RGB_COLOR] = list(rgb)
@@ -253,6 +268,10 @@ def async_register_services(hass: HomeAssistant) -> None:
                 ),
                 list(lights) if lights else None,
             )
+
+    async def _stop_effect(call: ServiceCall) -> None:
+        for controller in resolve_controllers(hass, call):
+            await controller.async_stop_effect()
 
     async def _set_adaptive(call: ServiceCall) -> None:
         for controller in resolve_controllers(hass, call):
@@ -327,7 +346,13 @@ def async_register_services(hass: HomeAssistant) -> None:
         _night_lights_off,
         NIGHT_LIGHTS_OFF_SCHEMA,
     )
-    hass.services.async_register(DOMAIN, SERVICE_NOTIFY, _notify, NOTIFY_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_NOTIFY, _play_effect, NOTIFY_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, SERVICE_APPLY_EFFECT, _play_effect, APPLY_EFFECT_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_STOP_EFFECT, _stop_effect, STOP_EFFECT_SCHEMA
+    )
     hass.services.async_register(DOMAIN, SERVICE_PRESS, _press, PRESS_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_CYCLE, _cycle, CYCLE_SCHEMA)
     hass.services.async_register(

@@ -122,5 +122,11 @@
   "effect_flash": "Blinken",
   "effect_pulse": "Pulsieren",
   "effect_breathe": "Atmen",
-  "effect_candle": "Kerzenflackern"
+  "effect_candle": "Kerzenflackern",
+  "built_in": "Gehört zur Integration",
+  "steps": "Schritte",
+  "steps_hint": "Jeder Schritt ist ein Anteil der Helligkeit, die dem Effekt übergeben wird, eine Zeit bis dorthin und eine Zeit zum Halten. Sie laufen der Reihe nach und beginnen von vorn, wenn der Effekt wiederholt.",
+  "add_step": "Schritt hinzufügen",
+  "try_it": "Ausprobieren",
+  "stop_it": "Beenden"
 }

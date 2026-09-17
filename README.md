@@ -349,8 +349,12 @@ when it matters. Afterwards the room resumes whatever it was doing — and **lig
 go back off**, which is the whole reason it remembers. Name `lights:` to use only some of the
 room's.
 
-A **scene can carry an effect** too, and plays it for as long as the scene is showing: a candle
-for a film, a slow pulse for something waiting.
+`better_lighting.apply_effect` plays one until something stops it — a candle for the evening —
+and `better_lighting.stop_effect` ends it and puts the room back. A **scene can carry an
+effect** too, and plays it for as long as the scene is showing.
+
+The panel lists every effect, the five built-in ones included; any of them can be copied into
+one of your own and edited step by step, and tried on a room from the same page.
 
 ---
 

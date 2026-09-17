@@ -1349,6 +1349,50 @@
           "description": "Statt einer Farbe, für Lampen ohne eigene Farbe."
         }
       }
+    },
+    "apply_effect": {
+      "name": "Effekt abspielen",
+      "description": "Einen Effekt in einem Raum abspielen, bis ihn etwas beendet — eine Kerze für den Abend, ein langsames Pulsieren, solange etwas wartet. Mit einer Dauer endet er von selbst.",
+      "fields": {
+        "zone": {
+          "name": "Räume",
+          "description": "In welchen Räumen es gesagt wird."
+        },
+        "lights": {
+          "name": "Lampen",
+          "description": "Nur diese Lampen des Raums statt aller."
+        },
+        "effect": {
+          "name": "Effekt",
+          "description": "solid, flash, pulse, breathe, candle — oder ein selbst geschriebener."
+        },
+        "duration": {
+          "name": "Für",
+          "description": "Wie lange es gesagt wird."
+        },
+        "brightness_pct": {
+          "name": "Helligkeit",
+          "description": "Wie hell im hellsten Moment. Der Effekt arbeitet mit Bruchteilen davon."
+        },
+        "rgb_color": {
+          "name": "Farbe",
+          "description": "In welcher Farbe es gesagt wird."
+        },
+        "color_temp_kelvin": {
+          "name": "Farbtemperatur",
+          "description": "Statt einer Farbe, für Lampen ohne eigene Farbe."
+        }
+      }
+    },
+    "stop_effect": {
+      "name": "Effekt beenden",
+      "description": "Beendet, was gerade läuft, und setzt den Raum auf das zurück, was er vorher getan hat.",
+      "fields": {
+        "zone": {
+          "name": "Räume",
+          "description": "In welchen Räumen es gesagt wird."
+        }
+      }
     }
   },
   "issues": {

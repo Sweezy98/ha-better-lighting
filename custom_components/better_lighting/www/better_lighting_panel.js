@@ -24,11 +24,51 @@ const ADAPTIVE_STEP = "__adaptive__";
 // The effects that ship with the integration, matching effects.py. Named
 // here rather than fetched, because they are the same in every house.
 const BUILT_IN_EFFECTS = [
-  { id: "solid", label: "effect_solid" },
-  { id: "flash", label: "effect_flash" },
-  { id: "pulse", label: "effect_pulse" },
-  { id: "breathe", label: "effect_breathe" },
-  { id: "candle", label: "effect_candle" },
+  {
+    id: "solid",
+    label: "effect_solid",
+    repeat: false,
+    steps: [{ level: 100, transition: 0.4, hold: 0 }],
+  },
+  {
+    id: "flash",
+    label: "effect_flash",
+    repeat: true,
+    steps: [
+      { level: 100, transition: 0, hold: 0.25 },
+      { level: 5, transition: 0, hold: 0.25 },
+    ],
+  },
+  {
+    id: "pulse",
+    label: "effect_pulse",
+    repeat: true,
+    steps: [
+      { level: 100, transition: 0.35, hold: 0.1 },
+      { level: 35, transition: 0.35, hold: 0.1 },
+    ],
+  },
+  {
+    id: "breathe",
+    label: "effect_breathe",
+    repeat: true,
+    steps: [
+      { level: 100, transition: 1.1, hold: 0.15 },
+      { level: 22, transition: 1.1, hold: 0.15 },
+    ],
+  },
+  {
+    id: "candle",
+    label: "effect_candle",
+    repeat: true,
+    steps: [
+      { level: 100, transition: 0.18, hold: 0.22 },
+      { level: 74, transition: 0.12, hold: 0.1 },
+      { level: 90, transition: 0.22, hold: 0.35 },
+      { level: 60, transition: 0.1, hold: 0.08 },
+      { level: 86, transition: 0.3, hold: 0.2 },
+    ],
+  },
 ];
 
 // Where Home Assistant keeps every integration's icon. Linked rather than
@@ -1862,7 +1902,7 @@ class BetterLightingPanel extends HTMLElement {
         .overflow .menu[hidden] { display:none; }
         .menu-item { display:flex; width:100%; gap:12px; align-items:center;
                      padding:12px 16px; background:transparent; color:inherit;
-                     border-radius:0; text-align:left; }
+                     border-radius:0; text-align:left; justify-content:flex-start; }
         .menu-item:hover { background:var(--secondary-background-color); }
         .body { --gutter:16px; --nav:260px; --rail:56px;
                 flex:1 1 auto; min-height:0; position:relative;
@@ -2032,7 +2072,7 @@ class BetterLightingPanel extends HTMLElement {
           display:flex; gap:2px; flex:0 0 auto; }
         /* Quiet until the row is under the pointer: a list of things to open
            should not read as a list of things to delete. */
-        .row-actions button { padding:0 8px; min-height:34px; border-radius:8px;
+        .row-actions button { padding:0 8px; min-height:34px; border-radius:999px;
                               opacity:.55; }
         li:hover .row-actions button, .row-actions button:focus-visible { opacity:1; }
         /* Filled rather than merely recoloured on hover: at this size a change
@@ -2084,6 +2124,13 @@ class BetterLightingPanel extends HTMLElement {
           background:var(--primary-color); }
         li[data-inside="1"] .twist { position:relative; }
         li.add ha-icon { color:inherit; }
+        /* One of ours: shown so people know it exists, but not a row that
+           opens onto anything, because there is nothing to change. */
+        .page-body li.built-in { opacity:.75; cursor:default; }
+        .page-body li.built-in:hover { background:transparent; }
+        .page-body li.step { align-items:flex-start; gap:12px; }
+        .page-body li.step bl-form { flex:1 1 auto; min-width:0; }
+        .page-body li.step bl-form::part(fields) { display:flex; }
         li[draggable="true"] { cursor:grab; }
         li.dragging { opacity:.4; }
         li.drop-target { outline:2px dashed var(--primary-color); }
@@ -2147,7 +2194,9 @@ class BetterLightingPanel extends HTMLElement {
         .muted { color:var(--secondary-text-color); font-size:13px; }
         /* A fixed height and a fixed icon size, because a button with an
            icon in it was a different size from one without. */
-        button { font:inherit; padding:0 14px; min-height:40px; border-radius:8px;
+        /* Home Assistant's own buttons are pills, and a panel of squarer
+           ones sitting inside it reads as somebody else's page. */
+        button { font:inherit; padding:0 18px; min-height:40px; border-radius:999px;
                  border:none; line-height:1.25; cursor:pointer;
                  background:var(--primary-color); color:#fff;
                  display:inline-flex; align-items:center; justify-content:center;
@@ -2155,6 +2204,12 @@ class BetterLightingPanel extends HTMLElement {
         button ha-icon { --mdc-icon-size:18px; }
         button[disabled] { opacity:.4; cursor:default; }
         button.flat { background:transparent; color:var(--primary-color); }
+        /* The shape Home Assistant gives a button that is the accent colour
+           but not the point of the screen: filled quietly rather than
+           loudly, so Save is still the thing your eye goes to. */
+        button.tonal { background:var(--secondary-background-color);
+                       color:var(--primary-color); }
+        button.tonal:hover { filter:brightness(1.15); }
         button.danger { background:var(--error-color,#db4437); }
         .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px; }
         .card > p.muted:first-of-type { margin-top:0; }
@@ -3075,11 +3130,18 @@ class BetterLightingPanel extends HTMLElement {
           return;
         }
         this._expandedSub = branch;
-        if (section === "switches") {
-          const switches = this._room?.data.switches || [];
+        if (section !== "scenes") {
+          // Switches and calibrations are both a list with a form behind
+          // each row. Only scenes open into an editor of their own -- and
+          // testing for the one rather than for the other is how Add under
+          // the calibrations started making scenes.
+          const items =
+            section === "switches"
+              ? this._room?.data.switches || []
+              : this._room?.data.light_profiles || [];
           this._view = {
             kind: section,
-            index: chosenItem === "new" ? switches.length : Number(chosenItem),
+            index: chosenItem === "new" ? items.length : Number(chosenItem),
           };
           this._paint();
           return;
@@ -3251,7 +3313,7 @@ class BetterLightingPanel extends HTMLElement {
           )
           .join("")}</ul>
        ${this._rooms.length ? "" : this._empty(this._t("no_rooms"))}`,
-      `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+      `<button class="tonal" id="add">${this._icon("mdi:plus")}<span>${this._t(
         "add_room"
       )}</span></button>`
     );
@@ -3297,7 +3359,7 @@ class BetterLightingPanel extends HTMLElement {
           )
           .join("")}</ul>
        ${this._modes.length ? "" : this._empty(this._t("no_modes"))}`,
-      `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+      `<button class="tonal" id="add">${this._icon("mdi:plus")}<span>${this._t(
         "add_mode"
       )}</span></button>`
     );
@@ -3334,7 +3396,7 @@ class BetterLightingPanel extends HTMLElement {
     if (creating && !this._view.creating && !this._rooms.length) {
       this._page(
         `<p class="muted">${this._t("no_rooms")}</p>`,
-        `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+        `<button class="tonal" id="add">${this._icon("mdi:plus")}<span>${this._t(
           "add_room"
         )}</span></button>`
       );
@@ -3455,7 +3517,7 @@ class BetterLightingPanel extends HTMLElement {
         )
         .join("")}</ul>
        ${rules.length ? "" : this._empty(this._t("no_rules"))}`,
-      `<button id="add-rule">${this._icon("mdi:plus")}<span>${this._t(
+      `<button class="tonal" id="add-rule">${this._icon("mdi:plus")}<span>${this._t(
         "add"
       )}</span></button>`
     );
@@ -3502,7 +3564,7 @@ class BetterLightingPanel extends HTMLElement {
           )
           .join("")}</ul>
          ${items.length ? "" : this._empty()}`,
-        `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+        `<button class="tonal" id="add">${this._icon("mdi:plus")}<span>${this._t(
           "add"
         )}</span></button>`
       );
@@ -3597,7 +3659,7 @@ class BetterLightingPanel extends HTMLElement {
           )
           .join("")}</ul>
          ${items.length ? "" : this._empty()}`,
-        `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
+        `<button class="tonal" id="add">${this._icon("mdi:plus")}<span>${this._t(
           "add"
         )}</span></button>`
       );
@@ -3758,37 +3820,237 @@ class BetterLightingPanel extends HTMLElement {
   /**
    * The shapes the house knows, beside the colours it knows.
    *
-   * The built-in ones are not listed: they are the same in every house and
-   * cannot be edited, so showing them as rows somebody may try to change
-   * would be a lie about what this screen does.
+   * The built-in ones are listed too, greyed and unopenable: leaving them
+   * out meant the only way to learn what "breathe" was called was to find it
+   * in a dropdown somewhere else. They can be copied, which is the sensible
+   * way to start writing one.
    */
   _paintEffects() {
-    const effects = this._hub.effects || [];
-    this._paintListEditor({
-      items: effects,
-      formKey: "effect",
-      choices: {},
-      describe: (effect) =>
-        `${this._icon("mdi:flare")}<span class="grow">${
-          effect.name || "—"
-        }<div class="muted">${this._t("n_steps").replace(
-          "{count}",
-          String((effect.steps || []).length)
-        )}</div></span>`,
-      onSave: (next) =>
-        this._call("save_hub", {
-          options: {
-            ...this._hub,
-            effects: next.map((effect) => ({
-              ...effect,
-              effect_id: effect.effect_id || `effect_${Date.now()}`,
-            })),
+    const mine = this._hub.effects || [];
+    const save = (next) =>
+      this._call("save_hub", {
+        options: {
+          ...this._hub,
+          effects: next.map((effect) => ({
+            ...effect,
+            effect_id: effect.effect_id || `effect_${Date.now()}`,
+          })),
+        },
+      });
+
+    if (this._view.index !== undefined) return this._paintEffect(mine, save);
+
+    const main = this._page(
+      `<ul>${BUILT_IN_EFFECTS.map(
+        (effect) => `<li class="built-in">${this._icon(
+          "mdi:flare"
+        )}<span class="grow">${this._t(effect.label)}<div class="muted">${this._t(
+          "built_in"
+        )}</div></span><span class="row-actions"><button class="flat"
+          data-copy="${effect.id}" title="${this._t("duplicate")}">${this._icon(
+          "mdi:content-copy"
+        )}</button></span></li>`
+      ).join("")}
+      ${mine
+        .map(
+          (effect, index) =>
+            `<li data-index="${index}">${this._icon(
+              "mdi:flare"
+            )}<span class="grow">${effect.name || "—"}<div class="muted">${this._t(
+              "n_steps"
+            ).replace(
+              "{count}",
+              String((effect.steps || []).length)
+            )}</div></span>${this._rowActions(index, { duplicate: true })}</li>`
+        )
+        .join("")}</ul>`,
+      `<button class="tonal" id="add">${this._icon("mdi:plus")}<span>${this._t(
+        "add"
+      )}</span></button>`
+    );
+
+    this._wireRowActions(main, {
+      duplicate: async (index) => {
+        const copy = { ...mine[index], effect_id: "" };
+        copy.name = `${copy.name || ""} ${this._t("copy_suffix")}`.trim();
+        await save([...mine.slice(0, index + 1), copy, ...mine.slice(index + 1)]);
+        await this._load();
+      },
+      remove: async (index) => {
+        await save(mine.filter((_, i) => i !== index));
+        await this._load();
+      },
+    });
+    main.querySelectorAll("[data-copy]").forEach((button) =>
+      button.addEventListener("click", async (event) => {
+        // A copy of one of ours is an ordinary effect of theirs, which is
+        // the only way to get a candle you can adjust.
+        const built = BUILT_IN_EFFECTS.find(
+          (effect) => effect.id === event.currentTarget.dataset.copy
+        );
+        await save([
+          ...mine,
+          {
+            effect_id: "",
+            name: `${this._t(built.label)} ${this._t("copy_suffix")}`,
+            repeat: built.repeat,
+            steps: built.steps.map((step) => ({ ...step })),
           },
-        }),
+        ]);
+        await this._load();
+      })
+    );
+    main.querySelectorAll("li[data-index]").forEach((row) =>
+      row.addEventListener("click", (event) => {
+        if (event.target.closest("[data-delete],[data-duplicate]")) return;
+        this._view = { ...this._view, index: Number(row.dataset.index) };
+        this._paint();
+      })
+    );
+    main.querySelector("#add").addEventListener("click", () => {
+      this._view = { ...this._view, index: mine.length };
+      this._paint();
     });
   }
 
-  /** One rule of the current mode, edited in place.
+  /**
+   * Play an effect on a room, to see what it does.
+   *
+   * Reading a list of steps tells you almost nothing about what it looks
+   * like on a wall, which is the same reason the scene editor has a live
+   * mode. Through the service, so what is tried is exactly what an
+   * automation would get.
+   */
+  _tryEffect(into, effectId) {
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    into.appendChild(bar);
+    if (!this._rooms.length) return;
+
+    let room = this._roomId || this._rooms[0].id;
+    bar.appendChild(
+      this._choiceControl(
+        this._rooms.map((candidate) => ({
+          value: candidate.id,
+          label: candidate.name,
+        })),
+        room,
+        (chosen) => {
+          room = chosen;
+        },
+        this._t("rooms")
+      )
+    );
+
+    const play = document.createElement("button");
+    play.className = "flat";
+    play.innerHTML = `${this._icon("mdi:play")}<span>${this._t("try_it")}</span>`;
+    play.addEventListener("click", () =>
+      this._hass.callService("better_lighting", "apply_effect", {
+        zone: room,
+        effect: effectId,
+        duration: 8,
+      })
+    );
+    bar.appendChild(play);
+
+    const stop = document.createElement("button");
+    stop.className = "flat";
+    stop.innerHTML = `${this._icon("mdi:stop")}<span>${this._t("stop_it")}</span>`;
+    stop.addEventListener("click", () =>
+      this._hass.callService("better_lighting", "stop_effect", { zone: room })
+    );
+    bar.appendChild(stop);
+  }
+
+  /** One effect: what it is called, and the steps it is made of. */
+  _paintEffect(mine, save) {
+    const index = this._view.index;
+    const current = mine[index] || { name: "", repeat: true, steps: [] };
+    let steps = (current.steps || []).map((step) => ({ ...step }));
+
+    this._paintSettings({
+      form: this._schema?.forms.effect || [],
+      values: { ...current },
+      choices: {},
+      save: async (changed) => {
+        const next = [...mine];
+        next[index] = { ...current, ...changed, steps };
+        await save(next);
+        this._view = { ...this._view, index: undefined };
+      },
+      remove:
+        index < mine.length
+          ? async () => {
+              await save(mine.filter((_, i) => i !== index));
+              this._view = { ...this._view, index: undefined };
+            }
+          : null,
+      extra: (into) => {
+        const fold = document.createElement("details");
+        fold.open = true;
+        fold.innerHTML = `<summary>${this._t("steps")}</summary>
+          <div class="fold-body">
+            <p class="muted">${this._t("steps_hint")}</p>
+            <ul id="steps"></ul>
+          </div>`;
+        into.appendChild(fold);
+        const list = fold.querySelector("#steps");
+
+        const draw = () => {
+          list.innerHTML = "";
+          steps.forEach((step, at) => {
+            const row = document.createElement("li");
+            row.className = "step";
+            const form = document.createElement("bl-form");
+            form.configure({
+              fields: (this._schema?.forms.effect_step || []).flatMap(
+                (group) => group.fields
+              ),
+              values: step,
+              labels: this._labels,
+              choices: {},
+              states: this._hass.states,
+              hass: this._hass,
+            });
+            form.addEventListener("value-changed", (event) => {
+              steps[at] = { ...steps[at], [event.detail.key]: event.detail.value };
+              this._touch();
+            });
+            row.appendChild(form);
+
+            const drop = document.createElement("button");
+            drop.className = "flat";
+            drop.title = this._t("delete");
+            drop.innerHTML = this._icon("mdi:delete-outline") || "\u2715";
+            drop.addEventListener("click", () => {
+              steps.splice(at, 1);
+              this._touch();
+              draw();
+            });
+            row.appendChild(drop);
+            list.appendChild(row);
+          });
+
+          const adder = document.createElement("li");
+          adder.className = "add";
+          adder.innerHTML = `${this._icon("mdi:plus")}<span class="grow">${this._t(
+            "add_step"
+          )}</span>`;
+          adder.addEventListener("click", () => {
+            steps = [...steps, { level: 100, transition: 0.4, hold: 0.2 }];
+            this._touch();
+            draw();
+          });
+          list.appendChild(adder);
+        };
+        draw();
+        if (current.effect_id) this._tryEffect(into, current.effect_id);
+      },
+    });
+  }
+
+  /** The house's named colours, stored with the global settings. */
   _paintPresets() {
     const presets = this._hub.color_presets || [];
     this._paintListEditor({
@@ -4186,7 +4448,7 @@ class BetterLightingPanel extends HTMLElement {
           )
           .join("")}</ul>
        ${room.scenes.length ? "" : this._empty(this._t("no_scenes"))}`,
-      `<button id="new">${this._icon("mdi:plus")}<span>${this._t(
+      `<button class="tonal" id="new">${this._icon("mdi:plus")}<span>${this._t(
         "new_scene"
       )}</span></button>`
     );
@@ -4445,12 +4707,12 @@ class BetterLightingPanel extends HTMLElement {
     });
     form.addEventListener("value-changed", (event) => {
       this._scene[event.detail.key] = event.detail.value;
-      this._touchScene();
+      this._touch();
     });
 
     main.querySelector("#name").addEventListener("input", (event) => {
       this._scene.name = event.target.value;
-      this._touchScene();
+      this._touch();
     });
     main.querySelector("#mode").addEventListener("click", () =>
       live ? this._stopPreview().then(() => this._paintEditor()) : this._preview()
@@ -4459,13 +4721,13 @@ class BetterLightingPanel extends HTMLElement {
       main.querySelector("#add-light").appendChild(
         this._entityControl(available, (chosen) => {
           this._spec(chosen);
-          this._touchScene();
+          this._touch();
           this._paintEditor();
           this._pushPreview();
         })
       );
     }
-    if (this._dirty) this._touchScene();
+    if (this._dirty) this._touch();
     main.querySelector("#save").addEventListener("click", () => this._save());
     main.querySelector("#cancel").addEventListener("click", async () => {
       await this._stopPreview();
@@ -4499,8 +4761,8 @@ class BetterLightingPanel extends HTMLElement {
     this._paintLightList();
   }
 
-  /** Something about the scene changed, so there is something to save. */
-  _touchScene() {
+  /** Something on this screen changed, so there is something to save. */
+  _touch() {
     this._dirty = true;
     const main = this.shadowRoot.getElementById("main");
     for (const id of ["save", "cancel"]) {
@@ -4573,7 +4835,7 @@ class BetterLightingPanel extends HTMLElement {
           spec.action || "apply",
           (chosen) => {
             this._spec(entityId).action = chosen;
-            this._touchScene();
+            this._touch();
             this._paintLightList();
             this._pushPreview();
           }
@@ -4590,7 +4852,7 @@ class BetterLightingPanel extends HTMLElement {
             const entry = this._spec(entityId);
             if (chosen === "none") entry.color_format = "none";
             else delete entry.color_format;
-            this._touchScene();
+            this._touch();
             this._pushPreview();
           }
         )
@@ -4613,7 +4875,7 @@ class BetterLightingPanel extends HTMLElement {
       remove.addEventListener("click", (event) => {
         event.stopPropagation();
         delete this._scene.lights[entityId];
-        this._touchScene();
+        this._touch();
         this._paintEditor();
         this._pushPreview();
       });

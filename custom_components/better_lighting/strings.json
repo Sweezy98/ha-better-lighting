@@ -1349,6 +1349,50 @@
           "description": "Instead of a colour, for lights that have no colour of their own."
         }
       }
+    },
+    "apply_effect": {
+      "name": "Play an effect",
+      "description": "Play an effect on a room until something stops it -- a candle for the evening, a slow pulse while something is waiting. Give it a time to stop by itself.",
+      "fields": {
+        "zone": {
+          "name": "Rooms",
+          "description": "Which rooms to say it in."
+        },
+        "lights": {
+          "name": "Lights",
+          "description": "Only these lights of the room, rather than all of them."
+        },
+        "effect": {
+          "name": "Effect",
+          "description": "solid, flash, pulse, breathe, candle -- or one you have written yourself."
+        },
+        "duration": {
+          "name": "For",
+          "description": "How long to say it."
+        },
+        "brightness_pct": {
+          "name": "Brightness",
+          "description": "How bright at its brightest. The effect works in fractions of this."
+        },
+        "rgb_color": {
+          "name": "Colour",
+          "description": "The colour to say it in."
+        },
+        "color_temp_kelvin": {
+          "name": "Colour temperature",
+          "description": "Instead of a colour, for lights that have no colour of their own."
+        }
+      }
+    },
+    "stop_effect": {
+      "name": "Stop the effect",
+      "description": "Stop whatever is playing and put the room back to what it was doing.",
+      "fields": {
+        "zone": {
+          "name": "Rooms",
+          "description": "Which rooms to say it in."
+        }
+      }
     }
   },
   "issues": {

@@ -182,3 +182,60 @@ notify:
           max: 10000
           step: 50
           unit_of_measurement: K
+
+apply_effect:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    zone:
+      selector:
+        text:
+    lights:
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    effect:
+      default: breathe
+      selector:
+        text:
+    duration:
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 600
+          step: 0.1
+          unit_of_measurement: s
+    brightness_pct:
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+    rgb_color:
+      selector:
+        color_rgb:
+    color_temp_kelvin:
+      selector:
+        number:
+          min: 1000
+          max: 10000
+          step: 50
+          unit_of_measurement: K
+
+stop_effect:
+  target:
+    entity:
+      integration: better_lighting
+      domain:
+        - light
+        - select
+  fields:
+    zone:
+      selector:
+        text:

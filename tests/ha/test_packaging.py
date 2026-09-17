@@ -282,6 +282,17 @@ def test_the_panel_covers_every_settings_surface() -> None:
     )
     assert not missing, f"the panel cannot reach: {missing}"
 
+    # And a marker naming a method has to be a method, not prose: an
+    # unterminated comment once swallowed a whole screen while leaving its
+    # name in the file for this test to find.
+    code = re.sub(r"/\*.*?\*/", "", panel_js, flags=re.S)
+    for marker in surfaces.values():
+        if not marker.startswith("_paint"):
+            continue
+        assert re.search(rf"^  (?:async )?{marker}\(", code, re.M), (
+            f"{marker} is named in the panel but not defined in it"
+        )
+
 
 def test_the_panel_has_no_untranslated_chrome() -> None:
     """Every word the panel writes itself must come from its string table."""

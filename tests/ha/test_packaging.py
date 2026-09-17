@@ -483,7 +483,7 @@ def test_every_screen_is_one_container() -> None:
     assert panel_js.count("main.innerHTML = `") == 1, (
         "a screen is painting the content pane directly instead of using _page"
     )
-    assert "_page(body, footer" in panel_js
+    assert "_page(body, left" in panel_js
     # And the shape the helper produces is the one the stylesheet dresses.
     for marker in ('class="card page"', "page-body", "page-foot"):
         assert marker in panel_js, f"the page frame is missing {marker}"
@@ -498,3 +498,45 @@ def test_a_click_on_an_icon_still_counts_as_a_click_on_its_button() -> None:
     assert "event.target.dataset.up" not in panel_js
     assert "event.target.dataset.remove" not in panel_js
     assert panel_js.count("event.currentTarget.dataset") >= 2
+
+
+def test_the_menu_can_be_opened_on_a_phone() -> None:
+    """Home Assistant hides its own sidebar on a narrow screen and the menu
+    slides over the content there, so the button that opens it has to be in
+    the header -- reachable from the bottom of a long page, not only the top.
+    """
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    assert 'id="drawer"' in panel_js and 'id="scrim"' in panel_js
+    assert "_setDrawer" in panel_js
+    # Both buttons exist and mean different things: ours opens this menu,
+    # Home Assistant's opens the one that leads out of the panel.
+    assert "hass-toggle-menu" in panel_js
+    # And choosing something closes it again.
+    assert "const chosen = () => this._setDrawer(false);" in panel_js
+
+
+def test_leaving_a_changed_screen_goes_through_one_gate() -> None:
+    """Every way out asks the same question about unsaved work, and asks it
+    in one place rather than each exit remembering to."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    assert "_leave(go)" in panel_js and "_dirty" in panel_js
+    # The menu, the trail and the back button all go through it.
+    assert "this._leave(crumbs[Number(step.dataset.crumb)].go)" in panel_js
+    assert (
+        "back.onclick = parent?.go ? () => this._leave(parent.go) : null;" in panel_js
+    )
+    assert "this._leave(() => {" in panel_js
+
+    # Save and Cancel start disabled and are enabled by a change.
+    assert 'id="save" disabled' in panel_js and 'id="cancel" disabled' in panel_js
+    assert "saveButton.disabled = !this._dirty;" in panel_js
+
+    # And nothing is deleted without being asked about.
+    for removal in re.findall(
+        r'querySelector\("#(?:remove|delete)"\)\?\.addEventListener\('
+        r'"click", async \(\) => \{\s*(.*?)\n',
+        panel_js,
+    ):
+        assert "_confirm()" in removal, f"a delete with no confirmation: {removal!r}"

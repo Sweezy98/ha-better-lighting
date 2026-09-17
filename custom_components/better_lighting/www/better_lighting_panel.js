@@ -1521,6 +1521,9 @@ class BetterLightingPanel extends HTMLElement {
 
     back.title = this._t("back");
     back.innerHTML = this._icon("mdi:arrow-left") || "\u2039";
+    const drawer = this.shadowRoot.getElementById("drawer");
+    drawer.title = this._t("menu");
+    drawer.innerHTML = this._icon("mdi:format-list-bulleted") || "\u2261";
     menu.title = this._t("ha_sidebar");
     menu.innerHTML = this._icon("mdi:menu") || "\u2630";
     // The header is built before the strings have arrived, so its buttons are
@@ -1543,7 +1546,7 @@ class BetterLightingPanel extends HTMLElement {
       .join("");
     holder.querySelectorAll("[data-crumb]").forEach((step) =>
       step.addEventListener("click", () =>
-        crumbs[Number(step.dataset.crumb)].go()
+        this._leave(crumbs[Number(step.dataset.crumb)].go)
       )
     );
 
@@ -1551,7 +1554,7 @@ class BetterLightingPanel extends HTMLElement {
     // and going: a control that vanishes is one people stop reaching for.
     const parent = crumbs[crumbs.length - 2];
     back.disabled = !parent?.go;
-    back.onclick = parent?.go || null;
+    back.onclick = parent?.go ? () => this._leave(parent.go) : null;
   }
 
   /** The runtime choices a field may ask for, for the room in hand. */
@@ -1609,8 +1612,9 @@ class BetterLightingPanel extends HTMLElement {
         /* Home Assistant hides its own sidebar on a narrow screen and expects
            the page to offer the way out. Without this the panel is a room with
            no door. */
-        #menu { display:none; }
+        #menu, #drawer { display:none; }
         @media (max-width:870px) { #menu { display:inline-flex; } }
+        @media (max-width:800px) { #drawer { display:inline-flex; } }
         ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
         /* Pushed to the far end, and holding what belongs to the panel as a
            whole rather than to the screen in front of you. */
@@ -1632,16 +1636,23 @@ class BetterLightingPanel extends HTMLElement {
                 align-items:stretch; overflow:hidden; }
         .nav { overflow:auto; }
         #main { min-height:0; display:flex; flex-direction:column; }
-        .nav-head { display:none; }
+        .scrim { display:none; }
         @media (max-width:800px) {
-          /* Too narrow for two columns. The menu becomes a drawer at the top
-             and the content begins directly underneath it rather than being
-             centred in what is left. */
-          .body { display:block; padding:12px; overflow:auto; }
-          .nav { margin-bottom:12px; }
-          #main { display:block; }
-          .nav-head { display:block; }
-          .nav-body[data-collapsed="1"] { display:none; }
+          /* Too narrow for two columns, so the menu slides over the content
+             instead of sharing the page with it. Out of flow, which is what
+             lets the content pane keep the full height of the window -- and
+             so keeps its footer on the bottom of the window rather than
+             somewhere the content can scroll underneath. */
+          .body { grid-template-columns:1fr; padding:12px; }
+          .nav { position:fixed; top:0; bottom:0; left:0; z-index:7;
+                 width:min(320px, 85vw); border-radius:0;
+                 transform:translateX(-101%); transition:transform .2s ease;
+                 box-shadow:2px 0 12px rgba(0,0,0,.35); }
+          .nav[data-open="1"] { transform:none; }
+          .scrim { display:block; position:fixed; inset:0; z-index:6;
+                   background:rgba(0,0,0,.45); opacity:0; pointer-events:none;
+                   transition:opacity .2s ease; }
+          .scrim[data-open="1"] { opacity:1; pointer-events:auto; }
         }
         @media (max-width:500px) { .body { padding:8px; gap:12px; } }
         .card { background:var(--card-background-color,#fff); border-radius:12px;
@@ -1653,22 +1664,19 @@ class BetterLightingPanel extends HTMLElement {
         .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
                 padding:0; overflow:hidden; }
         .page-body { flex:1 1 auto; min-height:0; overflow:auto; padding:16px 20px; }
+        /* Adding and deleting at one end, agreeing and backing out at the
+           other, with the one that commits furthest from the one that does
+           not. */
         .page-foot { flex:0 0 auto; display:flex; gap:8px; flex-wrap:wrap;
-                     align-items:center; margin:0; padding:12px 20px;
+                     align-items:center; justify-content:space-between;
+                     margin:0; padding:12px 20px;
                      border-top:1px solid var(--divider-color,#e0e0e0);
                      background:var(--card-background-color,#fff); }
+        .foot-end { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
         .page-body > :first-child { margin-top:0; }
-        @media (max-width:800px) {
-          /* The page scrolls as a whole here, so the footer is pinned to the
-             bottom of the window instead of to the card. */
-          .page { display:block; overflow:visible; padding:16px 20px 0; }
-          .page-body { overflow:visible; padding:0; }
-          .page-foot { position:sticky; bottom:0; z-index:2;
-                       margin:16px -20px 0; border-radius:0 0 12px 12px; }
-        }
         @media (max-width:500px) {
-          .page { padding:12px 14px 0; }
-          .page-foot { margin:12px -14px 0; padding:12px 14px; }
+          .page-body { padding:12px 14px; }
+          .page-foot { padding:10px 14px; }
         }
         /* Stacked cards -- a mode and its rules, the diagnostics tables and
            the curve -- were flush against each other, which read as one card
@@ -1677,6 +1685,26 @@ class BetterLightingPanel extends HTMLElement {
         .card > :last-child { margin-bottom:0; }
         h2 { margin:0 0 12px; font-size:16px; font-weight:500; }
         ul { list-style:none; margin:0 0 4px; padding:0; }
+        /* Rows on the content pane are a list of things you can open, so they
+           are ruled, they light up, and they say so with a chevron. The menu
+           keeps its own quieter shape. */
+        .page-body ul { border:1px solid var(--divider-color,#3d3d3d);
+                        border-radius:12px; overflow:hidden; margin:0; }
+        .page-body li { border-radius:0; padding:12px 16px; min-height:48px;
+                        box-sizing:border-box; }
+        .page-body li + li { border-top:1px solid var(--divider-color,#3d3d3d); }
+        .page-body li[data-index]::after, .page-body li[data-room]::after,
+        .page-body li[data-mode]::after, .page-body li[data-rule]::after {
+          content:""; flex:0 0 auto; width:8px; height:8px; margin-left:4px;
+          border-right:2px solid currentColor; border-bottom:2px solid currentColor;
+          transform:rotate(-45deg); opacity:.4; }
+        .page-body li .moves { display:flex; gap:2px; flex:0 0 auto; }
+        /* Nothing here yet, said plainly and in the middle rather than as a
+           dash somebody has to interpret. */
+        .empty { display:flex; flex-direction:column; align-items:center; gap:8px;
+                 padding:40px 16px; text-align:center;
+                 color:var(--primary-color); }
+        .empty ha-icon { --mdc-icon-size:40px; opacity:.7; }
         /* The menu is painted the way Home Assistant paints its own sidebar:
            the accent colour for the text and the icon of the current entry,
            over a wash of that same colour rather than a solid block of it,
@@ -1733,6 +1761,9 @@ class BetterLightingPanel extends HTMLElement {
         details[open] > summary { border-bottom:1px solid var(--divider-color,#3d3d3d); }
         details > bl-form { display:block; padding:16px 20px; }
         details > .fold-body { padding:16px 20px; }
+        /* Appended after the form's own folds, and flush against the last of
+           them without this. */
+        #extra > details:first-child { margin-top:12px; }
         .light { display:flex; align-items:center; gap:12px; padding:8px 12px;
                  border-radius:8px; cursor:pointer; flex-wrap:wrap; }
         .light > ha-selector { flex:1 1 150px; min-width:150px; }
@@ -1742,9 +1773,15 @@ class BetterLightingPanel extends HTMLElement {
         .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
         li .grow, .light .grow { white-space:normal; }
         .muted { color:var(--secondary-text-color); font-size:13px; }
-        button { font:inherit; padding:8px 14px; border-radius:8px; border:none;
-                 cursor:pointer; background:var(--primary-color); color:#fff;
-                 display:inline-flex; align-items:center; gap:6px; }
+        /* A fixed height and a fixed icon size, because a button with an
+           icon in it was a different size from one without. */
+        button { font:inherit; padding:0 14px; min-height:40px; border-radius:8px;
+                 border:none; line-height:1.25; cursor:pointer;
+                 background:var(--primary-color); color:#fff;
+                 display:inline-flex; align-items:center; justify-content:center;
+                 gap:6px; }
+        button ha-icon { --mdc-icon-size:18px; }
+        button[disabled] { opacity:.4; cursor:default; }
         button.flat { background:transparent; color:var(--primary-color); }
         button.danger { background:var(--error-color,#db4437); }
         .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px; }
@@ -1786,6 +1823,7 @@ class BetterLightingPanel extends HTMLElement {
       </style>
       <header>
         <button class="icon-btn" id="menu"></button>
+        <button class="icon-btn" id="drawer"></button>
         <button class="icon-btn" id="crumb-back" disabled></button>
         <div class="titles">
           <span class="app-title">Better Lighting</span>
@@ -1799,6 +1837,7 @@ class BetterLightingPanel extends HTMLElement {
         </div>
       </header>
       <div class="body">
+        <div class="scrim" id="scrim"></div>
         <div class="card nav" id="rooms"></div>
         <div id="main"></div>
       </div>`;
@@ -1810,6 +1849,19 @@ class BetterLightingPanel extends HTMLElement {
       )
     );
 
+    // Our own menu, which slides over the content on a narrow screen. The
+    // button lives in the header, so it is reachable from anywhere on a long
+    // page rather than only from the top of one.
+    this.shadowRoot
+      .getElementById("drawer")
+      .addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._setDrawer(!this._navOpen);
+      });
+    this.shadowRoot
+      .getElementById("scrim")
+      .addEventListener("click", () => this._setDrawer(false));
+
     const overflow = this.shadowRoot.getElementById("more-menu");
     this.shadowRoot.getElementById("more").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -1817,8 +1869,10 @@ class BetterLightingPanel extends HTMLElement {
     });
     this.shadowRoot.getElementById("go-import").addEventListener("click", () => {
       overflow.hidden = true;
-      this._view = { kind: "import" };
-      this._paint();
+      this._leave(() => {
+        this._view = { kind: "import" };
+        this._paint();
+      });
     });
     // Anywhere else closes it, as a menu should.
     this._closeOverflow = () => {
@@ -1826,6 +1880,44 @@ class BetterLightingPanel extends HTMLElement {
     };
     this.shadowRoot.addEventListener("click", this._closeOverflow);
     window.addEventListener("click", this._closeOverflow);
+  }
+
+  /**
+   * A list with nothing in it, said plainly.
+   *
+   * A lone em dash was the old answer, which reads as a value somebody forgot
+   * to fill in rather than as an invitation to add the first one.
+   */
+  _empty(text) {
+    return `<div class="empty">${this._icon("mdi:tray-plus")}<span>${
+      text || this._t("empty_list")
+    }</span></div>`;
+  }
+
+  /**
+   * Going somewhere else, with whatever is unsaved taken into account.
+   *
+   * Every way out of a screen goes through here -- the menu, the trail, the
+   * back button -- so there is one place that knows a form has been changed
+   * and one question asked about it, rather than a rule each way out has to
+   * remember.
+   */
+  _leave(go) {
+    if (this._dirty && !window.confirm(this._t("discard_changes"))) return;
+    this._dirty = false;
+    go();
+  }
+
+  /** Ask before something that cannot be undone. */
+  _confirm(text) {
+    return window.confirm(text || this._t("confirm_delete"));
+  }
+
+  /** Open or shut the menu drawer. Nothing at all on a wide screen. */
+  _setDrawer(open) {
+    this._navOpen = open;
+    this.shadowRoot.getElementById("rooms").dataset.open = open ? "1" : "0";
+    this.shadowRoot.getElementById("scrim").dataset.open = open ? "1" : "0";
   }
 
   /** An mdi icon, when Home Assistant's element for drawing one is here. */
@@ -1920,12 +2012,7 @@ class BetterLightingPanel extends HTMLElement {
       .join("");
 
     nav.innerHTML = `
-      <div class="nav-head">
-        <button class="flat" id="nav-toggle">${icon("mdi:menu")}<span>${this._t(
-          "menu"
-        )}</span></button>
-      </div>
-      <div class="nav-body" id="nav-body" data-collapsed="${this._navOpen ? "0" : "1"}">
+      <div class="nav-body" id="nav-body">
         <ul>
           <li class="section" data-overview="rooms" aria-selected="${
             this._view.kind === "rooms"
@@ -2002,19 +2089,22 @@ class BetterLightingPanel extends HTMLElement {
         </ul>
       </div>`;
 
-    // On a narrow screen the menu is a drawer rather than a column, and
-    // choosing something closes it -- otherwise every tap leaves you looking
-    // at the menu you just used.
-    const chosen = () => {
-      this._navOpen = false;
-    };
-    nav.querySelector("#nav-toggle").addEventListener("click", () => {
-      this._navOpen = !this._navOpen;
-      nav.querySelector("#nav-body").dataset.collapsed = this._navOpen ? "0" : "1";
-    });
+    // Choosing something closes the drawer -- otherwise every tap leaves you
+    // looking at the menu you just used. Harmless on a wide screen, where the
+    // menu is a column and the flag governs nothing.
+    const chosen = () => this._setDrawer(false);
+    // And every menu entry is a way out of the screen in front of you, so
+    // each of them is asked about first.
+    const go = (item, handler) =>
+      item.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._leave(() => {
+          chosen();
+          handler();
+        });
+      });
     nav.querySelectorAll("li[data-overview]").forEach((item) =>
-      item.addEventListener("click", () => {
-        chosen();
+      go(item, () => {
         this._stopPreview();
         this._scene = null;
         this._view = { kind: item.dataset.overview };
@@ -2022,8 +2112,7 @@ class BetterLightingPanel extends HTMLElement {
       })
     );
     nav.querySelectorAll("li.room").forEach((item) =>
-      item.addEventListener("click", () => {
-        chosen();
+      go(item, () => {
         this._stopPreview();
         this._roomId = item.dataset.room;
         // A room you have just walked into shows its screens, whatever you
@@ -2035,9 +2124,7 @@ class BetterLightingPanel extends HTMLElement {
       })
     );
     nav.querySelectorAll("li[data-section]").forEach((item) =>
-      item.addEventListener("click", (event) => {
-        event.stopPropagation();
-        chosen();
+      go(item, () => {
         const section = item.dataset.section;
         this._stopPreview();
         this._scene = null;
@@ -2051,8 +2138,7 @@ class BetterLightingPanel extends HTMLElement {
       })
     );
     nav.querySelectorAll("li.mode").forEach((item) =>
-      item.addEventListener("click", () => {
-        chosen();
+      go(item, () => {
         this._modeId = item.dataset.mode;
         this._expanded[item.dataset.mode] = true;
         this._view = { kind: "mode", section: "settings" };
@@ -2060,37 +2146,30 @@ class BetterLightingPanel extends HTMLElement {
       })
     );
     nav.querySelectorAll("li[data-mode-section]").forEach((item) =>
-      item.addEventListener("click", (event) => {
-        event.stopPropagation();
-        chosen();
+      go(item, () => {
         this._modeId = item.dataset.mode;
         this._view = { kind: "mode", section: item.dataset.modeSection };
         this._paint();
       })
     );
-    nav.querySelector("li[data-hub]").addEventListener("click", () => {
-      chosen();
+    go(nav.querySelector("li[data-hub]"), () => {
       this._view = { kind: "hub" };
       this._paint();
     });
-    nav.querySelector("li[data-presets]").addEventListener("click", () => {
-      chosen();
+    go(nav.querySelector("li[data-presets]"), () => {
       this._view = { kind: "presets" };
       this._paint();
     });
-    nav.querySelector("li[data-diagnostics]").addEventListener("click", () => {
-      chosen();
+    go(nav.querySelector("li[data-diagnostics]"), () => {
       this._view = { kind: "diagnostics" };
       this._paint();
     });
-    nav.querySelector("#add-room").addEventListener("click", () => {
-      chosen();
+    go(nav.querySelector("#add-room"), () => {
       this._roomId = null;
       this._view = { kind: "room", section: null, creating: true };
       this._paint();
     });
-    nav.querySelector("#add-mode").addEventListener("click", () => {
-      chosen();
+    go(nav.querySelector("#add-mode"), () => {
       this._modeId = null;
       this._view = { kind: "mode", creating: true };
       this._paint();
@@ -2172,7 +2251,7 @@ class BetterLightingPanel extends HTMLElement {
             )}</div></span></li>`
           )
           .join("")}</ul>
-       ${this._rooms.length ? "" : `<p class="muted">${this._t("no_rooms")}</p>`}`,
+       ${this._rooms.length ? "" : this._empty(this._t("no_rooms"))}`,
       `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
         "add_room"
       )}</span></button>`
@@ -2209,7 +2288,7 @@ class BetterLightingPanel extends HTMLElement {
             )}</div></span></li>`
           )
           .join("")}</ul>
-       ${this._modes.length ? "" : `<p class="muted">${this._t("no_modes")}</p>`}`,
+       ${this._modes.length ? "" : this._empty(this._t("no_modes"))}`,
       `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
         "add_mode"
       )}</span></button>`
@@ -2352,7 +2431,7 @@ class BetterLightingPanel extends HTMLElement {
             }</div></span></li>`
         )
         .join("")}</ul>
-       ${rules.length ? "" : `<p class="muted">${this._t("none")}</p>`}`,
+       ${rules.length ? "" : this._empty(this._t("no_rules"))}`,
       `<button id="add-rule">${this._icon("mdi:plus")}<span>${this._t(
         "add"
       )}</span></button>`
@@ -2386,7 +2465,7 @@ class BetterLightingPanel extends HTMLElement {
               `<li data-index="${i}">${item.name || item.light_entity || "—"}</li>`
           )
           .join("")}</ul>
-         ${items.length ? "" : `<p class="muted">${this._t("none")}</p>`}`,
+         ${items.length ? "" : this._empty()}`,
         `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
           "add"
         )}</span></button>`
@@ -2467,7 +2546,7 @@ class BetterLightingPanel extends HTMLElement {
               </li>`
           )
           .join("")}</ul>
-         ${items.length ? "" : `<p class="muted">${this._t("none")}</p>`}`,
+         ${items.length ? "" : this._empty()}`,
         `<button id="add">${this._icon("mdi:plus")}<span>${this._t(
           "add"
         )}</span></button>`
@@ -2837,12 +2916,19 @@ class BetterLightingPanel extends HTMLElement {
    * instead of being somewhere below the fold. Screens used to be a stack of
    * cards, which read as several things rather than one.
    */
-  _page(body, footer = "") {
+  _page(body, left = "", right = "") {
     const main = this.shadowRoot.getElementById("main");
     main.innerHTML = `
       <div class="card page">
         <div class="page-body">${body}</div>
-        ${footer ? `<div class="page-foot">${footer}</div>` : ""}
+        ${
+          left || right
+            ? `<div class="page-foot">
+                 <div class="foot-end">${left}</div>
+                 <div class="foot-end">${right}</div>
+               </div>`
+            : ""
+        }
       </div>`;
     return main;
   }
@@ -2862,13 +2948,40 @@ class BetterLightingPanel extends HTMLElement {
       `<div id="error" class="muted"></div>
        <div id="form"></div>
        <div id="extra"></div>`,
-      `<button id="save">${this._t("save")}</button>
-       <button class="flat" id="cancel">${this._t("cancel")}</button>
-       ${remove ? `<button class="danger" id="remove">${this._t("delete")}</button>` : ""}`
+      remove
+        ? `<button class="danger" id="remove">${this._icon(
+            "mdi:delete-outline"
+          )}<span>${this._t("delete")}</span></button>`
+        : "",
+      `<button class="flat" id="cancel" disabled>${this._t("cancel")}</button>
+       <button id="save" disabled>${this._t("save")}</button>`
     );
 
     const holder = main.querySelector("#form");
+    const saveButton = main.querySelector("#save");
+    const cancelButton = main.querySelector("#cancel");
+    // What the screen opened showing, field by field: a stored value, or the
+    // default the control is displaying in its absence. Compared against
+    // rather than counting keystrokes, so typing a value and typing it back
+    // leaves the buttons alone.
+    const original = {};
+    for (const group of form) {
+      for (const field of group.fields) {
+        original[field.key] = values[field.key] ?? field.default;
+      }
+    }
+    const same = (a, b) =>
+      JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
     let pending = {};
+    const sync = () => {
+      this._dirty = Object.entries(pending).some(
+        ([key, value]) => !same(value, original[key])
+      );
+      saveButton.disabled = !this._dirty;
+      cancelButton.disabled = !this._dirty;
+    };
+    this._dirty = false;
     for (const group of form) {
       let parent = holder;
       if (form.length > 1) {
@@ -2896,6 +3009,7 @@ class BetterLightingPanel extends HTMLElement {
       });
       element.addEventListener("value-changed", (event) => {
         pending = { ...pending, [event.detail.key]: event.detail.value };
+        sync();
         // Some screens have to redraw when an answer changes: which scenes a
         // rule may pick from is a question about the room it just named.
         onChange?.(event.detail.key, { ...values, ...pending });
@@ -2903,9 +3017,10 @@ class BetterLightingPanel extends HTMLElement {
     }
     if (extra) extra(main.querySelector("#extra"));
 
-    main.querySelector("#save").addEventListener("click", async () => {
+    saveButton.addEventListener("click", async () => {
       try {
         await save(pending);
+        this._dirty = false;
         await this._load();
       } catch (err) {
         main.querySelector("#error").textContent =
@@ -2914,13 +3029,16 @@ class BetterLightingPanel extends HTMLElement {
     });
     // Cancel goes wherever the crumb would, or reloads this screen when it is
     // already the top of its branch -- either way, nothing typed is kept.
-    main.querySelector("#cancel").addEventListener("click", () => {
-      const crumbs = this._trail().filter(Boolean);
-      const parent = crumbs[crumbs.length - 2];
-      if (parent?.go) parent.go();
-      else this._load();
+    cancelButton.addEventListener("click", () => {
+      // Nothing to cancel unless something was changed, so this is a way of
+      // putting the screen back rather than a way of leaving it -- the trail
+      // is how you leave.
+      this._dirty = false;
+      this._paintMain();
     });
     main.querySelector("#remove")?.addEventListener("click", async () => {
+      if (!this._confirm()) return;
+      this._dirty = false;
       await remove();
       await this._load();
     });
@@ -2947,7 +3065,7 @@ class BetterLightingPanel extends HTMLElement {
               )}</div></span></li>`
           )
           .join("")}</ul>
-       ${room.scenes.length ? "" : `<p class="muted">${this._t("none")}</p>`}`,
+       ${room.scenes.length ? "" : this._empty(this._t("no_scenes"))}`,
       `<button id="new">${this._icon("mdi:plus")}<span>${this._t(
         "new_scene"
       )}</span></button>`
@@ -3068,13 +3186,13 @@ class BetterLightingPanel extends HTMLElement {
        )}</div>
        <div id="rows"></div>
        <div class="bar" id="add-light"></div>`,
-      `<button id="save">${this._t("save")}</button>
-       <button class="flat" id="cancel">${this._t("cancel")}</button>
-       ${
-         this._scene.scene_id
-           ? `<button class="danger" id="delete">${this._t("delete")}</button>`
-           : ""
-       }`
+      this._scene.scene_id
+        ? `<button class="danger" id="delete">${this._icon(
+            "mdi:delete-outline"
+          )}<span>${this._t("delete")}</span></button>`
+        : "",
+      `<button class="flat" id="cancel">${this._t("cancel")}</button>
+       <button id="save">${this._t("save")}</button>`
     );
 
     main.querySelector("#name").addEventListener("input", (event) => {
@@ -3100,6 +3218,7 @@ class BetterLightingPanel extends HTMLElement {
       this._load();
     });
     main.querySelector("#delete")?.addEventListener("click", async () => {
+      if (!this._confirm()) return;
       await this._call("delete_scene", {
         zone_id: room.id,
         scene_id: this._scene.scene_id,

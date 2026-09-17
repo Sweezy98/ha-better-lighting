@@ -34,7 +34,7 @@
   "switch": "Schalter",
   "calibration": "Lampenabgleich",
   "rules": "Regeln",
-  "what_it_cycles": "Was er durchschaltet",
+  "what_it_cycles": "Szenen, die er durchschaltet",
   "cycle_hint": "Jeder Druck geht einen Schritt weiter und beginnt danach von vorn.",
   "all_scenes_used": "Alle Szenen dieses Raums sind bereits in der Liste.",
   "add_scene": "Szene hinzufügen …",
@@ -92,5 +92,10 @@
   "diag_binding": "Beobachtet",
   "diag_cycle": "Abfolge",
   "nothing_seen": "Noch nichts. Den Schalter drücken.",
-  "seen_hint": "Was jeder Schalter gemeldet hat und wie es gelesen wurde. Wurde ein Wert als „nichts“ gelesen, kennt dieser Schalter ihn nicht: entweder zur passenden Werteliste hinzufügen oder den Schalter jede Änderung als Tastendruck werten lassen."
+  "seen_hint": "Was jeder Schalter gemeldet hat und wie es gelesen wurde. Wurde ein Wert als „nichts“ gelesen, kennt dieser Schalter ihn nicht: entweder zur passenden Werteliste hinzufügen oder den Schalter jede Änderung als Tastendruck werten lassen.",
+  "empty_list": "Noch nichts vorhanden",
+  "no_rules": "Noch keine Regeln. Eine Regel legt fest, was ein Raum in einem Zustand dieses Modus tut.",
+  "no_scenes": "Noch keine Szenen. Eine Szene sind die Lampen dieses Raums, so eingestellt, wie du sie haben willst.",
+  "discard_changes": "Auf dieser Seite gibt es ungespeicherte Änderungen. Ohne Speichern verlassen?",
+  "confirm_delete": "Das endgültig löschen?"
 }

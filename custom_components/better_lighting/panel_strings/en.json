@@ -34,7 +34,7 @@
   "switch": "Switch",
   "calibration": "Light calibration",
   "rules": "Rules",
-  "what_it_cycles": "What it cycles",
+  "what_it_cycles": "Scenes it cycles",
   "cycle_hint": "Each press moves one place down, then wraps.",
   "all_scenes_used": "Every scene in this room is already in the list.",
   "add_scene": "Add a scene…",
@@ -92,5 +92,10 @@
   "diag_binding": "Watching",
   "diag_cycle": "Cycle",
   "nothing_seen": "Nothing yet. Press the switch.",
-  "seen_hint": "What each switch has published, and what it was read as. A value read as nothing is one this switch has no word for: add it to the matching list of values, or have the switch treat any change as a press."
+  "seen_hint": "What each switch has published, and what it was read as. A value read as nothing is one this switch has no word for: add it to the matching list of values, or have the switch treat any change as a press.",
+  "empty_list": "Nothing here yet",
+  "no_rules": "No rules yet. A rule says what one room does in one of this mode's states.",
+  "no_scenes": "No scenes yet. A scene is this room's lights, set the way you want them.",
+  "discard_changes": "There are unsaved changes on this screen. Leave without saving?",
+  "confirm_delete": "Delete this for good?"
 }

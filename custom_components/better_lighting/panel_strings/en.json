@@ -115,5 +115,12 @@
   "close": "Close",
   "confirm_delete_hint": "This cannot be undone.",
   "discard_changes_hint": "What was changed on this screen will be lost.",
-  "discard": "Discard"
+  "discard": "Discard",
+  "effects": "Effects",
+  "n_steps": "{count} steps",
+  "effect_solid": "Solid",
+  "effect_flash": "Flash",
+  "effect_pulse": "Pulse",
+  "effect_breathe": "Breathe",
+  "effect_candle": "Candle flicker"
 }

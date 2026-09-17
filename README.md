@@ -325,6 +325,35 @@ original, so a room somebody is standing in is still left alone.
 
 ---
 
+## Effects and notifications
+
+An effect is a **shape** rather than a value: breathe, flash, pulse, flicker like a candle. It
+says nothing about which colour or how bright — it says what to do with whichever it is handed,
+so one "breathe" is the breathing for a bright red alarm and for a dim amber reminder alike.
+Five ship with the integration; more can be written in the panel as a list of steps, each a
+share of the brightness it is given, a time to get there and a time to stay.
+
+**Notifications** say something with a room's lights and then put them back:
+
+```yaml
+action: better_lighting.notify
+data:
+  zone: kitchen
+  effect: flash
+  rgb_color: [0, 255, 0]
+  duration: 2
+```
+
+Green for two seconds when the washing is done; amber breathing when a door was left open; red
+when it matters. Afterwards the room resumes whatever it was doing — and **lights that were off
+go back off**, which is the whole reason it remembers. Name `lights:` to use only some of the
+room's.
+
+A **scene can carry an effect** too, and plays it for as long as the scene is showing: a candle
+for a film, a slow pulse for something waiting.
+
+---
+
 ## Adaptive lighting
 
 **Which lights adapt is the room's to say.** By default it is all of them — pressing the switch

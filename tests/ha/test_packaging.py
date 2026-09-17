@@ -359,7 +359,15 @@ def test_the_panel_string_table_has_no_unread_entries() -> None:
 
     panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
     used = set(re.findall(r'_t\(\s*"([a-z_]+)"', panel_js))
-    assert set(panel_schema.ui_strings("en")) == used
+    # A few are looked up through a variable -- the label of each built-in
+    # effect is chosen from a table by name -- so a bare mention of the key
+    # counts as asking for it.
+    mentioned = set(re.findall(r'"([a-z_]+)"', panel_js))
+    available = set(panel_schema.ui_strings("en"))
+    assert available - (used | mentioned) == set(), (
+        f"nobody asks for: {sorted(available - used - mentioned)}"
+    )
+    assert used <= available
 
 
 def test_the_panel_never_wires_an_element_it_does_not_render() -> None:
@@ -531,6 +539,10 @@ def test_leaving_a_changed_screen_goes_through_one_gate() -> None:
         "back.onclick = parent?.go ? () => this._leave(parent.go) : null;" in panel_js
     )
     assert "this._leave(() => {" in panel_js
+    # And the browser's own back and forward, which cannot go through _leave
+    # because the move has already happened by the time we hear about it --
+    # so it asks, and puts the entry back when the answer is no.
+    assert "_handlePop" in panel_js and "history.pushState" in panel_js
 
     # Save and Cancel start disabled and are enabled by a change.
     assert 'id="save" disabled' in panel_js and 'id="cancel" disabled' in panel_js

@@ -115,5 +115,12 @@
   "close": "Schließen",
   "confirm_delete_hint": "Das lässt sich nicht rückgängig machen.",
   "discard_changes_hint": "Was auf dieser Seite geändert wurde, geht verloren.",
-  "discard": "Verwerfen"
+  "discard": "Verwerfen",
+  "effects": "Effekte",
+  "n_steps": "{count} Schritte",
+  "effect_solid": "Durchgehend",
+  "effect_flash": "Blinken",
+  "effect_pulse": "Pulsieren",
+  "effect_breathe": "Atmen",
+  "effect_candle": "Kerzenflackern"
 }

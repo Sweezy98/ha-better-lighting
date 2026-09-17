@@ -68,6 +68,8 @@ from .const import (
     CONF_DOWN_LONG_PRESS_STATES,
     CONF_DOWN_PRESS_ACTION,
     CONF_DOWN_PRESS_STATES,
+    CONF_EFFECT_ID,
+    CONF_EFFECTS,
     CONF_ENABLED,
     CONF_EXPAND_LIGHT_GROUPS,
     CONF_HIDE_MEMBERS,
@@ -141,6 +143,7 @@ from .const import (
     CONF_RULE_STATES,
     CONF_RULE_ZONES,
     CONF_RULES,
+    CONF_SCENE_EFFECT,
     CONF_SCENE_ENTER_SCRIPTS,
     CONF_SCENE_ID,
     CONF_SCENE_LEAVE_SCRIPTS,
@@ -195,6 +198,8 @@ from .cycle import (
     ForeignPolicy,
     build_cycle,
 )
+from .effects import Effect
+from .effects import from_mapping as effect_from_mapping
 from .profiles import LightProfile
 from .scenes import (
     ALL_LIGHTS,
@@ -235,6 +240,9 @@ class HubConfig:
     night_source_entity: str | None
     # How long the activity log is kept across restarts. Zero keeps nothing.
     log_retention_hours: int
+    # Effects the user has written, by id. The built-in ones are not here:
+    # they are the same for every house and live in code.
+    effects: Mapping[str, Effect]
     time_dark: int
     time_light: int
     sunrise_offset: int
@@ -264,6 +272,11 @@ class HubConfig:
             brightness_mode=BrightnessMode(raw[CONF_BRIGHTNESS_MODE]),
             night_source_entity=raw.get(CONF_NIGHT_SOURCE) or None,
             log_retention_hours=int(raw.get(CONF_LOG_RETENTION_H, 48)),
+            effects={
+                str(entry.get(CONF_EFFECT_ID) or ""): effect_from_mapping(entry)
+                for entry in (raw.get(CONF_EFFECTS) or ())
+                if entry.get(CONF_EFFECT_ID)
+            },
             time_dark=int(raw[CONF_TIME_DARK]),
             time_light=int(raw[CONF_TIME_LIGHT]),
             sunrise_offset=int(raw[CONF_SUNRISE_OFFSET]),
@@ -1070,6 +1083,7 @@ def zone_scene(raw: dict[str, Any], zone_id: str) -> Scene:
         on_unsupported_color=UnsupportedColorPolicy(
             raw.get(CONF_ON_UNSUPPORTED_COLOR, UnsupportedColorPolicy.ADAPTIVE.value)
         ),
+        effect_id=str(raw.get(CONF_SCENE_EFFECT) or "") or None,
         enter_scripts=tuple(raw.get(CONF_SCENE_ENTER_SCRIPTS) or ()),
         leave_scripts=tuple(raw.get(CONF_SCENE_LEAVE_SCRIPTS) or ()),
     )

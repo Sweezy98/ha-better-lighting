@@ -21,6 +21,16 @@ const ALL = "*";
 // ADAPTIVE_STEP on the Python side.
 const ADAPTIVE_STEP = "__adaptive__";
 
+// The effects that ship with the integration, matching effects.py. Named
+// here rather than fetched, because they are the same in every house.
+const BUILT_IN_EFFECTS = [
+  { id: "solid", label: "effect_solid" },
+  { id: "flash", label: "effect_flash" },
+  { id: "pulse", label: "effect_pulse" },
+  { id: "breathe", label: "effect_breathe" },
+  { id: "candle", label: "effect_candle" },
+];
+
 // Where Home Assistant keeps every integration's icon. Linked rather than
 // shipped, so replacing the icon is a change there rather than a release
 // here -- and until this integration is listed, nothing loads and the
@@ -549,7 +559,12 @@ class BlForm extends HTMLElement {
         .field-text { min-width:0; }
         .switch-row { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
         .switch-row .field-text { flex:1 1 260px; }
-        .switch-row .switch, .switch-row ha-selector { flex:0 0 auto; }
+        /* A toggle is as wide as a toggle. The rule above that makes a
+           control take the width it is given is about the ones that would
+           otherwise take more; this one would take the whole line and put
+           itself underneath what it is called. */
+        .switch-row .switch, .switch-row ha-selector {
+          flex:0 0 auto; width:auto; display:inline-flex; }
         .switch-row .hint { margin-bottom:0; }
         label { overflow-wrap:anywhere; }
         .field.disabled { opacity:.5; pointer-events:none; }
@@ -926,7 +941,7 @@ class BetterLightingPanel extends HTMLElement {
       if (document.visibilityState === "visible") this._checkVersion();
     };
     document.addEventListener("visibilitychange", this._visibility);
-    this._pop = () => this._handlePop();
+    this._pop = (event) => this._handlePop(event);
     window.addEventListener("popstate", this._pop);
     // Slow: this is a courtesy, not a heartbeat.
     this._versionTimer = setInterval(() => this._checkVersion(), 120000);
@@ -1631,6 +1646,12 @@ class BetterLightingPanel extends HTMLElement {
         const preset = (this._hub.color_presets || [])[view.index];
         return [top, { label: preset?.name || this._t("add") }];
       }
+      case "effects": {
+        const top = { label: this._t("effects"), go: to({ kind: "effects" }) };
+        if (view.index === undefined) return [top];
+        const effect = (this._hub.effects || [])[view.index];
+        return [top, { label: effect?.name || this._t("add") }];
+      }
       case "scenes": {
         const top = {
           label: named("scenes"),
@@ -1756,6 +1777,18 @@ class BetterLightingPanel extends HTMLElement {
   /** The runtime choices a field may ask for, for the room in hand. */
   _choices(room) {
     return {
+      // Ours and theirs together, since a field asking for an effect does
+      // not care which of the two wrote it.
+      effects: [
+        ...BUILT_IN_EFFECTS.map((effect) => ({
+          value: effect.id,
+          label: this._t(effect.label),
+        })),
+        ...(this._hub.effects || []).map((effect) => ({
+          value: effect.effect_id,
+          label: effect.name,
+        })),
+      ],
       scenes: (room?.scenes || []).map((scene) => ({
         value: scene.scene_id,
         label: scene.name,
@@ -2093,6 +2126,10 @@ class BetterLightingPanel extends HTMLElement {
         .light[aria-selected="true"] { outline:2px solid var(--primary-color); }
         .swatch { width:22px; height:22px; border-radius:50%; flex:0 0 auto;
                   border:1px solid rgba(0,0,0,.2); }
+        /* The light's own icon, in the colour the scene gives it. */
+        .bulb { flex:0 0 auto; display:inline-flex; align-items:center;
+                justify-content:center; width:30px; height:30px; }
+        .bulb ha-icon { --mdc-icon-size:26px; }
         .grow { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
         li .grow, .light .grow { white-space:normal; }
         .muted { color:var(--secondary-text-color); font-size:13px; }
@@ -2355,34 +2392,75 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /**
-   * Keep the browser's history in step with how deep into the panel we are.
+   * Keep the browser's history in step with where in the panel you are.
    *
-   * One entry per level, so the back button on a phone -- where the trail
-   * and its own back button are hidden, there being no room for them --
-   * walks back up the panel rather than leaving it for whichever Home
-   * Assistant page came before. The URL never changes; only the depth does.
+   * One entry per screen, carrying the screen itself rather than a depth --
+   * so back and forward both work, and both land where they say rather than
+   * one step towards the top. The URL never changes; only the state does.
    */
-  _syncHistory() {
-    const depth = Math.max(0, this._trail().filter(Boolean).length - 1);
-    const known =
-      typeof history.state?.blDepth === "number" ? history.state.blDepth : 0;
-    if (depth > known) {
-      history.pushState({ ...history.state, blDepth: depth }, "");
-    } else if (depth < known) {
-      history.replaceState({ ...history.state, blDepth: depth }, "");
-    }
+  _snapshot() {
+    return {
+      view: this._view,
+      roomId: this._roomId,
+      modeId: this._modeId,
+      // By index, so what comes back is the saved scene rather than a draft
+      // somebody abandoned three screens ago.
+      sceneIndex: this._scene
+        ? (this._room?.scenes || []).findIndex(
+            (scene) => scene.scene_id === this._scene.scene_id
+          )
+        : -1,
+    };
   }
 
-  /** The browser went back. Walk one step up the trail, or let it leave. */
-  async _handlePop() {
-    const crumbs = this._trail().filter(Boolean);
-    const parent = crumbs[crumbs.length - 2];
-    // Nothing above this screen: the entry that was popped was not ours, and
-    // the browser is right to be leaving.
-    if (!parent?.go) return;
-    if (!(await this._leave(parent.go))) {
-      // Refused at the prompt, so put back the entry the browser took.
-      history.pushState({ ...history.state, blDepth: crumbs.length - 1 }, "");
+  _syncHistory() {
+    if (this._restoring) return;
+    const snapshot = this._snapshot();
+    const known = history.state?.bl;
+    if (JSON.stringify(known) === JSON.stringify(snapshot)) return;
+    if (known === undefined) {
+      // The entry we arrived on is not ours to replace with a deeper one.
+      history.replaceState({ ...history.state, bl: snapshot }, "");
+      return;
+    }
+    history.pushState({ ...history.state, bl: snapshot }, "");
+  }
+
+  /** The browser moved. Go where it went, or let it leave. */
+  async _handlePop(event) {
+    const snapshot = event?.state?.bl;
+    // Not one of ours: the browser is leaving the panel, and is right to.
+    if (!snapshot) return;
+    if (this._dirty) {
+      const leaving = await this._ask({
+        title: this._t("discard_changes"),
+        text: this._t("discard_changes_hint"),
+        confirm: this._t("discard"),
+        danger: true,
+      });
+      if (!leaving) {
+        // Put back the entry the browser took, so where we are and what the
+        // history believes agree again.
+        history.pushState({ ...history.state, bl: this._snapshot() }, "");
+        return;
+      }
+    }
+    this._dirty = false;
+    await this._stopPreview();
+
+    this._restoring = true;
+    try {
+      this._roomId = snapshot.roomId;
+      this._modeId = snapshot.modeId;
+      this._view = snapshot.view || { kind: "rooms" };
+      const scenes = this._room?.scenes || [];
+      this._scene =
+        snapshot.sceneIndex >= 0 && scenes[snapshot.sceneIndex]
+          ? JSON.parse(JSON.stringify(scenes[snapshot.sceneIndex]))
+          : null;
+      this._paint();
+    } finally {
+      this._restoring = false;
     }
   }
 
@@ -2766,7 +2844,8 @@ class BetterLightingPanel extends HTMLElement {
                     ? (room.scenes || []).map((scene, index) => [
                         index,
                         scene.name,
-                        SECTION_ICONS.scenes,
+                        // Its own icon, which is why a scene has one.
+                        scene.icon || SECTION_ICONS.scenes,
                       ])
                     : key === "switches"
                       ? (room.data?.switches || []).map((item, index) => [
@@ -2901,6 +2980,11 @@ class BetterLightingPanel extends HTMLElement {
           }">${icon(SECTION_ICONS.presets)}<span class="grow">${
             this._labels.sections.presets || this._t("colour_presets")
           }</span></li>
+          <li class="section" data-effects="1" aria-selected="${
+            this._view.kind === "effects"
+          }">${icon("mdi:flare")}<span class="grow">${this._t(
+            "effects"
+          )}</span></li>
           <li class="section" data-diagnostics="1" aria-selected="${
             this._view.kind === "diagnostics"
           }">${icon("mdi:stethoscope")}<span class="grow">${this._t(
@@ -2922,9 +3006,12 @@ class BetterLightingPanel extends HTMLElement {
           chosen();
           // Going anywhere folds the branch you were in. A handler that is
           // opening one of them says so afterwards, which is what keeps the
-          // rule to "the branch you are in, and only that one".
+          // rule to "the branch you are in, and only that one" -- and it is
+          // told what was open, since going back to where you already are is
+          // not a reason to fold it.
+          const previous = this._expandedSub;
           this._expandedSub = null;
-          handler();
+          handler(previous);
         });
       });
     nav.querySelectorAll("li[data-overview]").forEach((item) =>
@@ -2948,9 +3035,10 @@ class BetterLightingPanel extends HTMLElement {
       })
     );
     nav.querySelectorAll("li[data-section]").forEach((item) =>
-      go(item, () => {
+      go(item, (previous) => {
         const section = item.dataset.section;
         const chosenItem = item.dataset.item;
+        const branch = `${item.dataset.room || this._roomId}:${section}`;
         this._stopPreview();
         this._scene = null;
         // A screen belongs to the room it is listed under, which is not
@@ -2966,11 +3054,13 @@ class BetterLightingPanel extends HTMLElement {
         if (chosenItem === undefined) {
           // The entry itself leads to the list of them, which is not inside
           // the branch -- so it does not unfold it. The chevron does that,
-          // and so does arriving at one of the entries underneath.
+          // and so does arriving at one of the entries underneath. Clicking
+          // it while it is already unfolded is not a request to fold it.
+          if (previous === branch) this._expandedSub = branch;
           this._paint();
           return;
         }
-        this._expandedSub = `${this._roomId}:${section}`;
+        this._expandedSub = branch;
         if (section === "switches") {
           const switches = this._room?.data.switches || [];
           this._view = {
@@ -2980,12 +3070,18 @@ class BetterLightingPanel extends HTMLElement {
           this._paint();
           return;
         }
-        // A scene opens in its editor rather than as a row in a list.
+        // A scene opens in its editor rather than as a row in a list -- but
+        // the menu still has to know which of them is open, or the entry
+        // above it is the one that lights up.
         const scenes = this._room?.scenes || [];
         this._scene =
           chosenItem === "new"
             ? { name: this._t("new_scene"), lights: {} }
             : JSON.parse(JSON.stringify(scenes[Number(chosenItem)]));
+        this._view = {
+          kind: section,
+          index: chosenItem === "new" ? undefined : Number(chosenItem),
+        };
         this._paint();
       })
     );
@@ -3011,6 +3107,10 @@ class BetterLightingPanel extends HTMLElement {
     });
     go(nav.querySelector("li[data-presets]"), () => {
       this._view = { kind: "presets" };
+      this._paint();
+    });
+    go(nav.querySelector("li[data-effects]"), () => {
+      this._view = { kind: "effects" };
       this._paint();
     });
     go(nav.querySelector("li[data-diagnostics]"), () => {
@@ -3089,6 +3189,8 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintDiagnostics();
       case "presets":
         return this._paintPresets();
+      case "effects":
+        return this._paintEffects();
       case "hub":
         return this._paintSettings({
           form: this._schema?.forms.hub || [],
@@ -3639,7 +3741,40 @@ class BetterLightingPanel extends HTMLElement {
 
   }
 
-  /** The house's named colours, stored with the global settings. */
+  /**
+   * The shapes the house knows, beside the colours it knows.
+   *
+   * The built-in ones are not listed: they are the same in every house and
+   * cannot be edited, so showing them as rows somebody may try to change
+   * would be a lie about what this screen does.
+   */
+  _paintEffects() {
+    const effects = this._hub.effects || [];
+    this._paintListEditor({
+      items: effects,
+      formKey: "effect",
+      choices: {},
+      describe: (effect) =>
+        `${this._icon("mdi:flare")}<span class="grow">${
+          effect.name || "—"
+        }<div class="muted">${this._t("n_steps").replace(
+          "{count}",
+          String((effect.steps || []).length)
+        )}</div></span>`,
+      onSave: (next) =>
+        this._call("save_hub", {
+          options: {
+            ...this._hub,
+            effects: next.map((effect) => ({
+              ...effect,
+              effect_id: effect.effect_id || `effect_${Date.now()}`,
+            })),
+          },
+        }),
+    });
+  }
+
+  /** One rule of the current mode, edited in place.
   _paintPresets() {
     const presets = this._hub.color_presets || [];
     this._paintListEditor({
@@ -3744,6 +3879,15 @@ class BetterLightingPanel extends HTMLElement {
       ),
       [ADAPTIVE_STEP]: this._t("adaptive"),
     };
+    const icons = {
+      ...Object.fromEntries(
+        (room.scenes || []).map((scene) => [
+          scene.scene_id,
+          scene.icon || SECTION_ICONS.scenes,
+        ])
+      ),
+      [ADAPTIVE_STEP]: "mdi:weather-sunny",
+    };
     const unused = [
       ...(order.includes(ADAPTIVE_STEP)
         ? []
@@ -3780,9 +3924,7 @@ class BetterLightingPanel extends HTMLElement {
           ${order
             .map(
               (id, i) => `<li draggable="true" data-step="${i}">
-                ${this._icon(
-                  id === ADAPTIVE_STEP ? "mdi:weather-sunny" : "mdi:drag"
-                )}
+                ${this._icon(icons[id] || SECTION_ICONS.scenes)}
                 <span class="grow">${i + 1}. ${names[id] || id}</span>
                 <span class="moves">
                   <button class="flat" data-up="${i}" ${
@@ -4020,7 +4162,7 @@ class BetterLightingPanel extends HTMLElement {
           .map(
             (scene, index) =>
               `<li data-index="${index}">${this._icon(
-                SECTION_ICONS.scenes
+                scene.icon || SECTION_ICONS.scenes
               )}<span class="grow">${scene.name}<div class="muted">${this._t(
                 "n_lights"
               ).replace(
@@ -4161,6 +4303,41 @@ class BetterLightingPanel extends HTMLElement {
       };
     }
     return this._scene.lights[entityId];
+  }
+
+  /**
+   * The light's own icon, lit the way the scene will light it.
+   *
+   * A circle of colour said what the scene does to the light but nothing
+   * about the light: a strip, a lamp and a ceiling fitting were three
+   * identical dots. Home Assistant already knows which is which, so the icon
+   * is its own and only the colour is ours.
+   */
+  _bulbIcon(entityId) {
+    const spec = this._scene.lights[entityId] || {};
+    if (spec.action === "off") return "mdi:lightbulb-off-outline";
+    if (spec.action === "leave") return "mdi:lightbulb-question-outline";
+    const state = this._hass.states[entityId];
+    return (
+      this._hass.entities?.[entityId]?.icon ||
+      state?.attributes?.icon ||
+      "mdi:lightbulb"
+    );
+  }
+
+  /** How bright the scene leaves it, as something to dim the icon by. */
+  _swatchDim(entityId) {
+    const spec = this._scene.lights[entityId] || {};
+    if (spec.action === "off") return 0.35;
+    if (spec.action === "leave") return 0.5;
+    const percent =
+      spec.brightness_pct ??
+      (this._previewing
+        ? ((this._hass.states[entityId]?.attributes?.brightness || 0) / 255) * 100
+        : null);
+    if (percent === null) return 1;
+    // Never invisible: a light at 1% is still a light somebody put there.
+    return Math.max(0.35, Math.min(1, 0.35 + (percent / 100) * 0.65));
   }
 
   _swatch(entityId) {
@@ -4359,7 +4536,14 @@ class BetterLightingPanel extends HTMLElement {
       row.className = "light";
       row.dataset.light = entityId;
       row.innerHTML = `
-        <span class="swatch" style="background:${this._swatch(entityId)}"></span>
+        <span class="bulb" style="color:${this._swatch(
+          entityId
+        )};opacity:${this._swatchDim(entityId)}">${
+          this._icon(this._bulbIcon(entityId)) ||
+          `<span class="swatch" style="background:${this._swatch(
+            entityId
+          )}"></span>`
+        }</span>
         <span class="grow">
           ${this._name(entityId)}
           <div class="muted">${this._area(entityId) || detail}</div>

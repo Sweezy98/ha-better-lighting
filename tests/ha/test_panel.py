@@ -227,6 +227,8 @@ class TestEverySettingIsReachable:
             "calibration",
             "scene",
             "preset",
+            "effect",
+            "effect_step",
             "rule",
         }
         # Every field the config flow has, the panel can draw.

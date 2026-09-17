@@ -775,6 +775,39 @@ CONF_ZONE_PROFILES = "light_profiles"
 
 # Whatever else a scene means. A film scene is not only the lights: the
 # amplifier goes on with it and off again when the room comes back.
+# Effects the user has written, kept beside the colour presets: both are
+# house-wide vocabularies that scenes and services pick from by name.
+CONF_EFFECTS = "effects"
+CONF_EFFECT_ID = "effect_id"
+CONF_EFFECT_STEPS = "steps"
+CONF_EFFECT_REPEAT = "repeat"
+CONF_EFFECT_LEVEL = "level"
+CONF_EFFECT_HOLD = "hold"
+CONF_SCENE_EFFECT = "effect_id"
+
+EFFECT_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(CONF_EFFECT_REPEAT, True, _boolean()),
+)
+
+# One step of a user-written effect. Brightness is a percentage *of whatever
+# the effect is handed*, so the same shape works on a bright notification and
+# a dim scene.
+EFFECT_STEP_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(CONF_EFFECT_LEVEL, 100, _pct(0, 100)),
+    FieldSpec(
+        CONF_TRANSITION,
+        0.4,
+        _seconds(0, 30, 0.1),
+    ),
+    FieldSpec(CONF_EFFECT_HOLD, 0.2, _seconds(0, 30, 0.1)),
+)
+
 CONF_SCENE_ENTER_SCRIPTS = "enter_scripts"
 CONF_SCENE_LEAVE_SCRIPTS = "leave_scripts"
 
@@ -793,6 +826,12 @@ ZONE_SCENE_SPECS: tuple[FieldSpec, ...] = (
         required=True,
     ),
     FieldSpec(CONF_ICON, "mdi:palette", selector.IconSelector()),
+    FieldSpec(
+        CONF_SCENE_EFFECT,
+        None,
+        _select([], "effect"),
+        options_key="effects",
+    ),
     FieldSpec(CONF_SCENE_ENTER_SCRIPTS, [], _scripts()),
     FieldSpec(CONF_SCENE_LEAVE_SCRIPTS, [], _scripts()),
     FieldSpec(

@@ -81,6 +81,9 @@ from .cycle import (
 from .cycle import (
     press_previous as cycle_press_previous,
 )
+from .effects import EffectRequest
+from .effects import frames as effect_frames
+from .effects import resolve as resolve_effect
 from .openings import WindowWatcher
 from .presence import ZonePresence
 from .profiles import Axis, LightCapabilities, LightProfile, Saturation
@@ -151,6 +154,13 @@ class ZoneController:
         self.adapt_brightness = zone.adaptive_brightness_on
         self.adapt_color = zone.adaptive_color_on
         self.night_active = False
+        # A running effect: the timer for its next frame, which lights it is
+        # playing on, and which of those were off when it started.
+        self._effect_cancel: CALLBACK_TYPE | None = None
+        self._effect_frames = None
+        self._effect_request: EffectRequest | None = None
+        self._effect_targets: tuple[str, ...] = ()
+        self._effect_was_on: dict[str, bool] = {}
         # Night mode wants this room dark, but somebody is still in it.
         self._night_turn_off_pending = False
         self.mode: ZoneMode = ZoneMode.ADAPTIVE
@@ -247,6 +257,13 @@ class ZoneController:
             unsubscribe()
         for cancel in self._manual_timers.values():
             cancel()
+        # A notification part-way through outlives a reload otherwise, and
+        # comes back to a room that no longer exists.
+        if self._effect_cancel is not None:
+            self._effect_cancel()
+            self._effect_cancel = None
+        self._effect_frames = None
+        self._effect_request = None
         self._manual_timers.clear()
         self._unsubscribers.clear()
         self._listeners.clear()
@@ -464,6 +481,10 @@ class ZoneController:
                 )
             if (entering := self.scenes.get(self.active_scene_id or "")) is not None:
                 async_run_scripts(self.hass, entering.enter_scripts, entering.name)
+        # A scene's effect belongs to the scene, so it starts and stops with
+        # it -- and anything else the room does stops it too.
+        if self.effect_playing:
+            await self.async_stop_effect(restore=False)
         if mode is ZoneMode.SCENE and scene_id:
             self._last_scene_id = scene_id
             self._last_scene_at = dt_util.utcnow()
@@ -508,12 +529,129 @@ class ZoneController:
                 await self._async_call(
                     "turn_on", {ATTR_ENTITY_ID: sorted(targets)}, Trigger.TURN_ON
                 )
+            await self._async_start_scene_effect()
             return
 
         await self.async_render(Trigger.ACTIVATE)
+        await self._async_start_scene_effect()
+
+    async def _async_start_scene_effect(self) -> None:
+        """Play the current scene's effect, if it asked for one.
+
+        After the render rather than instead of it: the scene decides the
+        colour and which lights are lit, and the effect is what they then do
+        with that.
+        """
+        scene = self.scenes.get(self.active_scene_id or "")
+        effect = resolve_effect(scene.effect_id if scene else None, self.hub.effects)
+        if scene is None or effect is None:
+            return
+        named = [light for light in scene.lights if light in self.zone.lights]
+        await self.async_play_effect(
+            EffectRequest(effect=effect, brightness_pct=100.0),
+            named or None,
+            # Leaving the scene is what puts the room back, and it knows
+            # where back is; a snapshot taken here would only fight it.
+            restore=False,
+        )
 
     async def async_activate_scene(self, scene_id: str) -> None:
         await self.async_set_mode(ZoneMode.SCENE, scene_id)
+
+    # -- effects -----------------------------------------------------------
+
+    @property
+    def effect_playing(self) -> bool:
+        return self._effect_cancel is not None
+
+    async def async_play_effect(
+        self,
+        request: EffectRequest,
+        entity_ids: list[str] | None = None,
+        *,
+        restore: bool = True,
+    ) -> None:
+        """Play an effect on this room, or on some of its lights.
+
+        ``restore`` remembers which of them were off, so a notification on a
+        dark room leaves it dark afterwards rather than lighting it for good.
+        A scene's own effect does not restore: leaving the scene is what puts
+        the room back, and it has its own idea of where back is.
+        """
+        await self.async_stop_effect(restore=False)
+        targets = [
+            entity_id
+            for entity_id in (entity_ids or self.zone.lights)
+            if entity_id in self.zone.lights
+        ]
+        if not targets:
+            return
+        self._effect_targets = tuple(targets)
+        self._effect_was_on = (
+            {
+                entity_id: (state := self.hass.states.get(entity_id)) is not None
+                and state.state == STATE_ON
+                for entity_id in targets
+            }
+            if restore
+            else {}
+        )
+        self._effect_request = request
+        self._effect_frames = iter(effect_frames(request))
+        await self._async_effect_frame()
+
+    async def _async_effect_frame(self) -> None:
+        """Send one frame and book the next."""
+        request = self._effect_request
+        if request is None:
+            return
+        frame = next(self._effect_frames, None)
+        if frame is None:
+            # A repeating effect with no duration runs until stopped, so the
+            # cycle simply starts again.
+            if request.duration or not request.effect.repeat:
+                await self.async_stop_effect()
+                return
+            self._effect_frames = iter(effect_frames(request))
+            frame = next(self._effect_frames, None)
+            if frame is None:
+                await self.async_stop_effect()
+                return
+
+        data: dict[str, Any] = {
+            ATTR_ENTITY_ID: list(self._effect_targets),
+            "brightness_pct": round(frame.brightness_pct, 1),
+        }
+        if frame.color:
+            data.update(frame.color)
+        if frame.transition:
+            data[ATTR_TRANSITION] = frame.transition
+        await self._async_call("turn_on", data, Trigger.ACTIVATE)
+
+        @callback
+        def _next(_now: datetime.datetime) -> None:
+            self._effect_cancel = None
+            self.hass.async_create_task(self._async_effect_frame())
+
+        self._effect_cancel = async_call_later(self.hass, frame.wait, _next)
+
+    async def async_stop_effect(self, *, restore: bool = True) -> None:
+        """Stop whatever is playing and put the room back."""
+        if self._effect_cancel is not None:
+            self._effect_cancel()
+            self._effect_cancel = None
+        self._effect_frames = None
+        self._effect_request = None
+        was_on, self._effect_was_on = self._effect_was_on, {}
+        targets, self._effect_targets = self._effect_targets, ()
+        if not restore or not targets:
+            return
+
+        dark = [entity_id for entity_id, lit in was_on.items() if not lit]
+        if dark:
+            await self._async_call("turn_off", {ATTR_ENTITY_ID: dark}, Trigger.ACTIVATE)
+        # And the rest back to whatever the room was doing before.
+        await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
     async def async_set_adaptive(self) -> None:
         """Return to plain adaptive lighting."""
@@ -1037,6 +1175,10 @@ class ZoneController:
         """Decide what this zone's lights should do, without sending anything."""
         if not self.adaptive_enabled and self.effective_mode is not ZoneMode.SCENE:
             # Adaptive is off and nothing else is driving: leave the lights be.
+            return []
+        if trigger is Trigger.TICK and self._effect_cancel is not None:
+            # Something is playing on these lights. The interval would step on
+            # it every ninety seconds, which looks like the effect stuttering.
             return []
 
         candidates = entity_ids if entity_ids is not None else list(self.zone.lights)

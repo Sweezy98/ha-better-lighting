@@ -27,6 +27,8 @@ from .const import (
     CONF_SCENE_ORDER,
     CONF_ZONE_ID,
     CONTROLLER_SPECS,
+    EFFECT_SPECS,
+    EFFECT_STEP_SPECS,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
     MODE_SPECS,
@@ -309,6 +311,8 @@ def schema(language: str = "en") -> dict[str, Any]:
         "calibration": _table(LIGHT_PROFILE_SPECS),
         "scene": _table(ZONE_SCENE_SPECS),
         "preset": _table(COLOR_PRESET_SPECS),
+        "effect": _table(EFFECT_SPECS),
+        "effect_step": _table(EFFECT_STEP_SPECS),
         # Rules are built per mode, since their state picker depends on the
         # states that mode defines, and their scene picker on the room the
         # rule names. Both are marked as runtime choices so the panel fills

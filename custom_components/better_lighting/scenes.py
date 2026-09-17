@@ -206,6 +206,9 @@ class Scene:
     ignore_presence: bool = False
     transition: float | None = None
     on_unsupported_color: UnsupportedColorPolicy = UnsupportedColorPolicy.ADAPTIVE
+    # A shape to play on this scene's lights for as long as it is showing:
+    # a candle for a film, a slow pulse for something waiting.
+    effect_id: str | None = None
     # Whatever else this scene means, beyond the lights. Entity ids, which is
     # all this layer knows about them -- running one is the adapter's job.
     enter_scripts: tuple[str, ...] = ()

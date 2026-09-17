@@ -160,6 +160,18 @@
         "data_description": {
           "intercept_member_calls": "Catch calls aimed straight at one of this room's lights, so a dashboard or automation that bypasses the room is still noticed as a manual change rather than being overwritten at the next update."
         }
+      },
+      "effect_form": {
+        "title": "Effect",
+        "data": {
+          "level": "Brightness at this step",
+          "hold": "Stay there for",
+          "repeat": "Start again when it ends"
+        },
+        "data_description": {
+          "level": "A share of whatever brightness the effect is given, so the same shape works on a notification and on a dim scene.",
+          "repeat": "On for a shape that fills whatever time it is given; off for one that happens once and then holds."
+        }
       }
     },
     "error": {
@@ -257,7 +269,8 @@
             "icon": "Icon",
             "transition": "Transition",
             "enter_scripts": "Scripts to run when this scene starts",
-            "leave_scripts": "Scripts to run when it ends"
+            "leave_scripts": "Scripts to run when it ends",
+            "effect_id": "Effect"
           },
           "sections": {
             "advanced": {
@@ -272,7 +285,8 @@
           },
           "data_description": {
             "enter_scripts": "A scene is not only its lights. Run when the room enters this scene, including from the editor's live mode.",
-            "leave_scripts": "Run when the room leaves it, for whatever the scene turned on."
+            "leave_scripts": "Run when the room leaves it, for whatever the scene turned on.",
+            "effect_id": "What the lights of this scene do over time: breathe, flicker like a candle, pulse. Runs for as long as the scene is showing."
           }
         },
         "edit_scene": {
@@ -320,7 +334,8 @@
             "icon": "Icon",
             "transition": "Transition",
             "enter_scripts": "Scripts to run when this scene starts",
-            "leave_scripts": "Scripts to run when it ends"
+            "leave_scripts": "Scripts to run when it ends",
+            "effect_id": "Effect"
           },
           "sections": {
             "advanced": {
@@ -335,7 +350,8 @@
           },
           "data_description": {
             "enter_scripts": "A scene is not only its lights. Run when the room enters this scene, including from the editor's live mode.",
-            "leave_scripts": "Run when the room leaves it, for whatever the scene turned on."
+            "leave_scripts": "Run when the room leaves it, for whatever the scene turned on.",
+            "effect_id": "What the lights of this scene do over time: breathe, flicker like a candle, pulse. Runs for as long as the scene is showing."
           }
         },
         "add_calibration": {
@@ -1111,6 +1127,9 @@
         "rgb_color": "Go amber",
         "turn_off": "Switch the room off"
       }
+    },
+    "effect": {
+      "options": {}
     }
   },
   "entity": {
@@ -1294,6 +1313,40 @@
         "entity_id": {
           "name": "Target",
           "description": "Any entity of the rooms to ask, instead of naming them."
+        }
+      }
+    },
+    "notify": {
+      "name": "Notify with the lights",
+      "description": "Say something with a room's lights and then put them back: green when the washing is done, amber when a door was left open, red when it matters. Whatever the room was doing resumes afterwards, and lights that were off go back off.",
+      "fields": {
+        "zone": {
+          "name": "Rooms",
+          "description": "Which rooms to say it in."
+        },
+        "lights": {
+          "name": "Lights",
+          "description": "Only these lights of the room, rather than all of them."
+        },
+        "effect": {
+          "name": "Effect",
+          "description": "solid, flash, pulse, breathe, candle -- or one you have written yourself."
+        },
+        "duration": {
+          "name": "For",
+          "description": "How long to say it."
+        },
+        "brightness_pct": {
+          "name": "Brightness",
+          "description": "How bright at its brightest. The effect works in fractions of this."
+        },
+        "rgb_color": {
+          "name": "Colour",
+          "description": "The colour to say it in."
+        },
+        "color_temp_kelvin": {
+          "name": "Colour temperature",
+          "description": "Instead of a colour, for lights that have no colour of their own."
         }
       }
     }

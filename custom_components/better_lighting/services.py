@@ -19,6 +19,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+from .effects import EffectRequest
+from .effects import resolve as resolve_effect
 from .render import ZoneMode
 from .zone import Trigger, ZoneController
 
@@ -33,6 +35,7 @@ SERVICE_SET_MODE = "set_mode"
 SERVICE_END_MODE = "end_mode"
 SERVICE_REJOIN_MODE = "rejoin_mode"
 SERVICE_NIGHT_LIGHTS_OFF = "night_lights_off"
+SERVICE_NOTIFY = "notify"
 
 # Every service this module defines, taken from the constants above rather
 # than written out a second time: the removal list was hand-kept and went out
@@ -51,6 +54,12 @@ ATTR_SCENE = "scene"
 ATTR_MODE = "mode"
 ATTR_STATE = "state"
 ATTR_RESTORE = "restore"
+ATTR_EFFECT = "effect"
+ATTR_DURATION = "duration"
+ATTR_BRIGHTNESS_PCT = "brightness_pct"
+ATTR_RGB_COLOR = "rgb_color"
+ATTR_COLOR_TEMP = "color_temp_kelvin"
+ATTR_LIGHTS = "lights"
 
 _TARGET = {
     vol.Optional(ATTR_ZONE): vol.All(cv.ensure_list, [cv.string]),
@@ -89,6 +98,28 @@ REJOIN_MODE_SCHEMA = vol.Schema({**_TARGET, vol.Required(ATTR_MODE): cv.string})
 # The whole house unless a room is named, which is the shape the scenario
 # wants: somebody in bed asking for whatever is still on to go off.
 NIGHT_LIGHTS_OFF_SCHEMA = vol.Schema(_TARGET)
+
+# Everything optional but the room: a notification with no colour is the
+# room's own light doing the shape, which is a perfectly good notification.
+NOTIFY_SCHEMA = vol.Schema(
+    {
+        **_TARGET,
+        vol.Optional(ATTR_LIGHTS): vol.All(cv.ensure_list, [cv.entity_id]),
+        vol.Optional(ATTR_EFFECT, default="flash"): cv.string,
+        vol.Optional(ATTR_DURATION, default=3): vol.All(
+            vol.Coerce(float), vol.Range(min=0.2, max=600)
+        ),
+        vol.Optional(ATTR_BRIGHTNESS_PCT): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=100)
+        ),
+        vol.Optional(ATTR_RGB_COLOR): vol.All(
+            cv.ensure_list, [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))]
+        ),
+        vol.Optional(ATTR_COLOR_TEMP): vol.All(
+            vol.Coerce(int), vol.Range(min=1000, max=10000)
+        ),
+    }
+)
 
 CLEAR_MANUAL_SCHEMA = vol.Schema(
     {**_TARGET, vol.Optional("lights"): vol.All(cv.ensure_list, [cv.entity_id])}
@@ -199,6 +230,30 @@ def async_register_services(hass: HomeAssistant) -> None:
         for controller in controllers:
             await controller.async_request_night_off()
 
+    async def _notify(call: ServiceCall) -> None:
+        colour: dict[str, Any] = {}
+        if rgb := call.data.get(ATTR_RGB_COLOR):
+            colour[ATTR_RGB_COLOR] = list(rgb)
+        elif kelvin := call.data.get(ATTR_COLOR_TEMP):
+            colour[ATTR_COLOR_TEMP] = kelvin
+
+        lights = call.data.get(ATTR_LIGHTS)
+        for controller in resolve_controllers(hass, call):
+            effect = resolve_effect(call.data[ATTR_EFFECT], controller.hub.effects)
+            if effect is None:
+                raise ServiceValidationError(
+                    f"No effect called {call.data[ATTR_EFFECT]!r}."
+                )
+            await controller.async_play_effect(
+                EffectRequest(
+                    effect=effect,
+                    brightness_pct=float(call.data.get(ATTR_BRIGHTNESS_PCT, 100)),
+                    color=colour or None,
+                    duration=float(call.data[ATTR_DURATION]),
+                ),
+                list(lights) if lights else None,
+            )
+
     async def _set_adaptive(call: ServiceCall) -> None:
         for controller in resolve_controllers(hass, call):
             # Requirement 1: force a zone back to adaptive from a script,
@@ -272,6 +327,7 @@ def async_register_services(hass: HomeAssistant) -> None:
         _night_lights_off,
         NIGHT_LIGHTS_OFF_SCHEMA,
     )
+    hass.services.async_register(DOMAIN, SERVICE_NOTIFY, _notify, NOTIFY_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_PRESS, _press, PRESS_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_CYCLE, _cycle, CYCLE_SCHEMA)
     hass.services.async_register(

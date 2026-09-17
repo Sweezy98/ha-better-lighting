@@ -160,6 +160,18 @@
         "data_description": {
           "intercept_member_calls": "Aufrufe abfangen, die direkt an eine Lampe dieses Raums gehen. So wird eine Änderung über ein Dashboard oder eine Automatisierung, die den Raum umgeht, als manuelle Änderung erkannt und nicht bei der nächsten Aktualisierung überschrieben."
         }
+      },
+      "effect_form": {
+        "title": "Effect",
+        "data": {
+          "level": "Helligkeit in diesem Schritt",
+          "hold": "So lange halten",
+          "repeat": "Von vorn beginnen, wenn er endet"
+        },
+        "data_description": {
+          "level": "Ein Anteil der Helligkeit, die dem Effekt übergeben wird — so passt dieselbe Form für eine Benachrichtigung und für eine gedimmte Szene.",
+          "repeat": "An für eine Form, die die vorgegebene Zeit füllt; aus für eine, die einmal abläuft und dann stehen bleibt."
+        }
       }
     },
     "error": {
@@ -257,7 +269,8 @@
             "icon": "Symbol",
             "transition": "Übergangsdauer",
             "enter_scripts": "Skripte beim Start dieser Szene",
-            "leave_scripts": "Skripte beim Beenden"
+            "leave_scripts": "Skripte beim Beenden",
+            "effect_id": "Effekt"
           },
           "sections": {
             "advanced": {
@@ -272,7 +285,8 @@
           },
           "data_description": {
             "enter_scripts": "Eine Szene ist nicht nur ihr Licht. Wird ausgeführt, wenn der Raum in diese Szene wechselt — auch aus dem Live-Modus des Editors heraus.",
-            "leave_scripts": "Wird ausgeführt, wenn der Raum sie verlässt — für alles, was die Szene eingeschaltet hat."
+            "leave_scripts": "Wird ausgeführt, wenn der Raum sie verlässt — für alles, was die Szene eingeschaltet hat.",
+            "effect_id": "Was die Lampen dieser Szene mit der Zeit tun: atmen, wie eine Kerze flackern, pulsieren. Läuft, solange die Szene aktiv ist."
           }
         },
         "edit_scene": {
@@ -320,7 +334,8 @@
             "icon": "Symbol",
             "transition": "Übergangsdauer",
             "enter_scripts": "Skripte beim Start dieser Szene",
-            "leave_scripts": "Skripte beim Beenden"
+            "leave_scripts": "Skripte beim Beenden",
+            "effect_id": "Effekt"
           },
           "sections": {
             "advanced": {
@@ -335,7 +350,8 @@
           },
           "data_description": {
             "enter_scripts": "Eine Szene ist nicht nur ihr Licht. Wird ausgeführt, wenn der Raum in diese Szene wechselt — auch aus dem Live-Modus des Editors heraus.",
-            "leave_scripts": "Wird ausgeführt, wenn der Raum sie verlässt — für alles, was die Szene eingeschaltet hat."
+            "leave_scripts": "Wird ausgeführt, wenn der Raum sie verlässt — für alles, was die Szene eingeschaltet hat.",
+            "effect_id": "Was die Lampen dieser Szene mit der Zeit tun: atmen, wie eine Kerze flackern, pulsieren. Läuft, solange die Szene aktiv ist."
           }
         },
         "add_calibration": {
@@ -1111,6 +1127,9 @@
         "rgb_color": "Auf Bernstein wechseln",
         "turn_off": "Den Raum ausschalten"
       }
+    },
+    "effect": {
+      "options": {}
     }
   },
   "entity": {
@@ -1294,6 +1313,40 @@
         "entity_id": {
           "name": "Ziel",
           "description": "Eine beliebige Entität der Räume, statt sie zu benennen."
+        }
+      }
+    },
+    "notify": {
+      "name": "Mit dem Licht Bescheid geben",
+      "description": "Etwas mit dem Licht eines Raums sagen und es danach zurücksetzen: grün, wenn die Wäsche fertig ist, orange, wenn eine Tür offen steht, rot, wenn es darauf ankommt. Danach macht der Raum weiter, was er vorher getan hat, und Lampen, die aus waren, sind wieder aus.",
+      "fields": {
+        "zone": {
+          "name": "Räume",
+          "description": "In welchen Räumen es gesagt wird."
+        },
+        "lights": {
+          "name": "Lampen",
+          "description": "Nur diese Lampen des Raums statt aller."
+        },
+        "effect": {
+          "name": "Effekt",
+          "description": "solid, flash, pulse, breathe, candle — oder ein selbst geschriebener."
+        },
+        "duration": {
+          "name": "Für",
+          "description": "Wie lange es gesagt wird."
+        },
+        "brightness_pct": {
+          "name": "Helligkeit",
+          "description": "Wie hell im hellsten Moment. Der Effekt arbeitet mit Bruchteilen davon."
+        },
+        "rgb_color": {
+          "name": "Farbe",
+          "description": "In welcher Farbe es gesagt wird."
+        },
+        "color_temp_kelvin": {
+          "name": "Farbtemperatur",
+          "description": "Statt einer Farbe, für Lampen ohne eigene Farbe."
         }
       }
     }

@@ -2955,11 +2955,14 @@ class BetterLightingPanel extends HTMLElement {
           return;
         }
         this._view = { kind: section };
-        this._expandedSub = `${this._roomId}:${section}`;
         if (chosenItem === undefined) {
+          // The entry itself leads to the list of them, which is not inside
+          // the branch -- so it does not unfold it. The chevron does that,
+          // and so does arriving at one of the entries underneath.
           this._paint();
           return;
         }
+        this._expandedSub = `${this._roomId}:${section}`;
         if (section === "switches") {
           const switches = this._room?.data.switches || [];
           this._view = {
@@ -3394,6 +3397,7 @@ class BetterLightingPanel extends HTMLElement {
         row.addEventListener("click", (event) => {
           if (event.target.closest("[data-delete],[data-duplicate]")) return;
           this._view = { ...this._view, index: Number(row.dataset.index) };
+          this._expandedSub = `${room.id}:${this._view.kind}`;
           this._paint();
         })
       );
@@ -4051,6 +4055,8 @@ class BetterLightingPanel extends HTMLElement {
         if (event.target.closest("[data-delete],[data-duplicate]")) return;
         this._scene = JSON.parse(JSON.stringify(room.scenes[Number(item.dataset.index)]));
         this._selectedLight = room.lights[0] || null;
+        this._view = { ...this._view, index: Number(item.dataset.index) };
+        this._expandedSub = `${room.id}:scenes`;
         this._paint();
       })
     );

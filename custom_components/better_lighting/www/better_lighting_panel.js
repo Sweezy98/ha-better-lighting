@@ -1454,7 +1454,8 @@ class BetterLightingPanel extends HTMLElement {
     this._refreshTimer = setTimeout(() => this._refreshDiagnostics(), 600);
   }
 
-  /** Subscribe to the events the integration fires, and keep the last few. */
+  /**
+   * What has happened, from before this page was opened and as it happens.
    *
    * The stored ones first: the bus remembers nothing, so a page opened after
    * the fact used to show an empty log and the impression that nothing had

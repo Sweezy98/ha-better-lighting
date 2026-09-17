@@ -13,6 +13,7 @@ import json
 import pathlib
 import re
 
+import pytest
 import yaml
 
 COMPONENT = pathlib.Path(__file__).parents[2] / "custom_components" / "better_lighting"
@@ -594,3 +595,33 @@ def test_the_panel_asks_in_its_own_dialog() -> None:
     assert "_ask({" in panel_js
     # Backing out has to be possible without answering the question.
     assert 'event.key === "Escape"' in panel_js
+
+
+def test_the_panel_parses_as_a_module() -> None:
+    """A broken panel is a blank page, and nothing else here would notice.
+
+    The suite reads this file as text, so a stray character makes every
+    assertion about its contents pass while the browser refuses to run any of
+    it. Parsed with the same grammar the browser uses -- as a module, because
+    `node --check` on a .js file parses it as CommonJS and quietly accepts
+    things a module rejects, which is exactly how a mangled comment shipped.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to parse with")
+
+    source = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False) as handle:
+        handle.write(source)
+        copy = handle.name
+    try:
+        done = subprocess.run(
+            [node, "--check", copy], capture_output=True, text=True, check=False
+        )
+    finally:
+        pathlib.Path(copy).unlink(missing_ok=True)
+    assert done.returncode == 0, done.stderr

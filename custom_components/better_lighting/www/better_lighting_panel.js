@@ -21,6 +21,12 @@ const ALL = "*";
 // ADAPTIVE_STEP on the Python side.
 const ADAPTIVE_STEP = "__adaptive__";
 
+// Where Home Assistant keeps every integration's icon. Linked rather than
+// shipped, so replacing the icon is a change there rather than a release
+// here -- and until this integration is listed, nothing loads and the
+// panel's own icon is shown instead.
+const BRAND_ICON = "https://brands.home-assistant.io/better_lighting/icon.png";
+
 // The fingerprint this copy was served under, taken from its own URL. The
 // backend stamps the URL with a hash of the file, so comparing the two is how
 // an open page learns it has been superseded.
@@ -871,7 +877,11 @@ class BetterLightingPanel extends HTMLElement {
     // The one branch of the menu that is open, by id. One at a time: going
     // somewhere else folds away what you have left, so a house with a dozen
     // rooms does not end up as a menu you have to scroll.
-    this._expanded = null;
+    //
+    // Undefined means nobody has said; null means somebody shut it. Without
+    // the difference, shutting the room you are standing in was immediately
+    // undone by the rule that opens the room you are standing in.
+    this._expanded = undefined;
     // And the one list *inside* a room that is open: its scenes, or its
     // switches. Same rule one level down.
     this._expandedSub = null;
@@ -924,6 +934,7 @@ class BetterLightingPanel extends HTMLElement {
     if (this._closeOverflow) window.removeEventListener("click", this._closeOverflow);
     document.removeEventListener("visibilitychange", this._visibility);
     clearInterval(this._versionTimer);
+    clearTimeout(this._refreshTimer);
     for (const off of this._unsubscribers || []) {
       try {
         off();
@@ -1104,7 +1115,57 @@ class BetterLightingPanel extends HTMLElement {
    */
   async _paintDiagnostics() {
     const main = this.shadowRoot.getElementById("main");
+    this._page(
+      `<div id="diag-state"></div>
+       <details open>
+         <summary>${this._t("the_curve")}</summary>
+         <div class="fold-body" id="curve"></div>
+       </details>
+       <details open>
+         <summary>${this._t("live_events")}</summary>
+         <div class="fold-body log" id="events"><p class="muted">${this._t(
+           "waiting_for_events"
+         )}</p></div>
+       </details>`,
+      `<button class="flat" id="refresh">${this._icon(
+         "mdi:refresh"
+       )}<span>${this._t("refresh")}</span></button>
+       <button class="flat" id="clear-log">${this._icon(
+         "mdi:notification-clear-all"
+       )}<span>${this._t("clear_log")}</span></button>`
+    );
+
+    main.querySelector("#refresh").addEventListener("click", () =>
+      this._refreshDiagnostics()
+    );
+    main.querySelector("#clear-log").addEventListener("click", async () => {
+      if (!(await this._confirm(this._t("clear_log")))) return;
+      await this._call("activity", { clear: true });
+      this._events = null;
+      await this._watchEvents();
+    });
+    await this._refreshDiagnostics();
+    this._paintCurve(main.querySelector("#curve"));
+    this._watchEvents();
+  }
+
+  /**
+   * Redraw what every room and mode believes, without redrawing the page.
+   *
+   * Which is the difference between a diagnostics page and a snapshot of
+   * one: press a switch and the table beside you says what changed. Only
+   * this block is replaced, so the curve is not refetched, the log is not
+   * rebuilt, and an accordion somebody opened stays open.
+   */
+  async _refreshDiagnostics() {
+    const into = this.shadowRoot.getElementById("diag-state");
+    if (!into) return;
     const data = await this._call("diagnostics");
+    const open = new Set(
+      [...into.querySelectorAll("details[open]")].map(
+        (fold) => fold.querySelector("summary")?.textContent
+      )
+    );
     const roomName = Object.fromEntries(
       this._rooms.map((room) => [room.id, room.name])
     );
@@ -1191,47 +1252,20 @@ class BetterLightingPanel extends HTMLElement {
       )
       .join("");
 
-    // One card, grouped inside it: this was four stacked cards, which reads
-    // as four pages that happen to be underneath each other.
-    this._page(
-      `${rooms}
-       ${modes}
-       ${
-         switches
-           ? `<h3>${this._labels.sections.switches || this._t("switches")}</h3>
-              <p class="muted">${this._t("seen_hint")}</p>
-              ${switches}`
-           : ""
-       }
-       <details open>
-         <summary>${this._t("the_curve")}</summary>
-         <div class="fold-body" id="curve"></div>
-       </details>
-       <details open>
-         <summary>${this._t("live_events")}</summary>
-         <div class="fold-body log" id="events"><p class="muted">${this._t(
-           "waiting_for_events"
-         )}</p></div>
-       </details>`,
-      `<button class="flat" id="refresh">${this._icon(
-         "mdi:refresh"
-       )}<span>${this._t("refresh")}</span></button>
-       <button class="flat" id="clear-log">${this._icon(
-         "mdi:notification-clear-all"
-       )}<span>${this._t("clear_log")}</span></button>`
-    );
-
-    main.querySelector("#refresh").addEventListener("click", () =>
-      this._paintDiagnostics()
-    );
-    main.querySelector("#clear-log").addEventListener("click", async () => {
-      if (!(await this._confirm(this._t("clear_log")))) return;
-      await this._call("activity", { clear: true });
-      this._events = null;
-      await this._watchEvents();
-    });
-    this._paintCurve(main.querySelector("#curve"));
-    this._watchEvents();
+    into.innerHTML = `${rooms}
+      ${modes}
+      ${
+        switches
+          ? `<h3>${this._labels.sections.switches || this._t("switches")}</h3>
+             <p class="muted">${this._t("seen_hint")}</p>
+             ${switches}`
+          : ""
+      }`;
+    // Whatever was unfolded before stays unfolded, or watching a room would
+    // mean opening it again after every press.
+    for (const fold of into.querySelectorAll("details")) {
+      if (open.has(fold.querySelector("summary")?.textContent)) fold.open = true;
+    }
   }
 
   /**
@@ -1409,7 +1443,18 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /**
-   * What has happened, from before this page was opened and as it happens.
+   * Something happened, so what the page says about it is out of date.
+   *
+   * Debounced: a burst of presses is one redraw, and the fetch behind it is
+   * not run once per event.
+   */
+  _noteChanged() {
+    if (this._view.kind !== "diagnostics") return;
+    clearTimeout(this._refreshTimer);
+    this._refreshTimer = setTimeout(() => this._refreshDiagnostics(), 600);
+  }
+
+  /** Subscribe to the events the integration fires, and keep the last few. */
    *
    * The stored ones first: the bus remembers nothing, so a page opened after
    * the fact used to show an empty log and the impression that nothing had
@@ -1451,6 +1496,7 @@ class BetterLightingPanel extends HTMLElement {
           // A log that grows forever is a memory leak with a nice name.
           this._events = this._events.slice(0, 200);
           this._renderEvents();
+          this._noteChanged();
         }, kind);
         (this._unsubscribers = this._unsubscribers || []).push(off);
       } catch {
@@ -1513,7 +1559,12 @@ class BetterLightingPanel extends HTMLElement {
   _renderEvents() {
     const log = this.shadowRoot.getElementById("events");
     if (!log) return;
-    if (!this._events.length) return;
+    if (!this._events?.length) {
+      // Said rather than skipped: leaving the last lot on screen is how
+      // clearing the log looked like it had done nothing.
+      log.innerHTML = `<p class="muted">${this._t("waiting_for_events")}</p>`;
+      return;
+    }
     log.innerHTML = this._events
       .map((event) => {
         const { icon, title, where } = this._describeEvent(event);
@@ -1752,8 +1803,9 @@ class BetterLightingPanel extends HTMLElement {
         /* Home Assistant hides its own sidebar on a narrow screen and expects
            the page to offer the way out. Without this the panel is a room with
            no door. */
-        #menu { display:none; }
+        #menu, #drawer { display:none; }
         @media (max-width:870px) { #menu { display:inline-flex; } }
+        @media (max-width:800px) { #drawer { display:inline-flex; } }
         @media (max-width:800px) {
           /* No room for them, and the phone's own back button does the job
              now that it walks the trail rather than leaving the panel. */
@@ -1781,7 +1833,15 @@ class BetterLightingPanel extends HTMLElement {
                    and the content pane is a frame with its own scrollbar. */
                 align-items:stretch; overflow:hidden; }
         .nav { overflow:auto; position:relative;
-               transition:width .2s ease, box-shadow .2s ease; }
+               transition:width .2s ease, box-shadow .2s ease, padding .2s ease; }
+        /* Where the button that folds it lives: on the menu, since it is the
+           menu it folds. */
+        .nav-top { display:flex; justify-content:flex-end; margin:-8px -8px 4px; }
+        .nav-top .icon-btn { width:36px; height:36px;
+                             color:var(--secondary-text-color); }
+        .nav-top .icon-btn:hover { background:var(--secondary-background-color);
+                                   color:var(--primary-text-color); }
+        @media (max-width:800px) { .nav-top { display:none; } }
         /* Folded to a column of icons. The labels are not hidden, they are
            simply outside a menu this narrow -- which is what lets the width
            animate rather than things blinking in and out of it. */
@@ -1794,18 +1854,19 @@ class BetterLightingPanel extends HTMLElement {
         .body[data-rail="1"] #main { grid-column:2; }
         .body[data-rail="1"] .nav:hover { width:var(--nav); overflow:auto;
                padding:16px 20px; box-shadow:4px 0 16px rgba(0,0,0,.35); }
-        /* Clipped by the edge of the rail rather than wrapped inside it,
-           which is what makes the width worth animating. */
         .body[data-rail="1"] .nav li, .body[data-rail="1"] .nav li .grow,
         .body[data-rail="1"] .nav button { white-space:nowrap; }
-        .body[data-rail="1"] .nav li .grow { overflow:hidden; }
+        /* Folded, this is a column of icons and nothing else: no half-read
+           labels, and no gaps where the rooms and their screens would be. */
+        .body[data-rail="1"] .nav:not(:hover) .grow,
+        .body[data-rail="1"] .nav:not(:hover) .twist,
+        .body[data-rail="1"] .nav:not(:hover) ul.group,
         .body[data-rail="1"] .nav:not(:hover) ul.sub,
-        .body[data-rail="1"] .nav:not(:hover) .bar {
-          max-height:0; margin-top:0; margin-bottom:0; opacity:0;
-          overflow:hidden; transition:max-height .2s ease, opacity .15s ease; }
-        .body[data-rail="1"] .nav ul.sub, .body[data-rail="1"] .nav .bar {
-          max-height:640px; opacity:1;
-          transition:max-height .25s ease, opacity .2s ease; }
+        .body[data-rail="1"] .nav:not(:hover) .bar { display:none; }
+        .body[data-rail="1"] .nav:not(:hover) li { justify-content:center;
+                                                   padding:10px 0; }
+        .body[data-rail="1"] .nav:not(:hover) ul { margin-top:0; }
+        .body[data-rail="1"] .nav:not(:hover) .nav-top { justify-content:center; }
         /* The edge you drag to make it wider, which follows whatever width
            the menu is set to rather than being told separately. */
         .nav-grip { position:absolute; top:var(--gutter); bottom:var(--gutter);
@@ -1866,6 +1927,11 @@ class BetterLightingPanel extends HTMLElement {
         .page-body > * { flex:0 0 auto; }
         /* No rows, so no box around them either. */
         .page-body ul:empty { display:none; }
+        /* The way to add one belongs in the list, as its last row, rather
+           than loose underneath it. */
+        .page-body li.adder { padding:6px 10px; }
+        .page-body li.adder > * { flex:1 1 auto; min-width:0; }
+        .page-body li.muted { color:var(--secondary-text-color); font-size:13px; }
         /* Nothing on a page is wider than the page. Borrowed controls bring
            their own widths, and a long entity id has no space to break at. */
         .page-body *, .page-body ha-selector { max-width:100%; box-sizing:border-box; }
@@ -2047,10 +2113,29 @@ class BetterLightingPanel extends HTMLElement {
         .modal-card { width:min(420px, 100%); border-radius:12px; overflow:hidden;
                       background:var(--card-background-color,#fff);
                       box-shadow:0 8px 32px rgba(0,0,0,.4); }
-        .modal-card > :not(.page-foot) { margin:0 20px 12px; }
-        .modal-card > h2 { margin-top:20px; }
+        /* The padding belongs to the card. Hanging it off the margins of
+           whichever child happened to be first meant every new dialog had to
+           remember to be that child. */
+        .modal-card { padding:24px; }
+        .modal-card > * { margin:0 0 14px; }
+        .modal-card > :last-child { margin-bottom:0; }
+        .modal-card > .page-foot { margin:20px -24px -24px; padding:12px 24px; }
+        .about-head { display:flex; align-items:center; gap:14px; }
+        .about-head h2 { margin:0; }
+        .about-head ha-icon { --mdc-icon-size:40px; color:var(--primary-color); }
+        .about-icon { width:40px; height:40px; border-radius:8px;
+                      object-fit:contain; }
+        /* Nothing to decide here, so there is nothing to confirm: the corner
+           and the backdrop are both ways out and neither needs a footer. */
+        .modal-card { position:relative; }
+        .shut { position:absolute; top:14px; right:14px; margin:0; width:32px; height:32px;
+                padding:0; border-radius:50%; font-size:22px; line-height:1;
+                background:transparent; color:var(--secondary-text-color); }
+        .shut:hover { background:var(--secondary-background-color);
+                      color:var(--primary-text-color); }
+        .about-head { padding-right:36px; }
         .modal-card a { color:var(--primary-color); }
-        table.about { width:calc(100% - 40px); }
+        table.about { width:100%; }
         table.about th { text-align:left; font-weight:400; padding:2px 12px 2px 0;
                          color:var(--secondary-text-color); white-space:nowrap; }
         /* A few small movements, and none of them in anybody's way. */
@@ -2305,7 +2390,18 @@ class BetterLightingPanel extends HTMLElement {
     backdrop.className = "modal";
     backdrop.innerHTML = `
       <div class="modal-card">
-        <h2>${about.name || "Better Lighting"}</h2>
+        <div class="about-head">
+          <!-- Linked rather than shipped, from the registry Home Assistant
+               draws every integration's icon from: a new icon there is a new
+               icon here, with nothing to release. Until this integration is
+               listed the image will not load, and the panel's own icon
+               stands in. -->
+          <img class="about-icon" alt="" src="${
+            BRAND_ICON
+          }" onerror="this.replaceWith(this.nextElementSibling)">
+          ${this._icon("mdi:lightbulb-group")}
+          <h2>${about.name || "Better Lighting"}</h2>
+        </div>
         <p class="muted">${this._t("about_blurb")}</p>
         <table class="about">
           <tr><th>${this._t("about_version")}</th>
@@ -2318,12 +2414,9 @@ class BetterLightingPanel extends HTMLElement {
         <p>${link(about.documentation, this._t("about_repo"))}${
           about.documentation && about.issues ? " · " : ""
         }${link(about.issues, this._t("about_issues"))}</p>
-        <div class="page-foot">
-          <div class="foot-end"></div>
-          <div class="foot-end"><button id="about-close">${this._t(
-            "close"
-          )}</button></div>
-        </div>
+        <button class="shut" id="about-close" title="${this._t(
+          "close"
+        )}">&times;</button>
       </div>`;
     this.shadowRoot.appendChild(backdrop);
     const shut = () => backdrop.remove();
@@ -2620,7 +2713,7 @@ class BetterLightingPanel extends HTMLElement {
       this._view.kind
     );
     // Opening a room shows its screens; the chevron folds it away again.
-    if (inRoom && this._expanded === null) this._expanded = this._roomId;
+    if (inRoom && this._expanded === undefined) this._expanded = this._roomId;
     const extras = [
       ["scenes", this._t("scenes")],
       ["switches", this._t("switches")],
@@ -2714,9 +2807,16 @@ class BetterLightingPanel extends HTMLElement {
       .join("");
 
     nav.innerHTML = `
+      <div class="nav-top">
+        <button class="icon-btn" id="nav-fold" title="${this._t("menu")}">${icon(
+          this._railed ? "mdi:chevron-double-right" : "mdi:chevron-double-left"
+        )}</button>
+      </div>
       <div class="nav-body" id="nav-body">
         <ul>
-          <li class="section" data-overview="rooms" aria-selected="${
+          <li class="section" data-overview="rooms" data-inside="${
+            this._collapsed.rooms && inRoom ? "1" : "0"
+          }" aria-selected="${
             this._view.kind === "rooms"
           }">${icon("mdi:home-group")}<span class="grow">${this._t(
             "rooms"
@@ -2729,7 +2829,9 @@ class BetterLightingPanel extends HTMLElement {
           )}</span></li>
         </ul>
         <ul style="margin-top:12px">
-          <li class="section" data-overview="modes" aria-selected="${
+          <li class="section" data-overview="modes" data-inside="${
+            this._collapsed.modes && this._view.kind === "mode" ? "1" : "0"
+          }" aria-selected="${
             this._view.kind === "modes"
           }">${icon("mdi:movie-open-outline")}<span class="grow">${this._t(
             "modes"
@@ -2929,6 +3031,10 @@ class BetterLightingPanel extends HTMLElement {
         );
       })
     );
+    nav.querySelector("#nav-fold").addEventListener("click", (event) => {
+      event.stopPropagation();
+      this._toggleNav();
+    });
     nav.querySelectorAll("[data-sub-twist]").forEach((handle) =>
       handle.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -3649,7 +3755,7 @@ class BetterLightingPanel extends HTMLElement {
 
     const fold = document.createElement("details");
     fold.innerHTML = `
-      <summary>${this._t("what_it_cycles")} (${order.length + 1})</summary>
+      <summary>${this._t("what_it_cycles")} (${order.length})</summary>
       <div class="fold-body">
         <p class="muted">${this._t("cycle_hint")}</p>
         <ul id="order">
@@ -3674,12 +3780,12 @@ class BetterLightingPanel extends HTMLElement {
               </li>`
             )
             .join("")}
+          ${
+            unused.length
+              ? `<li class="adder" id="add-scene"></li>`
+              : `<li class="muted">${this._t("all_scenes_used")}</li>`
+          }
         </ul>
-        ${
-          unused.length
-            ? `<div class="bar" id="add-scene"></div>`
-            : `<p class="muted">${this._t("all_scenes_used")}</p>`
-        }
       </div>`;
     into.appendChild(fold);
 

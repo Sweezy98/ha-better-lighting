@@ -144,6 +144,67 @@ class TestSessionSurvivesAReload:
         assert hass.states.get("light.kitchen_main").state == "off"
 
 
+class TestTidyingUp:
+    """Stored configuration that outlived what it referred to."""
+
+    async def test_a_deleted_scene_leaves_a_switch_alone(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Its id lingers in every switch that cycled it, which is what a
+        repair notice counts when it says a switch points at nothing."""
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        await setup_hub(hass, entry)
+        ids = subentry_ids(entry)
+        zone = entry.subentries[ids["Kitchen"]]
+        hass.config_entries.async_update_subentry(
+            entry,
+            zone,
+            data={
+                **zone.data,
+                "switches": [
+                    {
+                        "switch_id": "one",
+                        "name": "Wall",
+                        "scene_order": ["__adaptive__", ids["Cosy"], "long_gone"],
+                        "scene_order_excluded": ["also_gone"],
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+
+        stored = entry.subentries[ids["Kitchen"]].data["switches"][0]
+        assert stored["scene_order"] == ["__adaptive__", ids["Cosy"]]
+        assert stored["scene_order_excluded"] == []
+
+    async def test_adaptive_is_not_a_missing_scene(self, hass: HomeAssistant) -> None:
+        """It is written in the list the way a scene is and answers to no
+        scene, which is not the same as pointing at one that has gone."""
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = hub_entry(subentries_data=[zone_subentry()])
+        await setup_hub(hass, entry)
+        ids = subentry_ids(entry)
+        zone = entry.subentries[ids["Kitchen"]]
+        hass.config_entries.async_update_subentry(
+            entry,
+            zone,
+            data={
+                **zone.data,
+                "switches": [
+                    {
+                        "switch_id": "one",
+                        "name": "Wall",
+                        "scene_order": ["__adaptive__"],
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+
+        assert not _our_issues(hass)
+
+
 class TestDanglingReferences:
     async def test_a_deleted_scene_raises_a_repair_issue(
         self, hass: HomeAssistant

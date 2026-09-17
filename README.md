@@ -20,15 +20,22 @@ express.
 [relative-light-group]: https://github.com/Cheerpipe/relative-light-group
 [scenery]: https://github.com/j9brown/scenery
 
-> **Status: beta.** Everything described here is implemented and tested, but the integration
-> has not yet been run on a live Home Assistant instance. Expect rough edges in the
-> configuration screens, and please open an issue if you find one.
+> **Status: beta.** Everything described here is implemented, tested, and running on a live
+> Home Assistant instance. Expect rough edges, and please open an issue if you find one.
 
 ---
 
 ## Installation
 
 ### HACS
+
+[![Open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Sweezy98&repository=ha-better-lighting&category=integration)
+
+The badge opens this repository in your own Home Assistant, ready to install. Then restart, and:
+
+[![Add the Better Lighting integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=better_lighting)
+
+By hand, if you would rather:
 
 1. HACS → three-dot menu → **Custom repositories**
 2. Add `https://github.com/Sweezy98/ha-better-lighting`, category **Integration**
@@ -600,9 +607,9 @@ exists because of them, and parts of it are their work rather than mine.
 
 | Project | What it does | What came from it |
 |---|---|---|
-| [adaptive-lighting](https://github.com/basnijholt/adaptive-lighting) | Brightness and colour temperature from the sun's position | The sun and curve mathematics in `adaptive.py` is a port of its `color_and_brightness.py`, and its `tests/test_color_and_brightness.py` was repointed at ours. The `FieldSpec` table generalises its `VALIDATION_TUPLES` plus side-car `EXTRA_VALIDATION`. |
-| [relative-light-group](https://github.com/lorenzo-deluca/relative-light-group) | A light group that dims members relative to their own brightness | The headroom algorithm in `brightness.py`, and the decision to vendor a group base rather than subclass Home Assistant's non-public `LightGroup`. |
-| [scenery](https://github.com/nicolaiwolf/scenery) | Named colour and brightness presets, cycled by a select | The colour model and the tolerance-based state comparators in `scenes.py`, ported from its `light_utils.py`. |
+| [adaptive-lighting] | Brightness and colour temperature from the sun's position | The sun and curve mathematics in `adaptive.py` is a port of its `color_and_brightness.py`, and its `tests/test_color_and_brightness.py` was repointed at ours. The `FieldSpec` table generalises its `VALIDATION_TUPLES` plus side-car `EXTRA_VALIDATION`. |
+| [relative-light-group] | A light group that dims members relative to their own brightness | The headroom algorithm in `brightness.py`, and the decision to vendor a group base rather than subclass Home Assistant's non-public `LightGroup`. |
+| [scenery] | Named colour and brightness presets, cycled by a select | The colour model and the tolerance-based state comparators in `scenes.py`, ported from its `light_utils.py`. |
 
 Where this integration disagrees with them it is written down: per-`(zone, light)` manual-override
 tracking rather than a global dictionary keyed by light, zero-flash turn-on from a structural

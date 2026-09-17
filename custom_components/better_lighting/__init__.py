@@ -21,9 +21,20 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
 from .activity import ActivityLog
-from .const import DOMAIN, PLATFORMS, BindingType, SubentryType
+from .const import (
+    CONF_SCENE_ID,
+    CONF_SCENE_ORDER,
+    CONF_SCENE_ORDER_EXCLUDED,
+    CONF_ZONE_SCENES,
+    CONF_ZONE_SWITCHES,
+    DOMAIN,
+    PLATFORMS,
+    BindingType,
+    SubentryType,
+)
 from .context import ContextRegistry
 from .controllers import EVENT_PRESS, ControllerRuntime
+from .cycle import ADAPTIVE_STEP
 from .models import (
     ControllerConfig,
     HubConfig,
@@ -206,6 +217,49 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
 
 
 @callback
+def _async_tidy_switch_orders(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Take scenes that no longer exist out of what a switch stores.
+
+    A deleted scene leaves its id behind in every switch that cycled it. The
+    runtime has always skipped those, so the room behaved -- but they sit in
+    the configuration for ever, and they are what a repair notice counts when
+    it says a switch references something missing.
+
+    Rewritten in place rather than migrated once and recorded: it is the same
+    work either way, it is correct for a scene deleted tomorrow as well as one
+    deleted last year, and writing only when something actually changed means
+    it settles after a single pass.
+    """
+    for subentry in list(entry.subentries.values()):
+        if subentry.subentry_type != SubentryType.ZONE.value:
+            continue
+        scenes = {
+            scene.get(CONF_SCENE_ID)
+            for scene in (subentry.data.get(CONF_ZONE_SCENES) or ())
+        }
+        known = {*scenes, ADAPTIVE_STEP}
+        switches = [
+            dict(item) for item in (subentry.data.get(CONF_ZONE_SWITCHES) or ())
+        ]
+        changed = False
+        for switch in switches:
+            for key in (CONF_SCENE_ORDER, CONF_SCENE_ORDER_EXCLUDED):
+                stored = list(switch.get(key) or ())
+                kept = [scene_id for scene_id in stored if scene_id in known]
+                if kept != stored:
+                    switch[key] = kept
+                    changed = True
+        if changed:
+            _LOGGER.debug(
+                "Tidied scenes that no longer exist out of %s's switches",
+                subentry.title,
+            )
+            hass.config_entries.async_update_subentry(
+                entry, subentry, data={**subentry.data, CONF_ZONE_SWITCHES: switches}
+            )
+
+
+@callback
 def _async_prune_entities(
     hass: HomeAssistant, entry: ConfigEntry, runtime: BetterLightingRuntime
 ) -> None:
@@ -341,6 +395,7 @@ async def async_setup_entry(
         await mode_runtime.async_setup()
         entry.async_on_unload(mode_runtime.async_shutdown)
 
+    _async_tidy_switch_orders(hass, entry)
     _async_prune_entities(hass, entry, runtime)
     _async_prune_devices(hass, entry, runtime)
 

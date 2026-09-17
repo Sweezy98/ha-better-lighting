@@ -36,6 +36,7 @@ from . import adaptive, panel_schema
 from .config_flow import validate_zone_lights
 from .const import (
     COLOR_FORMAT_NONE,
+    CONF_ADAPTIVE_POSITION,
     CONF_BRIGHTNESS_PCT,
     CONF_COLOR_FORMAT,
     CONF_COLOR_TEMP_KELVIN,
@@ -68,6 +69,7 @@ from .const import (
     ZONE_SPECS,
     SubentryType,
 )
+from .cycle import AdaptivePosition
 from .models import effective_scene_order, zone_scene
 from .render import Trigger, ZoneMode
 from .schemas import post_validate
@@ -236,6 +238,15 @@ def websocket_config(
                                 switch.get(CONF_SCENE_ORDER) or (),
                                 switch.get(CONF_SCENE_ORDER_EXCLUDED) or (),
                                 scene_ids,
+                                # Same argument the runtime reads it with, or
+                                # the page would show adaptive somewhere the
+                                # switch does not actually have it.
+                                AdaptivePosition(
+                                    switch.get(
+                                        CONF_ADAPTIVE_POSITION,
+                                        AdaptivePosition.FIRST.value,
+                                    )
+                                ),
                             )
                         )
                         for switch in (subentry.data.get(CONF_ZONE_SWITCHES) or ())

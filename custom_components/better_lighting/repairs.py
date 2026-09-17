@@ -23,6 +23,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
 from .const import DOMAIN, SubentryType
+from .cycle import ADAPTIVE_STEP
 
 if TYPE_CHECKING:
     from . import BetterLightingRuntime
@@ -77,7 +78,13 @@ def async_check_references(
                 ISSUE_MISSING_ZONE,
                 {"holder": f"the switch {controller.name}", "what": "a room"},
             )
-        missing = [s for s in controller.scene_order if s not in known_scenes]
+        # Adaptive is a step in the list, written the way a scene is but
+        # answering to no scene -- so it is not a reference that can dangle.
+        missing = [
+            s
+            for s in controller.scene_order
+            if s != ADAPTIVE_STEP and s not in known_scenes
+        ]
         if missing:
             _raise(
                 f"{ISSUE_MISSING_SCENE}_{controller.subentry_id}",

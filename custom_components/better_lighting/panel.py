@@ -184,6 +184,7 @@ def async_register_commands(hass: HomeAssistant) -> None:
         websocket_import_scene,
         websocket_version,
         websocket_diagnostics,
+        websocket_activity,
         websocket_curve,
     ):
         websocket_api.async_register_command(hass, handler)
@@ -841,6 +842,35 @@ async def websocket_diagnostics(
         return
     connection.send_result(
         msg["id"], await async_get_config_entry_diagnostics(hass, entry)
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/activity",
+        vol.Optional("clear", default=False): bool,
+    }
+)
+@callback
+def websocket_activity(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """What has happened lately, from before this page was opened.
+
+    The bus remembers nothing, so a page opened after the fact used to show
+    an empty log and the impression that nothing had happened.
+    """
+    entry = _entry(hass)
+    log = getattr(entry.runtime_data, "activity", None) if entry else None
+    if log is None:
+        connection.send_result(msg["id"], {"entries": [], "retention_hours": 0})
+        return
+    if msg["clear"]:
+        log.async_clear()
+    connection.send_result(
+        msg["id"],
+        {"entries": log.recent(), "retention_hours": log.retention_hours},
     )
 
 

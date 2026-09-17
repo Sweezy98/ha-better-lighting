@@ -278,6 +278,11 @@ CONF_SEPARATE_TURN_ON = "separate_turn_on_commands"
 CONF_SEND_SPLIT_DELAY_MS = "send_split_delay_ms"
 CONF_INTERCEPT_MEMBER_CALLS = "intercept_member_calls"
 
+# Keeping the activity log across a restart. Off costs nothing and keeps the
+# recorder out of it; on, it is written to this integration's own store and
+# swept by age, so a problem noticed on Tuesday can still be looked into.
+CONF_LOG_RETENTION_H = "log_retention_hours"
+
 HUB_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(CONF_INTERVAL, 90, _seconds(10, 3600), section=Section.BASIC),
     FieldSpec(CONF_TRANSITION, 45, _seconds(0, 300, 0.5), validator=VALID_TRANSITION),
@@ -320,6 +325,20 @@ HUB_SPECS: tuple[FieldSpec, ...] = (
     ),
     FieldSpec(CONF_NIGHT_BRIGHTNESS_PCT, 1, _pct(), section=Section.NIGHT),
     FieldSpec(CONF_NIGHT_COLOR_TEMP_K, 1800, _kelvin(), section=Section.NIGHT),
+    FieldSpec(
+        CONF_LOG_RETENTION_H,
+        48,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=336,
+                step=1,
+                unit_of_measurement="h",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        section=Section.ADVANCED,
+    ),
     FieldSpec(CONF_TIME_DARK, 5400, _seconds(0, 14400), section=Section.ADVANCED),
     FieldSpec(CONF_TIME_LIGHT, 2700, _seconds(0, 14400), section=Section.ADVANCED),
     FieldSpec(CONF_SUNRISE_OFFSET, 0, _seconds(-7200, 7200), section=Section.ADVANCED),
@@ -404,6 +423,10 @@ ZONE_SPECS: tuple[FieldSpec, ...] = (
 # --- zone adaptive overrides -------------------------------------------------
 
 CONF_ADAPTIVE_OVERRIDE = "adaptive_override_enabled"
+# Which of the room's lights adaptive lighting actually drives. Empty means
+# all of them, which is what a room wants until it has a light that should
+# not come on with the rest.
+CONF_ADAPTIVE_LIGHTS = "adaptive_lights"
 CONF_ADAPTIVE_BRIGHTNESS_ON = "adaptive_brightness_default_on"
 CONF_ADAPTIVE_COLOR_ON = "adaptive_color_default_on"
 
@@ -451,6 +474,16 @@ _OVERRIDDEN = (CONF_ADAPTIVE_OVERRIDE, (True,))
 ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
     # When False every value below is ignored and the hub defaults apply, so a
     # zone only carries its own curve when the user deliberately asked for one.
+    # Deliberately outside the override: which lights adapt is a fact about
+    # the room, not part of the curve it may or may not define for itself.
+    FieldSpec(
+        CONF_ADAPTIVE_LIGHTS,
+        [],
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="light", multiple=True)
+        ),
+        section=Section.ADAPTIVE,
+    ),
     FieldSpec(CONF_ADAPTIVE_OVERRIDE, False, _boolean(), section=Section.ADAPTIVE),
     FieldSpec(
         CONF_MIN_BRIGHTNESS_PCT,
@@ -1455,11 +1488,13 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
         # three, and expressing that as one rule per room reads far better
         # than a grid -- as well as making the scene picker unambiguous, now
         # that a scene belongs to exactly one room.
+        # Not required: a rule that only runs scripts is about the house
+        # rather than about any one room, and demanding a room for it meant
+        # picking one at random and hoping nothing else was configured for it.
         FieldSpec(
             CONF_RULE_ZONES,
             None,
             _select([], "zone"),
-            required=True,
             options_key="zones",
         ),
         FieldSpec(

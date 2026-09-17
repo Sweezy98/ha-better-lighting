@@ -37,12 +37,14 @@
               "autoreset_manual_seconds": "Manuelle Änderung vergessen nach",
               "separate_turn_on_commands": "Helligkeit und Farbe getrennt senden",
               "send_split_delay_ms": "Wartezeit zwischen getrennten Befehlen",
-              "intercept_member_calls": "Aufrufe direkt an einzelne Lampen abfangen"
+              "intercept_member_calls": "Aufrufe direkt an einzelne Lampen abfangen",
+              "log_retention_hours": "Aktivitätsprotokoll aufbewahren für"
             },
             "data_description": {
               "take_over_control": "Wenn jemand eine Lampe von Hand ändert, wird sie nicht mehr nachgeführt, bis sie wieder ausgeschaltet wird oder die Zeit unten abläuft.",
               "separate_turn_on_commands": "Manche Leuchtmittel verlieren die Farbe, wenn die Helligkeit im selben Befehl kommt. Nur für solche aktivieren.",
-              "intercept_member_calls": "Nur nötig, wenn die Schalter direkt auf einzelne Leuchtmittel statt auf den Raum wirken. Fällt automatisch zurück, wenn nicht verfügbar."
+              "intercept_member_calls": "Nur nötig, wenn die Schalter direkt auf einzelne Leuchtmittel statt auf den Raum wirken. Fällt automatisch zurück, wenn nicht verfügbar.",
+              "log_retention_hours": "Was die Diagnoseseite zeigt, übersteht einen Neustart so lange — in einem eigenen Speicher dieser Integration, nicht im Recorder. Null bewahrt nichts auf; die Seite zeigt dann nur, was passiert, während sie offen ist."
             }
           }
         }
@@ -653,11 +655,13 @@
             "transition": "Übergangsdauer",
             "interval": "Aktualisierungsintervall",
             "adaptive_brightness_default_on": "Helligkeit der Sonne folgen",
-            "adaptive_color_default_on": "Farbe der Sonne folgen"
+            "adaptive_color_default_on": "Farbe der Sonne folgen",
+            "adaptive_lights": "Lampen, die der Sonne folgen"
           },
           "data_description": {
             "adaptive_override_enabled": "Ausgeschaltet lassen, um den globalen Standardwerten zu folgen. Alles Weitere wird ignoriert, solange dies aus ist.",
-            "adaptive_brightness_default_on": "Helligkeit und Farbe sind getrennte Schalter — ein Raum kann also abends weiter wärmer werden, während seine Helligkeit dort bleibt, wo sie eingestellt wurde."
+            "adaptive_brightness_default_on": "Helligkeit und Farbe sind getrennte Schalter — ein Raum kann also abends weiter wärmer werden, während seine Helligkeit dort bleibt, wo sie eingestellt wurde.",
+            "adaptive_lights": "Leer bedeutet jede Lampe im Raum, was für die meisten Räume passt. Sind welche benannt, bleibt der Rest den Szenen überlassen: Dekolicht, das nicht mit angehen soll, wenn der Raum angeht."
           }
         },
         "night": {

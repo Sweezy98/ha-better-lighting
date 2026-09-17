@@ -1028,6 +1028,13 @@ class ZoneController:
             return []
 
         candidates = entity_ids if entity_ids is not None else list(self.zone.lights)
+        if self.effective_mode is ZoneMode.ADAPTIVE:
+            # A room's default is "the lights, adaptively" -- and which lights
+            # that means is the room's to say. Everything else it holds is
+            # left for a scene to ask for by name.
+            candidates = [
+                entity_id for entity_id in candidates if self.zone.adapts(entity_id)
+            ]
         members = [
             snapshot
             for entity_id in candidates

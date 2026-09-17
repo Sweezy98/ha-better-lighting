@@ -20,9 +20,10 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
+from .activity import ActivityLog
 from .const import DOMAIN, PLATFORMS, BindingType, SubentryType
 from .context import ContextRegistry
-from .controllers import ControllerRuntime
+from .controllers import EVENT_PRESS, ControllerRuntime
 from .models import (
     ControllerConfig,
     HubConfig,
@@ -30,7 +31,12 @@ from .models import (
     ZoneConfig,
     synthetic_controller,
 )
-from .modes import ModeGroupRuntime
+from .modes import (
+    EVENT_DEFERRED,
+    EVENT_MODE_CHANGED,
+    EVENT_ZONE_OPTED_OUT,
+    ModeGroupRuntime,
+)
 from .openings import WindowWatcher
 from .panel import (
     async_register_commands,
@@ -44,7 +50,16 @@ from .scenes import Scene
 from .services import async_register_services, async_remove_services
 from .session import DeferredRegistry
 from .store import SessionStore
-from .zone import ZoneController
+from .zone import EVENT_ZONE_MODE_CHANGED, ZoneController
+
+# Everything worth remembering, which is the same set the panel watches.
+ACTIVITY_EVENTS = (
+    EVENT_PRESS,
+    EVENT_ZONE_MODE_CHANGED,
+    EVENT_MODE_CHANGED,
+    EVENT_DEFERRED,
+    EVENT_ZONE_OPTED_OUT,
+)
 
 if TYPE_CHECKING:
     from .light import ZoneLight
@@ -71,6 +86,7 @@ class BetterLightingRuntime:
     # Configured switches, keyed by subentry_id.
     switches: dict[str, ControllerConfig] = field(default_factory=dict)
     switch_runtimes: dict[str, ControllerRuntime] = field(default_factory=dict)
+    activity: ActivityLog | None = None
     # The controller a bare turn-on on a zone's light entity is attributed to,
     # keyed by zone subentry_id.
     default_switch: dict[str, ControllerConfig] = field(default_factory=dict)
@@ -307,6 +323,16 @@ async def async_setup_entry(
     runtime.sessions = SessionStore(hass)
     await runtime.sessions.async_load()
 
+    # The same events the panel watches live, kept for as long as the global
+    # settings say -- so a switch that misbehaved in the night can still be
+    # looked into in the morning.
+    runtime.activity = ActivityLog(hass, runtime.hub.log_retention_hours)
+    await runtime.activity.async_load()
+    for kind in ACTIVITY_EVENTS:
+        entry.async_on_unload(
+            hass.bus.async_listen(kind, runtime.activity.async_record)
+        )
+
     for subentry_id, mode in runtime.modes.items():
         mode_runtime = ModeGroupRuntime(
             hass, mode, runtime.controllers, runtime.deferred, runtime.sessions
@@ -434,6 +460,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     store = SessionStore(hass)
     await store.async_remove()
+    await ActivityLog(hass, 0).async_remove()
 
     for issue in list(ir.async_get(hass).issues.values()):
         if issue.domain == DOMAIN:

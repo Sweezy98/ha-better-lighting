@@ -31,6 +31,7 @@ from .const import (
     CONF_ADAPT_COLOR,
     CONF_ADAPTIVE_BRIGHTNESS_ON,
     CONF_ADAPTIVE_COLOR_ON,
+    CONF_ADAPTIVE_LIGHTS,
     CONF_ADAPTIVE_OVERRIDE,
     CONF_ADAPTIVE_POSITION,
     CONF_ALL,
@@ -90,6 +91,7 @@ from .const import (
     CONF_LIGHT_ACTION,
     CONF_LIGHT_ENTITY,
     CONF_LIGHTS,
+    CONF_LOG_RETENTION_H,
     CONF_LONG_PRESS_ACTION,
     CONF_LONG_PRESS_STATES,
     CONF_MAX_BRIGHTNESS_PCT,
@@ -223,6 +225,8 @@ class HubConfig:
     # about it; a zone that still carries its own from an older version keeps
     # using that until this one is set.
     night_source_entity: str | None
+    # How long the activity log is kept across restarts. Zero keeps nothing.
+    log_retention_hours: int
     time_dark: int
     time_light: int
     sunrise_offset: int
@@ -251,6 +255,7 @@ class HubConfig:
             max_color_temp_k=int(raw[CONF_MAX_COLOR_TEMP_K]),
             brightness_mode=BrightnessMode(raw[CONF_BRIGHTNESS_MODE]),
             night_source_entity=raw.get(CONF_NIGHT_SOURCE) or None,
+            log_retention_hours=int(raw.get(CONF_LOG_RETENTION_H, 48)),
             time_dark=int(raw[CONF_TIME_DARK]),
             time_light=int(raw[CONF_TIME_LIGHT]),
             sunrise_offset=int(raw[CONF_SUNRISE_OFFSET]),
@@ -284,6 +289,10 @@ class ZoneConfig:
     expand_light_groups: bool
     color_lights_dark_members: bool
 
+    # Which of the room's lights adaptive lighting drives. Empty means all of
+    # them; a room with decorative lighting names the rest, so pressing the
+    # switch lights the room without lighting the thing on the shelf.
+    adaptive_lights: tuple[str, ...]
     # Adaptive. When `adaptive_override` is False every value below is ignored
     # and the hub default is used instead.
     adaptive_override: bool
@@ -355,6 +364,15 @@ class ZoneConfig:
         """Human-facing id for service calls and logs. Never a stored reference."""
         return slugify(self.name)
 
+    def adapts(self, entity_id: str) -> bool:
+        """Whether adaptive lighting drives this light at all.
+
+        Named nothing means all of them. A room that names some has decided
+        the rest are not part of what "the lights, adaptively" means -- the
+        lamp on the shelf is somebody's scene, not the room's default.
+        """
+        return not self.adaptive_lights or entity_id in self.adaptive_lights
+
     def insect_scene(self, scenes: Mapping[str, Scene]) -> Scene | None:
         """What this room looks like while a window is open.
 
@@ -408,6 +426,7 @@ class ZoneConfig:
             expand_light_groups=bool(raw[CONF_EXPAND_LIGHT_GROUPS]),
             color_lights_dark_members=bool(raw[CONF_COLOR_LIGHTS_DARK_MEMBERS]),
             adaptive_override=bool(raw[CONF_ADAPTIVE_OVERRIDE]),
+            adaptive_lights=tuple(raw.get(CONF_ADAPTIVE_LIGHTS) or ()),
             adaptive_brightness_on=bool(raw[CONF_ADAPTIVE_BRIGHTNESS_ON]),
             adaptive_color_on=bool(raw[CONF_ADAPTIVE_COLOR_ON]),
             min_brightness_pct=float(raw[CONF_MIN_BRIGHTNESS_PCT]),
@@ -856,6 +875,19 @@ class ModeConfig:
             frozenset().union(*(rule.zones for rule in self.rules))
             if self.rules
             else frozenset()
+        )
+
+    def house_rules(self, state: str) -> tuple[ModeRule, ...]:
+        """The rules for this state that name no room at all.
+
+        A rule that only runs scripts is about the house: the amplifier and
+        the blinds do not belong to the living room just because a rule has
+        to name somewhere. They used to match nothing and so did nothing.
+        """
+        return tuple(
+            rule
+            for rule in self.rules
+            if state in rule.states and not rule.zones and rule.scripts
         )
 
     def rule_for(self, state: str, zone_id: str) -> ModeRule | None:

@@ -97,5 +97,13 @@
   "no_rules": "Noch keine Regeln. Eine Regel legt fest, was ein Raum in einem Zustand dieses Modus tut.",
   "no_scenes": "Noch keine Szenen. Eine Szene sind die Lampen dieses Raums, so eingestellt, wie du sie haben willst.",
   "discard_changes": "Auf dieser Seite gibt es ungespeicherte Änderungen. Ohne Speichern verlassen?",
-  "confirm_delete": "Das endgültig löschen?"
+  "confirm_delete": "Das endgültig löschen?",
+  "duplicate": "Duplizieren",
+  "copy_suffix": "(Kopie)",
+  "save_as_preset": "Diese Farbe unter einem Namen sichern",
+  "preset_name": "Wie soll diese Farbe heißen?",
+  "no_colour_to_keep": "Diese Lampe hat in dieser Szene keine eigene Farbe.",
+  "adaptive_scene_hint": "Die Voreinstellung des Raums. Jede Lampe darin folgt der Sonne, sofern nichts anderes festgelegt ist.",
+  "clear_log": "Protokoll leeren",
+  "whole_house": "Das ganze Haus"
 }

@@ -274,6 +274,9 @@ class ModeGroupRuntime:
         self.session_id = None
 
         ran: set[ModeRule] = set()
+        for rule in self.config.house_rules(IDLE_STATE):
+            ran.add(rule)
+            await self._async_run_scripts(rule)
         for zone_id in sorted(self.config.zone_ids):
             controller = self.controllers.get(zone_id)
             if controller is None:
@@ -309,6 +312,12 @@ class ModeGroupRuntime:
 
     async def _async_apply_state(self) -> None:
         ran: set[ModeRule] = set()
+        # The rules that name no room: scripts for the house rather than
+        # lights for a room, and nothing below would ever reach them.
+        for rule in self.config.house_rules(self.state):
+            ran.add(rule)
+            await self._async_run_scripts(rule)
+
         for zone_id in sorted(self.config.zone_ids):
             if zone_id in self.opted_out:
                 continue

@@ -37,12 +37,14 @@
               "autoreset_manual_seconds": "Forget a manual change after",
               "separate_turn_on_commands": "Send brightness and colour separately",
               "send_split_delay_ms": "Delay between split commands",
-              "intercept_member_calls": "Intercept calls made directly to member lights"
+              "intercept_member_calls": "Intercept calls made directly to member lights",
+              "log_retention_hours": "Keep the activity log for"
             },
             "data_description": {
               "take_over_control": "When someone changes a light by hand, stop adapting it until it is switched off again or the timer below expires.",
               "separate_turn_on_commands": "Some bulbs drop the colour when brightness arrives in the same command. Enable this only for those.",
-              "intercept_member_calls": "Only needed if your switches are wired to the individual bulbs instead of the zone. Falls back automatically if unavailable."
+              "intercept_member_calls": "Only needed if your switches are wired to the individual bulbs instead of the zone. Falls back automatically if unavailable.",
+              "log_retention_hours": "What the diagnostics page shows survives a restart for this long, in this integration's own store rather than the recorder. Zero keeps nothing, and the page then shows only what happens while it is open."
             }
           }
         }
@@ -653,11 +655,13 @@
             "transition": "Transition",
             "interval": "Update interval",
             "adaptive_brightness_default_on": "Start following the sun's brightness",
-            "adaptive_color_default_on": "Start following the sun's colour"
+            "adaptive_color_default_on": "Start following the sun's colour",
+            "adaptive_lights": "Lights that follow the sun"
           },
           "data_description": {
             "adaptive_override_enabled": "Leave off to follow the global defaults. Everything below is ignored until you turn this on.",
-            "adaptive_brightness_default_on": "Brightness and colour are separate switches, so a room can keep warming through the evening while its brightness stays where you put it."
+            "adaptive_brightness_default_on": "Brightness and colour are separate switches, so a room can keep warming through the evening while its brightness stays where you put it.",
+            "adaptive_lights": "Empty means every light in the room, which is what most rooms want. Name some and the rest are left for a scene to ask for: decorative lighting that should not come on when the room does."
           }
         },
         "night": {

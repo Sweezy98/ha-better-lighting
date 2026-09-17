@@ -292,6 +292,9 @@ held down two steps keeps tracking the sun all evening — two steps below where
 otherwise be. Holding the dimmer in a dark room sets where it will come back on rather than
 lighting it.
 
+A rule that names no room at all is about the house rather than any one part of it: it runs its
+scripts and nothing else, which is what a projector or an amplifier wants.
+
 A rule can also **run scripts**. A film is not only a lighting change — the amplifier, the
 blinds, a notification — and a rule already knows when the mode reaches a state, so it is the
 right place to say what else happens. The scripts run once per rule however many rooms it
@@ -311,6 +314,11 @@ original, so a room somebody is standing in is still left alone.
 ---
 
 ## Adaptive lighting
+
+**Which lights adapt is the room's to say.** By default it is all of them — pressing the switch
+lights the room. A room with decorative lighting can name the lights that follow the sun and
+leave the rest for a scene to ask for by name, so the thing on the shelf does not come on with
+the ceiling.
 
 Three layers, each optional:
 

@@ -719,6 +719,37 @@ class TestScripts:
 
         assert calls == [{"entity_id": ["script.lights_up"]}]
 
+    async def test_a_rule_with_no_room_still_runs(self, hass: HomeAssistant) -> None:
+        """A rule that only runs scripts is about the house.
+
+        Demanding a room for it meant naming one at random and hoping nothing
+        else was configured for that room -- and a rule left without one
+        matched nothing, so it quietly did nothing at all.
+        """
+
+        def rules(ids):
+            return [
+                rule([], [], "keep", scripts=["script.start_the_projector"]),
+                rule(["off"], [], "keep", scripts=["script.projector_off"]),
+            ]
+
+        # A rule naming no state either would never fire, so the first one
+        # names the state it belongs to.
+        def with_states(ids):
+            found = rules(ids)
+            found[0]["mode_states"] = ["playing"]
+            return found
+
+        await build(hass, rules_for=with_states)
+        calls = self._watch(hass)
+
+        await set_state(hass, "playing")
+        assert calls == [{"entity_id": ["script.start_the_projector"]}]
+
+        calls.clear()
+        await set_state(hass, "off")
+        assert calls == [{"entity_id": ["script.projector_off"]}]
+
     async def test_a_mode_that_never_started_runs_nothing(
         self, hass: HomeAssistant
     ) -> None:

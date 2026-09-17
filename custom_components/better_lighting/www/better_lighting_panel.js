@@ -504,8 +504,15 @@ class BlForm extends HTMLElement {
     if (!this.shadowRoot) return;
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display:block; }
-        .field { margin-bottom:20px; }
+        :host { display:block; max-width:100%; }
+        * { box-sizing:border-box; max-width:100%; }
+        .field { margin-bottom:20px; min-width:0; }
+        .field-text { min-width:0; }
+        .switch-row { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+        .switch-row .field-text { flex:1 1 260px; }
+        .switch-row .switch, .switch-row ha-selector { flex:0 0 auto; }
+        .switch-row .hint { margin-bottom:0; }
+        label { overflow-wrap:anywhere; }
         .field.disabled { opacity:.5; pointer-events:none; }
         label { display:block; font-weight:500; margin-bottom:6px; }
         .hint { color:var(--secondary-text-color); font-size:13px; margin-bottom:8px; }
@@ -540,9 +547,13 @@ class BlForm extends HTMLElement {
           : field.default;
 
       const hint = this._labels.descriptions[field.key];
-      wrap.innerHTML = `<label>${this._label(field.key)}</label>${
-        hint ? `<div class="hint">${hint}</div>` : ""
-      }`;
+      // A switch belongs beside what it is called, not underneath it. The
+      // text takes a basis wide enough to be worth reading, so the row wraps
+      // by itself when there is not room for both.
+      if (field.kind === "boolean") wrap.classList.add("switch-row");
+      wrap.innerHTML = `<div class="field-text"><label>${this._label(
+        field.key
+      )}</label>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
       const control = this._control(field, value);
       if (this._disabled.has(field.key)) {
         wrap.classList.add("disabled");
@@ -828,10 +839,10 @@ class BetterLightingPanel extends HTMLElement {
     // Which menu groups are folded shut. A house with a dozen rooms wants the
     // modes in reach without scrolling past all of them.
     this._collapsed = { rooms: false, modes: false };
-    // And which rooms have their screens showing, by room id. Unset means
-    // "whatever opening that room would do", so the tree behaves until
-    // somebody has an opinion about one of its branches.
-    this._expanded = {};
+    // The one branch of the menu that is open, by id. One at a time: going
+    // somewhere else folds away what you have left, so a house with a dozen
+    // rooms does not end up as a menu you have to scroll.
+    this._expanded = null;
     this._scene = null;
     this._selectedLight = null;
     this._previewing = false;
@@ -864,12 +875,15 @@ class BetterLightingPanel extends HTMLElement {
       if (document.visibilityState === "visible") this._checkVersion();
     };
     document.addEventListener("visibilitychange", this._visibility);
+    this._pop = () => this._handlePop();
+    window.addEventListener("popstate", this._pop);
     // Slow: this is a courtesy, not a heartbeat.
     this._versionTimer = setInterval(() => this._checkVersion(), 120000);
   }
 
   disconnectedCallback() {
     window.removeEventListener("beforeunload", this._unload);
+    if (this._pop) window.removeEventListener("popstate", this._pop);
     if (this._closeOverflow) window.removeEventListener("click", this._closeOverflow);
     document.removeEventListener("visibilitychange", this._visibility);
     clearInterval(this._versionTimer);
@@ -1163,13 +1177,22 @@ class BetterLightingPanel extends HTMLElement {
          )}</p></div>
        </details>`,
       `<button class="flat" id="refresh">${this._icon(
-        "mdi:refresh"
-      )}<span>${this._t("refresh")}</span></button>`
+         "mdi:refresh"
+       )}<span>${this._t("refresh")}</span></button>
+       <button class="flat" id="clear-log">${this._icon(
+         "mdi:notification-clear-all"
+       )}<span>${this._t("clear_log")}</span></button>`
     );
 
     main.querySelector("#refresh").addEventListener("click", () =>
       this._paintDiagnostics()
     );
+    main.querySelector("#clear-log").addEventListener("click", async () => {
+      if (!this._confirm(this._t("clear_log"))) return;
+      await this._call("activity", { clear: true });
+      this._events = null;
+      await this._watchEvents();
+    });
     this._paintCurve(main.querySelector("#curve"));
     this._watchEvents();
   }
@@ -1348,9 +1371,27 @@ class BetterLightingPanel extends HTMLElement {
     }
   }
 
-  /** Subscribe to the events the integration fires, and keep the last few. */
+  /**
+   * What has happened, from before this page was opened and as it happens.
+   *
+   * The stored ones first: the bus remembers nothing, so a page opened after
+   * the fact used to show an empty log and the impression that nothing had
+   * happened at all.
+   */
   async _watchEvents() {
-    this._events = this._events || [];
+    if (!this._events) {
+      this._events = [];
+      try {
+        const { entries } = await this._call("activity");
+        this._events = (entries || []).map((entry) => ({
+          at: entry.at,
+          kind: entry.kind,
+          data: entry.data,
+        }));
+      } catch {
+        // An older backend, or nothing kept. Live events still arrive.
+      }
+    }
     this._renderEvents();
     if (this._watching) return;
     this._watching = true;
@@ -1366,12 +1407,12 @@ class BetterLightingPanel extends HTMLElement {
       try {
         const off = await this._hass.connection.subscribeEvents((event) => {
           this._events.unshift({
-            at: new Date().toLocaleTimeString(),
+            at: new Date().toISOString(),
             kind: kind.replace("better_lighting_", ""),
             data: event.data,
           });
           // A log that grows forever is a memory leak with a nice name.
-          this._events = this._events.slice(0, 50);
+          this._events = this._events.slice(0, 200);
           this._renderEvents();
         }, kind);
         (this._unsubscribers = this._unsubscribers || []).push(off);
@@ -1381,17 +1422,76 @@ class BetterLightingPanel extends HTMLElement {
     }
   }
 
+  /** The words and the icon for one thing that happened. */
+  _describeEvent(event) {
+    const data = event.data || {};
+    const room = this._rooms.find(
+      (candidate) => candidate.id === data.zone_id
+    )?.name;
+    switch (event.kind) {
+      case "press":
+        return {
+          icon: "mdi:light-switch",
+          title: `${data.controller || this._t("switch")} \u2192 ${data.kind}`,
+          where: room,
+        };
+      case "zone_mode_changed":
+        return {
+          icon: "mdi:lightbulb-group",
+          title: `${data.to || data.mode || "?"}${
+            data.scene ? ` \u00b7 ${data.scene}` : ""
+          }`,
+          where: room || data.zone,
+        };
+      case "mode_changed":
+        return {
+          icon: "mdi:movie-open",
+          title: `${data.mode}: ${data.from_state || "?"} \u2192 ${
+            data.to_state || "?"
+          }`,
+          where: data.applied === false ? this._t("diag_enabled") : undefined,
+        };
+      case "deferred_action":
+        return {
+          icon: "mdi:timer-sand",
+          title: `${data.action || "?"} \u00b7 ${data.status || ""} ${
+            data.reason || ""
+          }`.trim(),
+          where: room,
+        };
+      case "zone_opted_out":
+        return { icon: "mdi:hand-back-left", title: data.mode, where: room };
+      default:
+        return { icon: "mdi:information-outline", title: event.kind, where: room };
+    }
+  }
+
+  /**
+   * The log, in the shape Home Assistant writes its own.
+   *
+   * Time down the left, a ruled icon beside it, then what happened and
+   * where -- rather than a line of JSON, which said everything and told you
+   * nothing.
+   */
   _renderEvents() {
     const log = this.shadowRoot.getElementById("events");
     if (!log) return;
     if (!this._events.length) return;
     log.innerHTML = this._events
-      .map(
-        (event) =>
-          `<div class="entry"><span class="muted">${event.at}</span>
-             <strong>${event.kind}</strong>
-             <span class="muted">${JSON.stringify(event.data)}</span></div>`
-      )
+      .map((event) => {
+        const { icon, title, where } = this._describeEvent(event);
+        const at = new Date(event.at);
+        return `<div class="entry">
+          <span class="when">${
+            Number.isNaN(at.getTime()) ? event.at : at.toLocaleTimeString()
+          }</span>
+          <span class="dot">${this._icon(icon)}</span>
+          <span class="what">
+            <strong>${title}</strong>
+            ${where ? `<div class="muted">${where}</div>` : ""}
+          </span>
+        </div>`;
+      })
       .join("");
   }
 
@@ -1614,7 +1714,12 @@ class BetterLightingPanel extends HTMLElement {
            no door. */
         #menu, #drawer { display:none; }
         @media (max-width:870px) { #menu { display:inline-flex; } }
-        @media (max-width:800px) { #drawer { display:inline-flex; } }
+        @media (max-width:800px) {
+          #drawer { display:inline-flex; }
+          /* No room for them, and the phone's own back button does the job
+             now that it walks the trail rather than leaving the panel. */
+          #crumb-back, nav.crumbs { display:none; }
+        }
         ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
         /* Pushed to the far end, and holding what belongs to the panel as a
            whole rather than to the screen in front of you. */
@@ -1644,8 +1749,9 @@ class BetterLightingPanel extends HTMLElement {
              so keeps its footer on the bottom of the window rather than
              somewhere the content can scroll underneath. */
           .body { grid-template-columns:1fr; padding:12px; }
+          /* Flush against the edge of the screen, so no corners. */
           .nav { position:fixed; top:0; bottom:0; left:0; z-index:7;
-                 width:min(320px, 85vw); border-radius:0;
+                 width:min(320px, 85vw); border-radius:0 !important;
                  transform:translateX(-101%); transition:transform .2s ease;
                  box-shadow:2px 0 12px rgba(0,0,0,.35); }
           .nav[data-open="1"] { transform:none; }
@@ -1663,7 +1769,11 @@ class BetterLightingPanel extends HTMLElement {
            inside, and the buttons that act on it stay where they are. */
         .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
                 padding:0; overflow:hidden; }
-        .page-body { flex:1 1 auto; min-height:0; overflow:auto; padding:16px 20px; }
+        .page-body { flex:1 1 auto; min-height:0; min-width:0; overflow:auto;
+                     overflow-wrap:anywhere; padding:16px 20px; }
+        /* Nothing on a page is wider than the page. Borrowed controls bring
+           their own widths, and a long entity id has no space to break at. */
+        .page-body *, .page-body ha-selector { max-width:100%; box-sizing:border-box; }
         /* Adding and deleting at one end, agreeing and backing out at the
            other, with the one that commits furthest from the one that does
            not. */
@@ -1733,7 +1843,10 @@ class BetterLightingPanel extends HTMLElement {
                  opacity:.6; margin:-4px -4px -4px 0; padding:4px; }
         .twist:hover { opacity:1; }
         li.section { font-size:15px; font-weight:500; }
-        ul.sub { margin:2px 0 8px 14px; border-left:2px solid var(--divider-color,#ddd); }
+        ul.sub { margin:2px 0 8px 14px; padding-left:8px;
+                 border-left:2px solid var(--divider-color,#ddd); }
+        /* The padding is on the list rather than the rows: a highlighted row
+           with none of it is glued to the line it hangs from. */
         ul.sub li { font-size:14px; padding:7px 10px; }
         /* What belongs to the entry above it: the rooms under Rooms, the
            modes under Modes, and the row that adds one at the same indent as
@@ -1810,10 +1923,21 @@ class BetterLightingPanel extends HTMLElement {
                           color:var(--secondary-text-color); vertical-align:top; }
         details.diag td { padding:4px 16px 4px 0; font-variant-numeric:tabular-nums;
                           word-break:break-word; }
-        .log { max-height:340px; overflow:auto; font-size:13px; }
-        .log .entry { padding:6px 4px; border-top:1px solid var(--divider-color,#e0e0e0);
-                      display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
-        .log .entry span { word-break:break-word; }
+        /* Home Assistant's own logbook shape: the time down the left, a ruled
+           line of icons beside it, and what happened to the right of that. */
+        .log { max-height:420px; overflow:auto; font-size:14px; }
+        .log .entry { display:flex; gap:12px; align-items:flex-start;
+                      padding:10px 0; }
+        .log .entry + .entry { border-top:1px solid var(--divider-color,#e0e0e0); }
+        .log .when { flex:0 0 68px; padding-top:9px; font-size:12px;
+                     color:var(--secondary-text-color);
+                     font-variant-numeric:tabular-nums; }
+        .log .dot { flex:0 0 36px; height:36px; border-radius:50%;
+                    display:inline-flex; align-items:center; justify-content:center;
+                    background:var(--secondary-background-color);
+                    color:var(--secondary-text-color); }
+        .log .what { flex:1 1 auto; min-width:0; padding-top:4px;
+                     overflow-wrap:anywhere; }
         .curve { width:100%; height:200px; display:block; margin:8px 0 12px;
                  border-radius:8px; overflow:hidden;
                  background:var(--secondary-background-color,#eee); }
@@ -1903,9 +2027,42 @@ class BetterLightingPanel extends HTMLElement {
    * remember.
    */
   _leave(go) {
-    if (this._dirty && !window.confirm(this._t("discard_changes"))) return;
+    if (this._dirty && !window.confirm(this._t("discard_changes"))) return false;
     this._dirty = false;
     go();
+    return true;
+  }
+
+  /**
+   * Keep the browser's history in step with how deep into the panel we are.
+   *
+   * One entry per level, so the back button on a phone -- where the trail
+   * and its own back button are hidden, there being no room for them --
+   * walks back up the panel rather than leaving it for whichever Home
+   * Assistant page came before. The URL never changes; only the depth does.
+   */
+  _syncHistory() {
+    const depth = Math.max(0, this._trail().filter(Boolean).length - 1);
+    const known =
+      typeof history.state?.blDepth === "number" ? history.state.blDepth : 0;
+    if (depth > known) {
+      history.pushState({ ...history.state, blDepth: depth }, "");
+    } else if (depth < known) {
+      history.replaceState({ ...history.state, blDepth: depth }, "");
+    }
+  }
+
+  /** The browser went back. Walk one step up the trail, or let it leave. */
+  _handlePop() {
+    const crumbs = this._trail().filter(Boolean);
+    const parent = crumbs[crumbs.length - 2];
+    // Nothing above this screen: the entry that was popped was not ours, and
+    // the browser is right to be leaving.
+    if (!parent?.go) return;
+    if (!this._leave(parent.go)) {
+      // Refused at the prompt, so put back the entry the browser took.
+      history.pushState({ ...history.state, blDepth: crumbs.length - 1 }, "");
+    }
   }
 
   /** Ask before something that cannot be undone. */
@@ -1960,11 +2117,8 @@ class BetterLightingPanel extends HTMLElement {
     const inRoom = ["room", "scenes", "switches", "calibrations"].includes(
       this._view.kind
     );
-    // Opening a room shows its screens; after that it is the user's chevron
-    // that decides, including for the room they are standing in.
-    if (inRoom && this._expanded[this._roomId] === undefined) {
-      this._expanded[this._roomId] = true;
-    }
+    // Opening a room shows its screens; the chevron folds it away again.
+    if (inRoom && this._expanded === null) this._expanded = this._roomId;
     const extras = [
       ["scenes", this._t("scenes")],
       ["switches", this._t("switches")],
@@ -1973,7 +2127,7 @@ class BetterLightingPanel extends HTMLElement {
 
     const roomRows = this._rooms
       .map((room) => {
-        const open = Boolean(this._expanded[room.id]);
+        const open = this._expanded === room.id;
         // Two rooms can be unfolded at once now, and only one of them is the
         // room you are in -- so which screen is current is a question about
         // this room, not about the view alone.
@@ -1988,15 +2142,46 @@ class BetterLightingPanel extends HTMLElement {
                     }">${icon(SECTION_ICONS[section] || "mdi:circle-small")}<span
                     class="grow">${this._sectionName(section)}</span></li>`
               ),
-              ...extras.map(
-                ([key, fallback]) =>
-                  `<li data-section="${key}" data-room="${room.id}"
-                    aria-selected="${
-                    here && this._view.kind === key
-                    }">${icon(SECTION_ICONS[key])}<span class="grow">${
+              ...extras.map(([key, fallback]) => {
+                // Scenes and switches carry their own entries underneath, so
+                // one is reachable without first opening a list of them.
+                const items =
+                  key === "scenes"
+                    ? (room.scenes || []).map((scene, index) => [
+                        index,
+                        scene.name,
+                        SECTION_ICONS.scenes,
+                      ])
+                    : key === "switches"
+                      ? (room.data?.switches || []).map((item, index) => [
+                          index,
+                          item.name || this._t("switch"),
+                          SECTION_ICONS.switches,
+                        ])
+                      : [];
+                const shown = here && this._view.kind === key;
+                const children = shown
+                  ? `<ul class="sub">${items
+                      .map(
+                        ([index, label, name]) =>
+                          `<li data-section="${key}" data-room="${room.id}"
+                            data-item="${index}" aria-selected="${
+                              this._view.index === index
+                            }">${icon(name)}<span class="grow">${label}</span></li>`
+                      )
+                      .join("")}
+                      <li class="add" data-section="${key}" data-room="${room.id}"
+                        data-item="new">${icon("mdi:plus")}<span class="grow">${this._t(
+                          "add"
+                        )}</span></li></ul>`
+                  : "";
+                return `<li data-section="${key}" data-room="${room.id}"
+                  aria-selected="${
+                    shown && this._view.index === undefined
+                  }">${icon(SECTION_ICONS[key])}<span class="grow">${
                     this._labels.sections[key] || fallback
-                  }</span></li>`
-              ),
+                  }</span></li>${children}`;
+              }),
             ].join("")}</ul>`
           : "";
         // Open, but not selected: the screen you are on is one of the rows
@@ -2037,7 +2222,7 @@ class BetterLightingPanel extends HTMLElement {
           ${this._modes
             .map((mode) => {
               const here = this._view.kind === "mode" && this._modeId === mode.id;
-              const open = Boolean(this._expanded[mode.id]);
+              const open = this._expanded === mode.id;
               const section = this._view.section || "settings";
               const children = open
                 ? `<ul class="sub">${[
@@ -2115,9 +2300,9 @@ class BetterLightingPanel extends HTMLElement {
       go(item, () => {
         this._stopPreview();
         this._roomId = item.dataset.room;
-        // A room you have just walked into shows its screens, whatever you
-        // last did with its chevron.
-        this._expanded[item.dataset.room] = true;
+        // A room you have just walked into shows its screens, and whatever
+        // was open before folds away behind you.
+        this._expanded = item.dataset.room;
         this._view = { kind: "room", section: null };
         this._scene = null;
         this._paint();
@@ -2126,21 +2311,45 @@ class BetterLightingPanel extends HTMLElement {
     nav.querySelectorAll("li[data-section]").forEach((item) =>
       go(item, () => {
         const section = item.dataset.section;
+        const chosenItem = item.dataset.item;
         this._stopPreview();
         this._scene = null;
         // A screen belongs to the room it is listed under, which is not
         // always the room you were last in now that two can be unfolded.
         this._roomId = item.dataset.room || this._roomId;
-        this._view = ["scenes", "switches", "calibrations"].includes(section)
-          ? { kind: section }
-          : { kind: "room", section };
+        this._expanded = this._roomId;
+        if (!["scenes", "switches", "calibrations"].includes(section)) {
+          this._view = { kind: "room", section };
+          this._paint();
+          return;
+        }
+        this._view = { kind: section };
+        if (chosenItem === undefined) {
+          this._paint();
+          return;
+        }
+        if (section === "switches") {
+          const switches = this._room?.data.switches || [];
+          this._view = {
+            kind: section,
+            index: chosenItem === "new" ? switches.length : Number(chosenItem),
+          };
+          this._paint();
+          return;
+        }
+        // A scene opens in its editor rather than as a row in a list.
+        const scenes = this._room?.scenes || [];
+        this._scene =
+          chosenItem === "new"
+            ? { name: this._t("new_scene"), lights: {} }
+            : JSON.parse(JSON.stringify(scenes[Number(chosenItem)]));
         this._paint();
       })
     );
     nav.querySelectorAll("li.mode").forEach((item) =>
       go(item, () => {
         this._modeId = item.dataset.mode;
-        this._expanded[item.dataset.mode] = true;
+        this._expanded = item.dataset.mode;
         this._view = { kind: "mode", section: "settings" };
         this._paint();
       })
@@ -2148,6 +2357,7 @@ class BetterLightingPanel extends HTMLElement {
     nav.querySelectorAll("li[data-mode-section]").forEach((item) =>
       go(item, () => {
         this._modeId = item.dataset.mode;
+        this._expanded = item.dataset.mode;
         this._view = { kind: "mode", section: item.dataset.modeSection };
         this._paint();
       })
@@ -2178,7 +2388,7 @@ class BetterLightingPanel extends HTMLElement {
       handle.addEventListener("click", (event) => {
         event.stopPropagation();
         const id = handle.dataset.roomTwist;
-        this._expanded[id] = !this._expanded[id];
+        this._expanded = this._expanded === id ? null : id;
         this._paintNav();
       })
     );
@@ -2196,6 +2406,7 @@ class BetterLightingPanel extends HTMLElement {
 
   _paintMain() {
     this._paintCrumbs();
+    this._syncHistory();
     if (this._scene) return this._paintEditor();
     switch (this._view.kind) {
       case "rooms":
@@ -2261,7 +2472,7 @@ class BetterLightingPanel extends HTMLElement {
       row.addEventListener("click", () => {
         this._roomId = row.dataset.room;
         // Same as walking into it from the menu: its screens are showing.
-        this._expanded[row.dataset.room] = true;
+        this._expanded = row.dataset.room;
         this._view = { kind: "room", section: null };
         this._paint();
       })
@@ -2425,9 +2636,15 @@ class BetterLightingPanel extends HTMLElement {
         .map(
           (rule, index) =>
             `<li data-rule="${index}"><span class="grow">${
-              roomName[rule.zones] || rule.zones || "—"
+              roomName[rule.zones] || rule.zones || this._t("whole_house")
             }<div class="muted">${rule.action || "keep"} · ${
               (rule.mode_states || []).join(", ") || "—"
+            }${
+              (rule.scripts || []).length
+                ? ` · ${(rule.scripts || [])
+                    .map((id) => this._name(id))
+                    .join(", ")}`
+                : ""
             }</div></span></li>`
         )
         .join("")}</ul>
@@ -3052,7 +3269,11 @@ class BetterLightingPanel extends HTMLElement {
       return;
     }
     this._page(
-      `<ul>${room.scenes
+      `<ul><li data-adaptive="1">${this._icon(
+        "mdi:weather-sunny"
+      )}<span class="grow">${this._t("adaptive")}<div class="muted">${this._t(
+        "adaptive_scene_hint"
+      )}</div></span></li>${room.scenes
           .map(
             (scene, index) =>
               `<li data-index="${index}">${this._icon(
@@ -3071,7 +3292,14 @@ class BetterLightingPanel extends HTMLElement {
       )}</span></button>`
     );
 
-    main.querySelectorAll("li").forEach((item) =>
+    // The room's own default, which is a scene in every way that matters
+    // except that it cannot be deleted: it is what the room does when nothing
+    // else is asked of it.
+    main.querySelector("li[data-adaptive]").addEventListener("click", () => {
+      this._view = { kind: "room", section: "adaptive" };
+      this._paint();
+    });
+    main.querySelectorAll("li[data-index]").forEach((item) =>
       item.addEventListener("click", () => {
         this._scene = JSON.parse(JSON.stringify(room.scenes[Number(item.dataset.index)]));
         this._selectedLight = room.lights[0] || null;
@@ -3083,6 +3311,41 @@ class BetterLightingPanel extends HTMLElement {
       this._selectedLight = room.lights[0] || null;
       this._paint();
     });
+  }
+
+  /**
+   * Keep what one light is showing, under a name, for use anywhere.
+   *
+   * In live mode that is what the bulb is actually doing, which is the only
+   * way to name a colour you arrived at by dragging a wheel; in review mode
+   * it is what the scene says. Either way it becomes an ordinary colour
+   * preset, so the next scene in another room can just pick it by name.
+   */
+  async _savePreset(entityId) {
+    const spec = this._previewing
+      ? this._captureOne(entityId)
+      : this._scene.lights[entityId];
+    if (!spec) return;
+    const preset = {};
+    if (spec.color_format === "color_temp_kelvin" && spec.color_temp_kelvin) {
+      preset.color_format = "color_temp_kelvin";
+      preset.color_temp_kelvin = spec.color_temp_kelvin;
+    } else if (spec.rgb_color) {
+      preset.color_format = "rgb_color";
+      preset.rgb_color = [...spec.rgb_color];
+    } else {
+      window.alert(this._t("no_colour_to_keep"));
+      return;
+    }
+    const name = window.prompt(this._t("preset_name"), this._name(entityId));
+    if (!name) return;
+    await this._call("save_hub", {
+      options: {
+        ...this._hub,
+        color_presets: [...(this._hub.color_presets || []), { ...preset, name }],
+      },
+    });
+    await this._load();
   }
 
   /** One light's current state, as a scene entry. */
@@ -3188,8 +3451,11 @@ class BetterLightingPanel extends HTMLElement {
        <div class="bar" id="add-light"></div>`,
       this._scene.scene_id
         ? `<button class="danger" id="delete">${this._icon(
-            "mdi:delete-outline"
-          )}<span>${this._t("delete")}</span></button>`
+             "mdi:delete-outline"
+           )}<span>${this._t("delete")}</span></button>
+           <button class="flat" id="duplicate">${this._icon(
+             "mdi:content-copy"
+           )}<span>${this._t("duplicate")}</span></button>`
         : "",
       `<button class="flat" id="cancel">${this._t("cancel")}</button>
        <button id="save">${this._t("save")}</button>`
@@ -3216,6 +3482,16 @@ class BetterLightingPanel extends HTMLElement {
       this._scene = null;
       this._view = { kind: "scenes" };
       this._load();
+    });
+    // A copy to work from, which is how most second scenes in a room begin.
+    main.querySelector("#duplicate")?.addEventListener("click", async () => {
+      await this._stopPreview();
+      this._scene = {
+        ...JSON.parse(JSON.stringify(this._scene)),
+        scene_id: undefined,
+        name: `${this._scene.name} ${this._t("copy_suffix")}`,
+      };
+      await this._save();
     });
     main.querySelector("#delete")?.addEventListener("click", async () => {
       if (!this._confirm()) return;
@@ -3308,6 +3584,16 @@ class BetterLightingPanel extends HTMLElement {
           }
         )
       );
+
+      const keep = document.createElement("button");
+      keep.className = "flat";
+      keep.title = this._t("save_as_preset");
+      keep.innerHTML = this._icon("mdi:palette-swatch-outline") || "+";
+      keep.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._savePreset(entityId);
+      });
+      row.appendChild(keep);
 
       const remove = document.createElement("button");
       remove.className = "flat";

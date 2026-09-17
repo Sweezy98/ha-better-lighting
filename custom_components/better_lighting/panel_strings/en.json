@@ -97,5 +97,13 @@
   "no_rules": "No rules yet. A rule says what one room does in one of this mode's states.",
   "no_scenes": "No scenes yet. A scene is this room's lights, set the way you want them.",
   "discard_changes": "There are unsaved changes on this screen. Leave without saving?",
-  "confirm_delete": "Delete this for good?"
+  "confirm_delete": "Delete this for good?",
+  "duplicate": "Duplicate",
+  "copy_suffix": "(copy)",
+  "save_as_preset": "Keep this colour under a name",
+  "preset_name": "What should this colour be called?",
+  "no_colour_to_keep": "This light has no colour of its own in this scene.",
+  "adaptive_scene_hint": "The room's own default. Every light in it, following the sun, unless you say otherwise.",
+  "clear_log": "Clear the log",
+  "whole_house": "The whole house"
 }

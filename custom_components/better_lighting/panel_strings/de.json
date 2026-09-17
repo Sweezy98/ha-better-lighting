@@ -128,5 +128,7 @@
   "steps_hint": "Jeder Schritt ist ein Anteil der Helligkeit, die dem Effekt übergeben wird, eine Zeit bis dorthin und eine Zeit zum Halten. Sie laufen der Reihe nach und beginnen von vorn, wenn der Effekt wiederholt.",
   "add_step": "Schritt hinzufügen",
   "try_it": "Ausprobieren",
-  "stop_it": "Beenden"
+  "stop_it": "Beenden",
+  "enable": "Einschalten",
+  "disable": "Ausschalten"
 }

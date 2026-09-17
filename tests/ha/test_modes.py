@@ -53,6 +53,7 @@ def rule(states, zones, action, **kw) -> dict:
         "presence_entry_scene": kw.get("presence_entry_scene"),
         "on_free_action": kw.get("on_free_action", "turn_off"),
         "scripts": kw.get("scripts", []),
+        "enabled": kw.get("enabled", True),
     }
 
 
@@ -757,5 +758,55 @@ class TestScripts:
         calls = self._watch(hass)
 
         await set_state(hass, "off")
+
+        assert calls == []
+
+
+class TestSwitchedOffActions:
+    """An action that is written down but not happening.
+
+    Which is how somebody finds out whether a particular one is what makes
+    their film behave oddly, without writing it out and writing it back.
+    """
+
+    @staticmethod
+    def _rules(ids):
+        return [
+            rule(
+                ["playing"],
+                [ids["Kitchen"]],
+                "turn_off",
+                enabled=False,
+            ),
+            rule(["playing"], [ids["Lounge"]], "turn_off"),
+        ]
+
+    async def test_it_does_not_happen(self, hass: HomeAssistant) -> None:
+        await build(hass, rules_for=self._rules)
+
+        await set_state(hass, "playing")
+
+        # The one that is on darkened its room; the one that is off did not.
+        assert hass.states.get("light.lounge_main").state == "off"
+        assert hass.states.get("light.kitchen_main").state == "on"
+
+    async def test_a_switched_off_house_action_runs_nothing(
+        self, hass: HomeAssistant
+    ) -> None:
+        def rules(ids):
+            return [
+                rule(
+                    ["playing"],
+                    [],
+                    "keep",
+                    scripts=["script.projector"],
+                    enabled=False,
+                )
+            ]
+
+        await build(hass, rules_for=rules)
+        calls = TestScripts._watch(hass)
+
+        await set_state(hass, "playing")
 
         assert calls == []

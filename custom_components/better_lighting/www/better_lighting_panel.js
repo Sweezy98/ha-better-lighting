@@ -2083,6 +2083,9 @@ class BetterLightingPanel extends HTMLElement {
           transform:rotate(-45deg); opacity:.4; }
         .page-body li .moves, .page-body li .row-actions {
           display:flex; gap:2px; flex:0 0 auto; }
+        .row-toggle { display:flex; align-items:center; flex:0 0 auto; }
+        /* Still listed, still readable, plainly not happening. */
+        .page-body li[data-off="1"] .grow { opacity:.5; }
         /* Quiet until the row is under the pointer: a list of things to open
            should not read as a list of things to delete. */
         .row-actions button { padding:0 8px; min-height:34px; border-radius:999px;
@@ -3551,6 +3554,42 @@ class BetterLightingPanel extends HTMLElement {
     });
   }
 
+  /**
+   * A switch, drawn the way Home Assistant draws one where it can.
+   *
+   * Used in lists rather than in forms, where ha-selector already does it:
+   * this is the one beside a row you are not otherwise editing.
+   */
+  _toggleControl(on, onChange) {
+    const stop = (event) => event.stopPropagation();
+    if (customElements.get("ha-switch")) {
+      const toggle = document.createElement("ha-switch");
+      toggle.checked = on;
+      toggle.addEventListener("click", stop);
+      toggle.addEventListener("change", () => onChange(toggle.checked));
+      return toggle;
+    }
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = on;
+    box.addEventListener("click", stop);
+    box.addEventListener("change", () => onChange(box.checked));
+    return box;
+  }
+
+  /** Switch one action of the current mode on or off. */
+  async _setRuleEnabled(index, enabled) {
+    const mode = this._mode;
+    const rules = (mode.data.rules || []).map((rule, at) =>
+      at === index ? { ...rule, enabled } : rule
+    );
+    await this._call("save_mode", {
+      mode_id: mode.id,
+      data: { ...mode.data, rules },
+    });
+    await this._load();
+  }
+
   /** The mode's rules, on their own screen. */
   _paintRuleList() {
     const mode = this._mode;
@@ -3563,7 +3602,10 @@ class BetterLightingPanel extends HTMLElement {
       `<ul>${rules
         .map(
           (rule, index) =>
-            `<li data-rule="${index}"><span class="grow">${
+            `<li data-rule="${index}" data-off="${
+              rule.enabled === false ? "1" : "0"
+            }"><span class="row-toggle" data-toggle="${index}"></span><span
+              class="grow">${
               roomName[rule.zones] || rule.zones || this._t("whole_house")
             }<div class="muted">${rule.action || "keep"} · ${
               (rule.mode_states || []).join(", ") || "—"
@@ -3591,6 +3633,16 @@ class BetterLightingPanel extends HTMLElement {
         });
         await this._load();
       },
+    });
+    // Switched on or off from the list, since that is where you can see all
+    // of them at once and decide which one is misbehaving.
+    main.querySelectorAll("[data-toggle]").forEach((slot) => {
+      const at = Number(slot.dataset.toggle);
+      slot.appendChild(
+        this._toggleControl(rules[at].enabled !== false, (on) =>
+          this._setRuleEnabled(at, on)
+        )
+      );
     });
     main.querySelectorAll("li[data-rule]").forEach((row) =>
       row.addEventListener("click", (event) => {
@@ -4147,9 +4199,22 @@ class BetterLightingPanel extends HTMLElement {
     const current = { ...(rules[index] || {}), ...(draft || {}) };
     const ruleRoom = this._rooms.find((room) => room.id === current.zones) || null;
 
+    const enabled = current.enabled !== false;
     this._paintSettings({
-      form: this._schema?.forms.rule || [],
+      // The switch is in the footer and in the list, so a third of it in the
+      // middle of the form would be two controls for one answer.
+      form: (this._schema?.forms.rule || []).map((group) => ({
+        ...group,
+        fields: group.fields.filter((field) => field.key !== "enabled"),
+      })),
       values: { ...current },
+      toggle:
+        index < rules.length
+          ? {
+              on: enabled,
+              set: (next) => this._setRuleEnabled(index, next),
+            }
+          : null,
       // Greyed out rather than hidden: they are part of the question, and a
       // form that grows as you answer it is harder to read than one that
       // waits.
@@ -4381,16 +4446,25 @@ class BetterLightingPanel extends HTMLElement {
     extra,
     onChange,
     disabled,
+    toggle,
   }) {
     const main = this._page(
       `<div id="error" class="muted"></div>
        <div id="form"></div>
        <div id="extra"></div>`,
-      remove
-        ? `<button class="danger" id="remove">${this._icon(
-            "mdi:delete-outline"
-          )}<span>${this._t("delete")}</span></button>`
-        : "",
+      `${
+        remove
+          ? `<button class="danger" id="remove">${this._icon(
+              "mdi:delete-outline"
+            )}<span>${this._t("delete")}</span></button>`
+          : ""
+      }${
+        toggle
+          ? `<button class="tonal" id="toggle">${this._icon(
+              toggle.on ? "mdi:pause-circle-outline" : "mdi:play-circle-outline"
+            )}<span>${this._t(toggle.on ? "disable" : "enable")}</span></button>`
+          : ""
+      }`,
       `<button class="flat" id="cancel" disabled>${this._t("cancel")}</button>
        <button id="save" disabled>${this._t("save")}</button>`
     );
@@ -4473,6 +4547,10 @@ class BetterLightingPanel extends HTMLElement {
       // is how you leave.
       this._dirty = false;
       this._paintMain();
+    });
+    main.querySelector("#toggle")?.addEventListener("click", async () => {
+      this._dirty = false;
+      await toggle.set(!toggle.on);
     });
     main.querySelector("#remove")?.addEventListener("click", async () => {
       if (!(await this._confirm())) return;

@@ -831,7 +831,8 @@
             "zones": "Dieser Raum",
             "action": "Das tun",
             "scene_id": "Szene",
-            "scripts": "Auszuführende Skripte"
+            "scripts": "Auszuführende Skripte",
+            "enabled": "Diese Aktion greift"
           },
           "sections": {
             "advanced": {
@@ -850,7 +851,8 @@
             }
           },
           "data_description": {
-            "scripts": "Werden ausgeführt, wenn diese Aktion greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Aktion abdeckt. Eine Aktion für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück."
+            "scripts": "Werden ausgeführt, wenn diese Aktion greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Aktion abdeckt. Eine Aktion für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück.",
+            "enabled": "Ausgeschaltet bleibt sie gespeichert und in der Liste und passiert einfach nicht — so findet man heraus, ob sie diejenige ist, die sich seltsam verhält."
           }
         },
         "remove_rule": {
@@ -875,7 +877,8 @@
             "zones": "Dieser Raum",
             "action": "Das tun",
             "scene_id": "Szene",
-            "scripts": "Auszuführende Skripte"
+            "scripts": "Auszuführende Skripte",
+            "enabled": "Diese Aktion greift"
           },
           "sections": {
             "advanced": {
@@ -894,7 +897,8 @@
             }
           },
           "data_description": {
-            "scripts": "Werden ausgeführt, wenn diese Aktion greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Aktion abdeckt. Eine Aktion für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück."
+            "scripts": "Werden ausgeführt, wenn diese Aktion greift — zusätzlich zu dem, was sie mit dem Licht macht, und einmal, egal wie viele Räume die Aktion abdeckt. Eine Aktion für den Zustand „off“ führt ihre Skripte aus, wenn der Modus endet — auch dann, wenn der Modus mittendrin ausgeschaltet wird, denn auch dann kehren die Räume in ihren vorherigen Zustand zurück.",
+            "enabled": "Ausgeschaltet bleibt sie gespeichert und in der Liste und passiert einfach nicht — so findet man heraus, ob sie diejenige ist, die sich seltsam verhält."
           }
         },
         "settings": {

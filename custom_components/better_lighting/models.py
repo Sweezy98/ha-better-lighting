@@ -134,6 +134,7 @@ from .const import (
     CONF_RGB_COLOR,
     CONF_RULE_ACTION,
     CONF_RULE_DEFER_IF_OCCUPIED,
+    CONF_RULE_ENABLED,
     CONF_RULE_ENTRY_ACTION,
     CONF_RULE_ENTRY_SCENE,
     CONF_RULE_ON_FREE,
@@ -859,6 +860,9 @@ class ModeRule:
     # Run whenever this rule takes effect, alongside whatever it does to the
     # lights. A film is not only a lighting change.
     scripts: tuple[str, ...] = ()
+    # Switched off, it is still written down and still listed; it simply does
+    # not happen.
+    enabled: bool = True
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> ModeRule:
@@ -872,6 +876,7 @@ class ModeRule:
             presence_entry_action=_entry_action(raw),
             presence_entry_scene=raw.get(CONF_RULE_ENTRY_SCENE) or None,
             scripts=tuple(raw.get(CONF_RULE_SCRIPTS) or ()),
+            enabled=bool(raw.get(CONF_RULE_ENABLED, True)),
             on_free_action=raw.get(CONF_RULE_ON_FREE, "turn_off"),
         )
 
@@ -913,7 +918,7 @@ class ModeConfig:
         return tuple(
             rule
             for rule in self.rules
-            if state in rule.states and not rule.zones and rule.scripts
+            if rule.enabled and state in rule.states and not rule.zones and rule.scripts
         )
 
     def rule_for(self, state: str, zone_id: str) -> ModeRule | None:
@@ -924,7 +929,7 @@ class ModeConfig:
         """
         found = None
         for rule in self.rules:
-            if state in rule.states and zone_id in rule.zones:
+            if rule.enabled and state in rule.states and zone_id in rule.zones:
                 found = rule
         return found
 

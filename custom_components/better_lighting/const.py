@@ -1452,6 +1452,10 @@ CONF_RULE_ON_FREE = "on_free_action"
 # film does to a house -- the amplifier, the blinds, a notification -- and a
 # rule already knows when to do it.
 CONF_RULE_SCRIPTS = "scripts"
+# Switched off rather than deleted: a film that behaves oddly is diagnosed by
+# turning one of its actions off for an evening, not by writing it out and
+# writing it back.
+CONF_RULE_ENABLED = "enabled"
 
 DEFAULT_MODE_STATES = ["playing", "paused", "credits"]
 
@@ -1556,6 +1560,7 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
             options_key="scenes",
             depends_on=(CONF_RULE_ACTION, (ZoneAction.APPLY_SCENE.value,)),
         ),
+        FieldSpec(CONF_RULE_ENABLED, True, _boolean()),
         FieldSpec(
             CONF_RULE_SCRIPTS,
             [],

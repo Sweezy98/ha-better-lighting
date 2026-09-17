@@ -831,7 +831,8 @@
             "zones": "This room",
             "action": "Do this",
             "scene_id": "Scene",
-            "scripts": "Scripts to run"
+            "scripts": "Scripts to run",
+            "enabled": "This action happens"
           },
           "sections": {
             "advanced": {
@@ -850,7 +851,8 @@
             }
           },
           "data_description": {
-            "scripts": "Run when this action takes effect, alongside whatever it does to the lights, and once however many rooms the action covers. An action for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were."
+            "scripts": "Run when this action takes effect, alongside whatever it does to the lights, and once however many rooms the action covers. An action for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were.",
+            "enabled": "Switched off, it stays written down and stays in the list, and simply does not happen -- which is how you find out whether it is the one misbehaving."
           }
         },
         "remove_rule": {
@@ -875,7 +877,8 @@
             "zones": "This room",
             "action": "Do this",
             "scene_id": "Scene",
-            "scripts": "Scripts to run"
+            "scripts": "Scripts to run",
+            "enabled": "This action happens"
           },
           "sections": {
             "advanced": {
@@ -894,7 +897,8 @@
             }
           },
           "data_description": {
-            "scripts": "Run when this action takes effect, alongside whatever it does to the lights, and once however many rooms the action covers. An action for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were."
+            "scripts": "Run when this action takes effect, alongside whatever it does to the lights, and once however many rooms the action covers. An action for the 'off' state runs its scripts when the mode ends -- including when the mode is switched off part-way through, which is also when the rooms go back to how they were.",
+            "enabled": "Switched off, it stays written down and stays in the list, and simply does not happen -- which is how you find out whether it is the one misbehaving."
           }
         },
         "settings": {

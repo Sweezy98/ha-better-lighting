@@ -128,5 +128,7 @@
   "steps_hint": "Each step is a share of whatever brightness the effect is given, a time to get there, and a time to stay. They play in order, and start again if the effect repeats.",
   "add_step": "Add a step",
   "try_it": "Try it",
-  "stop_it": "Stop"
+  "stop_it": "Stop",
+  "enable": "Switch on",
+  "disable": "Switch off"
 }

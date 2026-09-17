@@ -843,6 +843,9 @@ class BetterLightingPanel extends HTMLElement {
     // somewhere else folds away what you have left, so a house with a dozen
     // rooms does not end up as a menu you have to scroll.
     this._expanded = null;
+    // And the one list *inside* a room that is open: its scenes, or its
+    // switches. Same rule one level down.
+    this._expandedSub = null;
     this._scene = null;
     this._selectedLight = null;
     this._previewing = false;
@@ -1770,7 +1773,11 @@ class BetterLightingPanel extends HTMLElement {
         .page { display:flex; flex-direction:column; min-height:0; flex:1 1 auto;
                 padding:0; overflow:hidden; }
         .page-body { flex:1 1 auto; min-height:0; min-width:0; overflow:auto;
-                     overflow-wrap:anywhere; padding:16px 20px; }
+                     overflow-wrap:anywhere; padding:16px 20px;
+                     display:flex; flex-direction:column; }
+        .page-body > * { flex:0 0 auto; }
+        /* No rows, so no box around them either. */
+        .page-body ul:empty { display:none; }
         /* Nothing on a page is wider than the page. Borrowed controls bring
            their own widths, and a long entity id has no space to break at. */
         .page-body *, .page-body ha-selector { max-width:100%; box-sizing:border-box; }
@@ -1811,10 +1818,14 @@ class BetterLightingPanel extends HTMLElement {
         .page-body li .moves { display:flex; gap:2px; flex:0 0 auto; }
         /* Nothing here yet, said plainly and in the middle rather than as a
            dash somebody has to interpret. */
-        .empty { display:flex; flex-direction:column; align-items:center; gap:8px;
-                 padding:40px 16px; text-align:center;
+        /* In the middle of whatever space the page has, rather than tucked
+           under the top of it. */
+        .empty { flex:1 1 auto; display:flex; flex-direction:column;
+                 align-items:center; justify-content:center; gap:10px;
+                 min-height:160px; padding:40px 16px; text-align:center;
                  color:var(--primary-color); }
-        .empty ha-icon { --mdc-icon-size:40px; opacity:.7; }
+        .empty span { max-width:34ch; }
+        .empty ha-icon { --mdc-icon-size:48px; opacity:.7; }
         /* The menu is painted the way Home Assistant paints its own sidebar:
            the accent colour for the text and the icon of the current entry,
            over a wash of that same colour rather than a solid block of it,
@@ -1840,11 +1851,21 @@ class BetterLightingPanel extends HTMLElement {
         li.dragging { opacity:.4; }
         li.drop-target { outline:2px dashed var(--primary-color); }
         .twist { display:inline-flex; align-items:center; cursor:pointer;
-                 opacity:.6; margin:-4px -4px -4px 0; padding:4px; }
+                 opacity:.6; margin:-4px -4px -4px 0; padding:4px;
+                 transition:transform .2s ease, opacity .15s ease; }
         .twist:hover { opacity:1; }
+        .twist.open { transform:rotate(90deg); }
         li.section { font-size:15px; font-weight:500; }
         ul.sub { margin:2px 0 8px 14px; padding-left:8px;
-                 border-left:2px solid var(--divider-color,#ddd); }
+                 border-left:2px solid var(--divider-color,#ddd);
+                 animation:reveal .18s ease both; }
+        /* A list that folds rather than blinking out of existence. The rows
+           stay in the document while it is shut, which is what gives the
+           height something to animate between. */
+        .sub-wrap { display:grid; grid-template-rows:0fr;
+                    transition:grid-template-rows .2s ease; }
+        .sub-wrap[data-open="1"] { grid-template-rows:1fr; }
+        .sub-wrap > ul { min-height:0; overflow:hidden; animation:none; }
         /* The padding is on the list rather than the rows: a highlighted row
            with none of it is glued to the line it hangs from. */
         ul.sub li { font-size:14px; padding:7px 10px; }
@@ -1916,6 +1937,21 @@ class BetterLightingPanel extends HTMLElement {
                         border:1px solid var(--divider-color,#ccc);
                         background:var(--card-background-color); color:inherit; }
         .live { background:var(--success-color,#43a047); }
+        /* A few small movements, and none of them in anybody's way. */
+        @keyframes reveal {
+          from { opacity:0; transform:translateY(-4px); }
+          to { opacity:1; transform:none; }
+        }
+        .page { animation:reveal .16s ease both; }
+        li, button, summary { transition:background-color .15s ease,
+                                         color .15s ease, opacity .15s ease; }
+        button:active { transform:translateY(1px); }
+        .light { transition:outline-color .15s ease; }
+        /* Somebody who has asked for less of this gets none of it. */
+        @media (prefers-reduced-motion:reduce) {
+          *, .page, ul.sub { animation:none !important; transition:none !important; }
+        }
+      </style>
         /* Inside the box now that these are boxed accordions, rather than
            running up against its edges. */
         details.diag table { width:100%; border-collapse:collapse; margin:8px 0 12px; }
@@ -1986,6 +2022,13 @@ class BetterLightingPanel extends HTMLElement {
       .getElementById("scrim")
       .addEventListener("click", () => this._setDrawer(false));
 
+    // Accordions fold rather than jumping. Delegated, so it covers every
+    // one of them however and whenever it was drawn, and does nothing at all
+    // for somebody who has asked for less movement.
+    this.shadowRoot
+      .getElementById("main")
+      .addEventListener("click", (event) => this._foldClick(event));
+
     const overflow = this.shadowRoot.getElementById("more-menu");
     this.shadowRoot.getElementById("more").addEventListener("click", (event) => {
       event.stopPropagation();
@@ -2013,7 +2056,7 @@ class BetterLightingPanel extends HTMLElement {
    * to fill in rather than as an invitation to add the first one.
    */
   _empty(text) {
-    return `<div class="empty">${this._icon("mdi:tray-plus")}<span>${
+    return `<div class="empty">${this._icon("mdi:tray-remove")}<span>${
       text || this._t("empty_list")
     }</span></div>`;
   }
@@ -2068,6 +2111,44 @@ class BetterLightingPanel extends HTMLElement {
   /** Ask before something that cannot be undone. */
   _confirm(text) {
     return window.confirm(text || this._t("confirm_delete"));
+  }
+
+  /**
+   * Open or close an accordion by animating its height.
+   *
+   * The browser gives no way to transition this on its own -- a closed
+   * details has no box to animate -- beyond ::details-content, which most
+   * browsers still do not have. So the open is deferred until the animation
+   * has run, and the close until it has finished running.
+   */
+  _foldClick(event) {
+    const summary = event.target.closest?.("summary");
+    const fold = summary?.parentElement;
+    if (!summary || fold?.tagName !== "DETAILS") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const body = [...fold.children].find((child) => child !== summary);
+    if (!body || fold.dataset.busy) return;
+
+    event.preventDefault();
+    fold.dataset.busy = "1";
+    const opening = !fold.open;
+    if (opening) fold.open = true;
+    const height = body.scrollHeight;
+    body.style.overflow = "hidden";
+    const animation = body.animate(
+      {
+        height: opening ? ["0px", `${height}px`] : [`${height}px`, "0px"],
+        opacity: opening ? [0, 1] : [1, 0],
+      },
+      { duration: 180, easing: "ease" }
+    );
+    const done = () => {
+      body.style.overflow = "";
+      if (!opening) fold.open = false;
+      delete fold.dataset.busy;
+    };
+    animation.addEventListener("finish", done);
+    animation.addEventListener("cancel", done);
   }
 
   /** Open or shut the menu drawer. Nothing at all on a wide screen. */
@@ -2143,6 +2224,7 @@ class BetterLightingPanel extends HTMLElement {
                     class="grow">${this._sectionName(section)}</span></li>`
               ),
               ...extras.map(([key, fallback]) => {
+                const branch = `${room.id}:${key}`;
                 // Scenes and switches carry their own entries underneath, so
                 // one is reachable without first opening a list of them.
                 const items =
@@ -2160,27 +2242,39 @@ class BetterLightingPanel extends HTMLElement {
                         ])
                       : [];
                 const shown = here && this._view.kind === key;
-                const children = shown
-                  ? `<ul class="sub">${items
-                      .map(
-                        ([index, label, name]) =>
-                          `<li data-section="${key}" data-room="${room.id}"
-                            data-item="${index}" aria-selected="${
-                              this._view.index === index
-                            }">${icon(name)}<span class="grow">${label}</span></li>`
-                      )
-                      .join("")}
-                      <li class="add" data-section="${key}" data-room="${room.id}"
-                        data-item="new">${icon("mdi:plus")}<span class="grow">${this._t(
-                          "add"
-                        )}</span></li></ul>`
+                const open = this._expandedSub === branch;
+                // Rendered whether or not it is open, so opening and closing
+                // it is something that can be watched happening.
+                const children = items.length || open
+                  ? `<div class="sub-wrap" data-open="${open ? "1" : "0"}">
+                      <ul class="sub">${items
+                        .map(
+                          ([index, label, name]) =>
+                            `<li data-section="${key}" data-room="${room.id}"
+                              data-item="${index}" aria-selected="${
+                                shown && this._view.index === index
+                              }">${icon(name)}<span class="grow">${label}</span></li>`
+                        )
+                        .join("")}
+                        <li class="add" data-section="${key}" data-room="${room.id}"
+                          data-item="new">${icon("mdi:plus")}<span class="grow">${this._t(
+                            "add"
+                          )}</span></li></ul>
+                     </div>`
                   : "";
                 return `<li data-section="${key}" data-room="${room.id}"
-                  aria-selected="${
+                  aria-expanded="${open}" aria-selected="${
                     shown && this._view.index === undefined
                   }">${icon(SECTION_ICONS[key])}<span class="grow">${
                     this._labels.sections[key] || fallback
-                  }</span></li>${children}`;
+                  }</span>${
+                    children
+                      ? `<span class="twist ${open ? "open" : ""}"
+                          data-sub-twist="${branch}">${icon(
+                          "mdi:chevron-right"
+                        )}</span>`
+                      : ""
+                  }</li>${children}`;
               }),
             ].join("")}</ul>`
           : "";
@@ -2324,6 +2418,7 @@ class BetterLightingPanel extends HTMLElement {
           return;
         }
         this._view = { kind: section };
+        this._expandedSub = `${this._roomId}:${section}`;
         if (chosenItem === undefined) {
           this._paint();
           return;
@@ -2389,6 +2484,14 @@ class BetterLightingPanel extends HTMLElement {
         event.stopPropagation();
         const id = handle.dataset.roomTwist;
         this._expanded = this._expanded === id ? null : id;
+        this._paintNav();
+      })
+    );
+    nav.querySelectorAll("[data-sub-twist]").forEach((handle) =>
+      handle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const id = handle.dataset.subTwist;
+        this._expandedSub = this._expandedSub === id ? null : id;
         this._paintNav();
       })
     );

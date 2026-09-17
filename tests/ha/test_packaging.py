@@ -540,3 +540,14 @@ def test_leaving_a_changed_screen_goes_through_one_gate() -> None:
         panel_js,
     ):
         assert "_confirm()" in removal, f"a delete with no confirmation: {removal!r}"
+
+
+def test_movement_can_be_turned_off() -> None:
+    """Animations are a courtesy. Somebody who has asked their machine for
+    fewer of them has asked this page too."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    assert "prefers-reduced-motion" in panel_js
+    # Including the one that is done in script rather than in the stylesheet,
+    # which a stylesheet rule cannot reach.
+    assert 'window.matchMedia?.("(prefers-reduced-motion: reduce)").matches' in panel_js

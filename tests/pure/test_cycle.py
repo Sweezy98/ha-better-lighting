@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from custom_components.better_lighting.cycle import (
     ADAPTIVE,
+    ADAPTIVE_STEP,
     OFF,
-    AdaptivePosition,
     ForeignPolicy,
     ZoneCycleState,
     build_cycle,
@@ -20,24 +20,30 @@ DINING = scene_step("dining")
 MOVIE = scene_step("movie")
 
 # The worked example from the requirements: two switches in one kitchen.
-OVEN = build_cycle(("cooking", "bright"))
-DOOR = build_cycle(("dining", "movie"))
+OVEN = build_cycle((ADAPTIVE_STEP, "cooking", "bright"))
+DOOR = build_cycle((ADAPTIVE_STEP, "dining", "movie"))
 
 
 class TestBuildCycle:
     def test_adaptive_leads_by_default(self):
         assert OVEN.steps == (ADAPTIVE, COOKING, BRIGHT)
 
-    def test_adaptive_can_trail(self):
-        cycle = build_cycle(("cooking",), adaptive_position=AdaptivePosition.LAST)
-        assert cycle.steps == (COOKING, ADAPTIVE)
+    def test_adaptive_can_sit_anywhere(self):
+        """It is an entry in the list now, not a setting about the list --
+        which is what lets a switch put it between two scenes."""
+        assert build_cycle(("cooking", ADAPTIVE_STEP)).steps == (COOKING, ADAPTIVE)
+        assert build_cycle(("cooking", ADAPTIVE_STEP, "bright")).steps == (
+            COOKING,
+            ADAPTIVE,
+            BRIGHT,
+        )
 
     def test_adaptive_can_be_left_out(self):
-        cycle = build_cycle(("cooking",), adaptive_position=AdaptivePosition.NONE)
-        assert cycle.steps == (COOKING,)
+        """A switch for one scene and nothing else: a reading light."""
+        assert build_cycle(("cooking",)).steps == (COOKING,)
 
     def test_off_can_close_the_cycle(self):
-        cycle = build_cycle(("cooking",), off_at_end=True)
+        cycle = build_cycle((ADAPTIVE_STEP, "cooking"), off_at_end=True)
         assert cycle.steps == (ADAPTIVE, COOKING, OFF)
 
 
@@ -71,7 +77,7 @@ class TestCycling:
         assert result.step == ADAPTIVE
 
     def test_a_non_wrapping_cycle_ends_by_switching_off(self):
-        cycle = build_cycle(("cooking",), wrap=False)
+        cycle = build_cycle((ADAPTIVE_STEP, "cooking"), wrap=False)
         result = press(cycle, ZoneCycleState(current=COOKING))
         assert result.step == OFF
         assert result.reason == "end_of_cycle"
@@ -102,7 +108,9 @@ class TestTwoSwitchesOneRoom:
         assert press(DOOR, ZoneCycleState(current=ADAPTIVE)).step == DINING
 
     def test_remember_policy_continues_where_it_left_off(self):
-        door = build_cycle(("dining", "movie"), on_foreign=ForeignPolicy.REMEMBER)
+        door = build_cycle(
+            (ADAPTIVE_STEP, "dining", "movie"), on_foreign=ForeignPolicy.REMEMBER
+        )
         result = press(door, ZoneCycleState(current=COOKING, last_index=1))
         assert result.step == MOVIE
 
@@ -140,18 +148,16 @@ class TestForeignModes:
 
 class TestDegenerateCycles:
     def test_an_empty_list_still_gives_adaptive(self):
-        cycle = build_cycle((), adaptive_position=AdaptivePosition.NONE)
+        cycle = build_cycle(())
         assert press(cycle, ZoneCycleState()).step == ADAPTIVE
         assert press_previous(cycle, ZoneCycleState()).step == ADAPTIVE
 
     def test_a_single_step_cycle_stays_put(self):
-        cycle = build_cycle((), adaptive_position=AdaptivePosition.FIRST)
+        cycle = build_cycle((ADAPTIVE_STEP,))
         assert press(cycle, ZoneCycleState(current=ADAPTIVE)).step == ADAPTIVE
 
     def test_a_cycle_without_adaptive_still_advances(self):
-        cycle = build_cycle(
-            ("cooking", "bright"), adaptive_position=AdaptivePosition.NONE
-        )
+        cycle = build_cycle(("cooking", "bright"))
         assert press(cycle, ZoneCycleState(current=COOKING)).step == BRIGHT
         # And a dismissing press still returns to adaptive, even though the
         # list has no adaptive position of its own.
@@ -172,21 +178,26 @@ class TestWhatASwitchCycles:
     def test_a_switch_with_no_list_cycles_the_whole_room(self) -> None:
         from custom_components.better_lighting.models import effective_scene_order
 
-        assert effective_scene_order((), (), ["a", "b", "c"]) == ("a", "b", "c")
+        assert effective_scene_order((), (), ["a", "b", "c"]) == (
+            ADAPTIVE_STEP,
+            "a",
+            "b",
+            "c",
+        )
 
     def test_a_list_keeps_its_own_order(self) -> None:
         from custom_components.better_lighting.models import effective_scene_order
 
-        assert effective_scene_order(["c", "a"], ["b"], ["a", "b", "c"]) == ("c", "a")
+        assert effective_scene_order(
+            [ADAPTIVE_STEP, "c", "a"], ["b"], ["a", "b", "c"]
+        ) == (ADAPTIVE_STEP, "c", "a")
 
     def test_a_new_scene_joins_the_end(self) -> None:
         from custom_components.better_lighting.models import effective_scene_order
 
-        assert effective_scene_order(["c", "a"], ["b"], ["a", "b", "c", "d"]) == (
-            "c",
-            "a",
-            "d",
-        )
+        assert effective_scene_order(
+            [ADAPTIVE_STEP, "c", "a"], ["b"], ["a", "b", "c", "d"]
+        ) == (ADAPTIVE_STEP, "c", "a", "d")
 
     def test_a_removed_scene_stays_removed(self) -> None:
         """The whole reason removals are remembered separately: otherwise the
@@ -198,7 +209,48 @@ class TestWhatASwitchCycles:
     def test_a_deleted_scene_leaves_both_lists(self) -> None:
         from custom_components.better_lighting.models import effective_scene_order
 
-        assert effective_scene_order(["a", "gone"], ["also_gone"], ["a", "b"]) == (
+        assert effective_scene_order(
+            [ADAPTIVE_STEP, "a", "gone"], ["also_gone"], ["a", "b"]
+        ) == (ADAPTIVE_STEP, "a", "b")
+
+
+class TestAdaptiveAsAnEntry:
+    """Adaptive is a step in the list rather than a setting about the list.
+
+    Which is what lets a switch put it between two scenes, leave it out for a
+    switch that only ever does one thing, and get it back afterwards.
+    """
+
+    def test_a_switch_written_before_this_keeps_where_it_had_it(self) -> None:
+        from custom_components.better_lighting.cycle import AdaptivePosition
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert effective_scene_order(["a"], (), ["a"], AdaptivePosition.LAST) == (
+            "a",
+            ADAPTIVE_STEP,
+        )
+        assert effective_scene_order(["a"], (), ["a"], AdaptivePosition.NONE) == ("a",)
+
+    def test_it_can_be_taken_out_and_stays_out(self) -> None:
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert effective_scene_order(["a", "b"], [ADAPTIVE_STEP], ["a", "b"]) == (
             "a",
             "b",
         )
+
+    def test_and_put_back_where_it_is_wanted(self) -> None:
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert effective_scene_order(["a", ADAPTIVE_STEP, "b"], (), ["a", "b"]) == (
+            "a",
+            ADAPTIVE_STEP,
+            "b",
+        )
+
+    def test_a_list_is_never_empty(self) -> None:
+        """Deleting the last scene from a switch leaves adaptive rather than
+        a switch that does nothing at all."""
+        from custom_components.better_lighting.models import effective_scene_order
+
+        assert effective_scene_order((), [ADAPTIVE_STEP], []) == (ADAPTIVE_STEP,)

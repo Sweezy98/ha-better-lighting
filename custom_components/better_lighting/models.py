@@ -186,7 +186,13 @@ from .const import (
     ZoneAction,
     defaults_for,
 )
-from .cycle import AdaptivePosition, CycleConfig, ForeignPolicy, build_cycle
+from .cycle import (
+    ADAPTIVE_STEP,
+    AdaptivePosition,
+    CycleConfig,
+    ForeignPolicy,
+    build_cycle,
+)
 from .profiles import LightProfile
 from .scenes import (
     ALL_LIGHTS,
@@ -681,11 +687,12 @@ class ControllerConfig:
         scene_ids = tuple(
             scene_id
             for scene_id in self.scene_order
-            if known_scene_ids is None or scene_id in known_scene_ids
+            if scene_id == ADAPTIVE_STEP
+            or known_scene_ids is None
+            or scene_id in known_scene_ids
         )
         return build_cycle(
-            scene_ids,
-            adaptive_position=self.adaptive_position,
+            scene_ids or (ADAPTIVE_STEP,),
             off_at_end=self.off_at_end,
             on_foreign=self.on_foreign,
             wrap=self.wrap_around,
@@ -718,7 +725,11 @@ class ControllerConfig:
             binding_entity=raw.get(CONF_BINDING_ENTITY) or None,
             is_default=bool(raw[CONF_IS_DEFAULT]),
             scene_order=tuple(raw.get(CONF_SCENE_ORDER) or ()),
-            adaptive_position=AdaptivePosition(raw[CONF_ADAPTIVE_POSITION]),
+            # No longer a form field: read only to place adaptive in a list
+            # written before it was an entry of its own.
+            adaptive_position=AdaptivePosition(
+                raw.get(CONF_ADAPTIVE_POSITION, AdaptivePosition.FIRST.value)
+            ),
             off_at_end=bool(raw[CONF_OFF_AT_END]),
             wrap_around=bool(raw[CONF_WRAP_AROUND]),
             on_foreign=ForeignPolicy(raw[CONF_ON_FOREIGN]),
@@ -776,7 +787,7 @@ def synthetic_controller(
         binding_type=BindingType.ZONE_LIGHT,
         binding_entity=None,
         is_default=True,
-        scene_order=scene_ids,
+        scene_order=(ADAPTIVE_STEP, *scene_ids),
         adaptive_position=AdaptivePosition.FIRST,
         off_at_end=False,
         wrap_around=True,
@@ -954,7 +965,10 @@ def _scene_light_color(raw: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def effective_scene_order(
-    stored: Iterable[str], excluded: Iterable[str], scene_ids: Sequence[str]
+    stored: Iterable[str],
+    excluded: Iterable[str],
+    scene_ids: Sequence[str],
+    adaptive_position: AdaptivePosition = AdaptivePosition.FIRST,
 ) -> tuple[str, ...]:
     """Which of the room's scenes a switch cycles, in order.
 
@@ -968,7 +982,7 @@ def effective_scene_order(
     deliberately taken out, and anything the room has gained since joins the
     end. Scenes that no longer exist drop out of both.
     """
-    known = set(scene_ids)
+    known = {*scene_ids, ADAPTIVE_STEP}
     order = [scene_id for scene_id in stored if scene_id in known]
     dropped = set(excluded)
     order.extend(
@@ -976,7 +990,16 @@ def effective_scene_order(
         for scene_id in scene_ids
         if scene_id not in order and scene_id not in dropped
     )
-    return tuple(order)
+    if ADAPTIVE_STEP not in order and ADAPTIVE_STEP not in dropped:
+        # A list written before adaptive was an entry you could move. Where
+        # the switch said it went is where it goes.
+        if adaptive_position is AdaptivePosition.FIRST:
+            order.insert(0, ADAPTIVE_STEP)
+        elif adaptive_position is AdaptivePosition.LAST:
+            order.append(ADAPTIVE_STEP)
+    # A switch that cycles nothing is a switch that does nothing, and
+    # adaptive is the one entry every room can always offer.
+    return tuple(order) or (ADAPTIVE_STEP,)
 
 
 def zone_switch(
@@ -989,6 +1012,9 @@ def zone_switch(
             merged.get(CONF_SCENE_ORDER) or (),
             merged.get(CONF_SCENE_ORDER_EXCLUDED) or (),
             scene_ids,
+            AdaptivePosition(
+                merged.get(CONF_ADAPTIVE_POSITION, AdaptivePosition.FIRST.value)
+            ),
         )
     )
     return ControllerConfig.from_mapping(

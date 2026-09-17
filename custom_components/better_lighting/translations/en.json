@@ -437,7 +437,6 @@
             "advanced": {
               "name": "Advanced",
               "data": {
-                "adaptive_position": "Where adaptive sits in the cycle",
                 "off_at_end": "End the cycle by switching off",
                 "wrap_around": "Wrap back to the start",
                 "on_foreign_state": "If the room is in something not on this list",
@@ -504,7 +503,6 @@
             "advanced": {
               "name": "Advanced",
               "data": {
-                "adaptive_position": "Where adaptive sits in the cycle",
                 "off_at_end": "End the cycle by switching off",
                 "wrap_around": "Wrap back to the start",
                 "on_foreign_state": "If the room is in something not on this list",

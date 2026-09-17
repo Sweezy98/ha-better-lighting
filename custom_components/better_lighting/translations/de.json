@@ -437,7 +437,6 @@
             "advanced": {
               "name": "Erweitert",
               "data": {
-                "adaptive_position": "Position von „Adaptiv“ in der Abfolge",
                 "off_at_end": "Abfolge mit Ausschalten beenden",
                 "wrap_around": "Am Ende zum Anfang zurückspringen",
                 "on_foreign_state": "Wenn der Raum in etwas ist, das nicht auf dieser Liste steht",
@@ -504,7 +503,6 @@
             "advanced": {
               "name": "Erweitert",
               "data": {
-                "adaptive_position": "Position von „Adaptiv“ in der Abfolge",
                 "off_at_end": "Abfolge mit Ausschalten beenden",
                 "wrap_around": "Am Ende zum Anfang zurückspringen",
                 "on_foreign_state": "Wenn der Raum in etwas ist, das nicht auf dieser Liste steht",

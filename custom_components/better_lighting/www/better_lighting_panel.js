@@ -17,6 +17,10 @@
 // the Python side.
 const ALL = "*";
 
+// Adaptive's place in a switch's list, written the way a scene is. Matches
+// ADAPTIVE_STEP on the Python side.
+const ADAPTIVE_STEP = "__adaptive__";
+
 // The fingerprint this copy was served under, taken from its own URL. The
 // backend stamps the URL with a hash of the file, so comparing the two is how
 // an open page learns it has been superseded.
@@ -1947,6 +1951,13 @@ class BetterLightingPanel extends HTMLElement {
         li[aria-selected="true"] ha-icon { color:var(--sidebar-selected-icon-color,
                                                      var(--primary-color)); }
         li[aria-expanded="true"] { font-weight:500; }
+        /* Folded, but you are somewhere inside it: a dot on the chevron, so
+           a closed branch is not the same as an unrelated one. */
+        li[data-inside="1"] { font-weight:500; }
+        li[data-inside="1"] .twist::after { content:""; position:absolute;
+          width:6px; height:6px; margin:-10px 0 0 10px; border-radius:50%;
+          background:var(--primary-color); }
+        li[data-inside="1"] .twist { position:relative; }
         li.add ha-icon { color:inherit; }
         li[draggable="true"] { cursor:grab; }
         li.dragging { opacity:.4; }
@@ -2673,7 +2684,9 @@ class BetterLightingPanel extends HTMLElement {
                      </div>`
                   : "";
                 return `<li data-section="${key}" data-room="${room.id}"
-                  aria-expanded="${open}" aria-selected="${
+                  aria-expanded="${open}" data-inside="${
+                    shown && !open ? "1" : "0"
+                  }" aria-selected="${
                     shown && this._view.index === undefined
                   }">${icon(SECTION_ICONS[key])}<span class="grow">${
                     this._labels.sections[key] || fallback
@@ -2691,7 +2704,7 @@ class BetterLightingPanel extends HTMLElement {
         // Open, but not selected: the screen you are on is one of the rows
         // underneath, and two highlights at once say two things are current.
         return `<li class="room" data-room="${room.id}" aria-expanded="${open}"
-          aria-selected="false">${icon(
+          data-inside="${here && !open ? "1" : "0"}" aria-selected="false">${icon(
             room.data?.icon || "mdi:lightbulb-group"
           )}<span class="grow">${room.name}</span><span class="twist"
             data-room-twist="${room.id}">${icon(
@@ -2747,7 +2760,9 @@ class BetterLightingPanel extends HTMLElement {
                     .join("")}</ul>`
                 : "";
               return `<li class="mode" data-mode="${mode.id}"
-                aria-expanded="${open}" aria-selected="false">${icon(
+                aria-expanded="${open}" data-inside="${
+                  here && !open ? "1" : "0"
+                }" aria-selected="false">${icon(
                   mode.data?.icon || "mdi:movie-open"
                 )}<span class="grow">${mode.name}</span><span class="twist"
                   data-room-twist="${mode.id}">${icon(
@@ -2789,6 +2804,10 @@ class BetterLightingPanel extends HTMLElement {
         event.stopPropagation();
         this._leave(() => {
           chosen();
+          // Going anywhere folds the branch you were in. A handler that is
+          // opening one of them says so afterwards, which is what keeps the
+          // rule to "the branch you are in, and only that one".
+          this._expandedSub = null;
           handler();
         });
       });
@@ -3595,12 +3614,18 @@ class BetterLightingPanel extends HTMLElement {
     const item = switches[index];
     if (!item) return;
     const order = (room.switch_orders || [])[index] || [];
-    const names = Object.fromEntries(
-      (room.scenes || []).map((scene) => [scene.scene_id, scene.name])
-    );
-    const unused = (room.scenes || []).filter(
-      (scene) => !order.includes(scene.scene_id)
-    );
+    const names = {
+      ...Object.fromEntries(
+        (room.scenes || []).map((scene) => [scene.scene_id, scene.name])
+      ),
+      [ADAPTIVE_STEP]: this._t("adaptive"),
+    };
+    const unused = [
+      ...(order.includes(ADAPTIVE_STEP)
+        ? []
+        : [{ scene_id: ADAPTIVE_STEP, name: this._t("adaptive") }]),
+      ...(room.scenes || []).filter((scene) => !order.includes(scene.scene_id)),
+    ];
 
     const save = async (next) => {
       const list = [...switches];
@@ -3628,14 +3653,13 @@ class BetterLightingPanel extends HTMLElement {
       <div class="fold-body">
         <p class="muted">${this._t("cycle_hint")}</p>
         <ul id="order">
-          <li>${this._icon("mdi:weather-sunny")}<span class="grow">1. ${this._t(
-            "adaptive"
-          )}</span></li>
           ${order
             .map(
               (id, i) => `<li draggable="true" data-step="${i}">
-                ${this._icon("mdi:drag")}
-                <span class="grow">${i + 2}. ${names[id] || id}</span>
+                ${this._icon(
+                  id === ADAPTIVE_STEP ? "mdi:weather-sunny" : "mdi:drag"
+                )}
+                <span class="grow">${i + 1}. ${names[id] || id}</span>
                 <span class="moves">
                   <button class="flat" data-up="${i}" ${
                     i === 0 ? "disabled" : ""
@@ -3643,9 +3667,9 @@ class BetterLightingPanel extends HTMLElement {
                   <button class="flat" data-down="${i}" ${
                     i === order.length - 1 ? "disabled" : ""
                   }>${this._icon("mdi:arrow-down")}</button>
-                  <button class="flat" data-remove="${i}">${this._icon(
-                    "mdi:close"
-                  )}</button>
+                  <button class="flat" data-remove="${i}" ${
+                    order.length > 1 ? "" : "disabled"
+                  }>${this._icon("mdi:close")}</button>
                 </span>
               </li>`
             )
@@ -3668,6 +3692,9 @@ class BetterLightingPanel extends HTMLElement {
         const next = [...order];
         if (data.remove !== undefined) {
           next.splice(Number(data.remove), 1);
+          // A switch has to do something. Taking the last scene out of one
+          // leaves adaptive, which every room can always offer.
+          if (!next.length) next.push(ADAPTIVE_STEP);
         } else {
           const from = Number(data.up ?? data.down);
           const to = data.up ? from - 1 : from + 1;

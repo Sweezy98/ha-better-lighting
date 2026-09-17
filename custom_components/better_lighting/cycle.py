@@ -54,7 +54,13 @@ def scene_step(scene_id: str) -> Step:
 
 
 class AdaptivePosition(StrEnum):
-    """Where adaptive sits in the cycle, if at all."""
+    """Where adaptive sits in the cycle, if at all.
+
+    No longer a setting: adaptive is an entry in the switch's list now, and
+    can sit anywhere in it. Kept because switches configured before that say
+    where theirs went, and a list written then has to be read as it was
+    meant.
+    """
 
     FIRST = "first"
     LAST = "last"
@@ -93,21 +99,28 @@ class CycleConfig:
         return None
 
 
+# Adaptive's place in a switch's list, written the same way a scene is. It
+# used to be a setting -- first, last or not at all -- which could say where
+# it went but not that it belonged between two particular scenes.
+ADAPTIVE_STEP = "__adaptive__"
+
+
 def build_cycle(
     scene_ids: tuple[str, ...],
     *,
-    adaptive_position: AdaptivePosition = AdaptivePosition.FIRST,
     off_at_end: bool = False,
     on_foreign: ForeignPolicy = ForeignPolicy.RESTART,
     wrap: bool = True,
 ) -> CycleConfig:
-    """Expand a configured scene order into the full cycle."""
-    steps: list[Step] = []
-    if adaptive_position is AdaptivePosition.FIRST:
-        steps.append(ADAPTIVE)
-    steps.extend(scene_step(scene_id) for scene_id in scene_ids)
-    if adaptive_position is AdaptivePosition.LAST:
-        steps.append(ADAPTIVE)
+    """Expand a configured order into the full cycle.
+
+    ``scene_ids`` is the switch's list as written, which may name adaptive
+    among the scenes and anywhere in them.
+    """
+    steps: list[Step] = [
+        ADAPTIVE if scene_id == ADAPTIVE_STEP else scene_step(scene_id)
+        for scene_id in scene_ids
+    ]
     if off_at_end:
         steps.append(OFF)
     return CycleConfig(tuple(steps), on_foreign=on_foreign, wrap=wrap)

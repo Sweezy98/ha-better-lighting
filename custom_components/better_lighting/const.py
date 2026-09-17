@@ -1037,12 +1037,6 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
     ),
     FieldSpec(CONF_IS_DEFAULT, False, _boolean()),
     # --- cycle shape ---
-    FieldSpec(
-        CONF_ADAPTIVE_POSITION,
-        "first",
-        _select(ADAPTIVE_POSITIONS, "adaptive_position"),
-        section=Section.ADVANCED,
-    ),
     FieldSpec(CONF_OFF_AT_END, False, _boolean(), section=Section.ADVANCED),
     FieldSpec(CONF_WRAP_AROUND, True, _boolean(), section=Section.ADVANCED),
     FieldSpec(

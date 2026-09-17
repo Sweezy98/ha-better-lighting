@@ -248,9 +248,14 @@ first step, so a press on a dark room lights it adaptively and each further pres
 place down the list before wrapping back.
 
 A new switch cycles every scene in its room, and a scene added later joins the end of every
-switch's list. **What it cycles** on the switch's own screen reorders that list and takes
+switch's list. **Scenes it cycles** on the switch's own screen reorders that list and takes
 scenes out of it; anything taken out stays out, including when the room gains a scene
 afterwards.
+
+**Adaptive is an entry in that list**, not a setting about it — so it can sit between two
+scenes, or be taken out entirely for a switch that does one thing and nothing else, like a
+reading light. A list always holds at least one entry: removing the last scene leaves adaptive,
+which every room can offer.
 
 Two-button switches are understood. The lower half gets its own words and its own actions, so
 the usual arrangement works out of the box:

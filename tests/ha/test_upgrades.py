@@ -65,8 +65,10 @@ class TestAnOlderInstallStillReads:
         assert switch.release_states
         assert switch.any_change_is_a_press is False
         assert switch.double_from_two_presses is False
-        # And with no list of its own it cycles the room, as of v0.22.
-        assert switch.scene_order == ("scene1", "scene2")
+        # With no list of its own it cycles the room, as of v0.22 -- and
+        # leads with adaptive, which is where a switch configured before
+        # adaptive became an entry of its own said it went.
+        assert switch.scene_order == ("__adaptive__", "scene1", "scene2")
 
     def test_a_mode_rule_without_scripts_reads(self) -> None:
         mode = models.ModeConfig.from_subentry(

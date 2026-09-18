@@ -1919,9 +1919,11 @@ class BetterLightingPanel extends HTMLElement {
            no use once it has been scrolled off the top of it. */
         .nav-top { position:sticky; top:-16px; z-index:2;
                    display:flex; justify-content:flex-end;
-                   margin:-16px -8px 4px; padding:8px 0 4px;
+                   margin:-16px 0 4px; padding:8px 8px 4px 0;
                    background:var(--card-background-color,#fff); }
-        .nav-top .icon-btn { width:36px; height:36px; min-height:0;
+        /* Sized and placed like one of the chevrons below it, so the
+           column of them is a column. */
+        .nav-top .icon-btn { width:28px; height:28px; min-height:0;
                              color:var(--secondary-text-color); }
         .nav-top .icon-btn:hover { background:var(--secondary-background-color);
                                    color:var(--primary-text-color); }
@@ -1960,7 +1962,7 @@ class BetterLightingPanel extends HTMLElement {
         /* Folded, its icon lines up with the column of icons below it
            rather than sitting eight pixels to their left. */
         .body[data-rail="1"] .nav-top { justify-content:flex-start;
-                                        margin:-16px 0 4px; }
+                                        margin:-16px 0 4px; padding:8px 0 4px 4px; }
         /* The edge you drag to make it wider, which follows whatever width
            the menu is set to rather than being told separately. */
         .nav-grip { position:absolute; top:var(--gutter); bottom:var(--gutter);
@@ -2820,12 +2822,32 @@ class BetterLightingPanel extends HTMLElement {
       this._setDrawer(!this._navOpen);
       return;
     }
+    // Where the button is now, so the one that comes back can be rolled
+    // from here to there rather than appearing at the other end.
+    const before = this.shadowRoot
+      .getElementById("nav-fold")
+      ?.getBoundingClientRect();
+
     this._railed = !this._railed;
     _remember("bl-nav-rail", this._railed ? 1 : 0);
     this._applyNavLayout();
     // The button carries the direction it will go next, so it is drawn again
     // now that the direction has changed.
     this._paintNav();
+
+    const button = this.shadowRoot.getElementById("nav-fold");
+    if (!button || !before || this._reducedMotion()) return;
+    const shift = before.left - button.getBoundingClientRect().left;
+    if (!shift) return;
+    // Rolled rather than slid: a wheel going left turns anticlockwise, and
+    // half a turn is what leaves the chevron facing the way it now means.
+    button.animate(
+      [
+        { transform: `translateX(${shift}px) rotate(${shift > 0 ? 180 : -180}deg)` },
+        { transform: "none" },
+      ],
+      { duration: 260, easing: "ease" }
+    );
   }
 
   /**
@@ -2894,10 +2916,12 @@ class BetterLightingPanel extends HTMLElement {
     const nav = this.shadowRoot.getElementById("rooms");
     const sections = (this._schema?.forms.zone || []).map((group) => group.section);
     const icon = (name) => this._icon(name);
+    // One chevron, turned. Swapping it for a different icon is a thing
+    // that cannot be watched happening, and turning is the movement that
+    // says what folding means.
     const twist = (key) =>
-      `<span class="twist" data-twist="${key}">${icon(
-        this._collapsed[key] ? "mdi:chevron-right" : "mdi:chevron-down"
-      )}</span>`;
+      `<span class="twist ${this._collapsed[key] ? "" : "open"}"
+        data-twist="${key}">${icon("mdi:chevron-right")}</span>`;
 
     // No section chosen means the first one, which is what the content pane
     // falls back to -- so the highlight has to agree with it, or a room opens
@@ -2993,9 +3017,9 @@ class BetterLightingPanel extends HTMLElement {
         return `<li class="room" data-room="${room.id}" aria-expanded="${open}"
           data-inside="${here && !open ? "1" : "0"}" aria-selected="false">${icon(
             room.data?.icon || "mdi:lightbulb-group"
-          )}<span class="grow">${room.name}</span><span class="twist"
+          )}<span class="grow">${room.name}</span><span class="twist ${open ? "open" : ""}"
             data-room-twist="${room.id}">${icon(
-            open ? "mdi:chevron-down" : "mdi:chevron-right"
+            "mdi:chevron-right"
           )}</span></li>${children}`;
       })
       .join("");
@@ -3060,9 +3084,9 @@ class BetterLightingPanel extends HTMLElement {
                   here && !open ? "1" : "0"
                 }" aria-selected="false">${icon(
                   mode.data?.icon || "mdi:movie-open"
-                )}<span class="grow">${mode.name}</span><span class="twist"
+                )}<span class="grow">${mode.name}</span><span class="twist ${open ? "open" : ""}"
                   data-room-twist="${mode.id}">${icon(
-                  open ? "mdi:chevron-down" : "mdi:chevron-right"
+                  "mdi:chevron-right"
                 )}</span></li>${children}`;
             })
             .join("")}
@@ -3270,6 +3294,7 @@ class BetterLightingPanel extends HTMLElement {
       handle.addEventListener("click", (event) => {
         event.stopPropagation();
         const id = handle.dataset.roomTwist;
+        const opening = this._expanded !== id;
         // The list is whatever follows the row the chevron sits on, which
         // is only there while the branch is open -- so it is looked up again
         // on the far side of the repaint rather than held on to.
@@ -3282,9 +3307,10 @@ class BetterLightingPanel extends HTMLElement {
             return list?.matches("ul.sub") ? list : null;
           },
           () => {
-            this._expanded = this._expanded === id ? null : id;
+            this._expanded = opening ? id : null;
           }
         );
+        this._turnTwist(`[data-room-twist="${CSS.escape(id)}"]`, opening);
       })
     );
     nav.querySelector("#nav-fold").addEventListener("click", (event) => {
@@ -3295,12 +3321,14 @@ class BetterLightingPanel extends HTMLElement {
       handle.addEventListener("click", (event) => {
         event.stopPropagation();
         const id = handle.dataset.subTwist;
+        const opening = this._expandedSub !== id;
         this._foldBranch(
           (nav) => nav.querySelector(`.sub-wrap[data-branch="${CSS.escape(id)}"]`),
           () => {
-            this._expandedSub = this._expandedSub === id ? null : id;
+            this._expandedSub = opening ? id : null;
           }
         );
+        this._turnTwist(`[data-sub-twist="${CSS.escape(id)}"]`, opening);
       })
     );
     nav.querySelectorAll("[data-twist]").forEach((handle) =>
@@ -3311,6 +3339,10 @@ class BetterLightingPanel extends HTMLElement {
         const key = handle.dataset.twist;
         this._collapsed[key] = !this._collapsed[key];
         this._paintNav();
+        this._turnTwist(
+          `[data-twist="${CSS.escape(key)}"]`,
+          !this._collapsed[key]
+        );
       })
     );
   }

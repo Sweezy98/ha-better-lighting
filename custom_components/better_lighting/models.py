@@ -72,6 +72,10 @@ from .const import (
     CONF_EFFECTS,
     CONF_ENABLED,
     CONF_EXPAND_LIGHT_GROUPS,
+    CONF_GROUP_GROUPS,
+    CONF_GROUP_ID,
+    CONF_GROUP_LIGHTS,
+    CONF_GROUP_SEND_ENTITY,
     CONF_HIDE_MEMBERS,
     CONF_HOLD_INTERVAL_MS,
     CONF_HOLD_RAMP,
@@ -132,6 +136,7 @@ from .const import (
     CONF_RESTORE_ON_POWER_CYCLE,
     CONF_RESUME_MAX_AGE_MIN,
     CONF_RGB_COLOR,
+    CONF_ROOM_GROUPS,
     CONF_ROOM_ID,
     CONF_ROOM_PROFILES,
     CONF_ROOM_SCENES,
@@ -150,6 +155,7 @@ from .const import (
     CONF_RULES,
     CONF_SCENE_EFFECT,
     CONF_SCENE_ENTER_SCRIPTS,
+    CONF_SCENE_GROUPS,
     CONF_SCENE_ID,
     CONF_SCENE_LEAVE_SCRIPTS,
     CONF_SCENE_LIGHTS,
@@ -201,6 +207,7 @@ from .cycle import (
 )
 from .effects import Effect
 from .effects import from_mapping as effect_from_mapping
+from .groups import GroupTree, LightGroup
 from .profiles import LightProfile
 from .scenes import (
     ALL_LIGHTS,
@@ -364,6 +371,13 @@ class RoomConfig:
     # about one bulb in one room, so it belongs to the room rather than to a
     # list of its own halfway down the hub page.
     light_profiles: Mapping[str, LightProfile]
+    # Named bundles of this room's lights. A group is addressing, not
+    # ownership: `lights` above is still the only place membership is decided,
+    # and a group naming a light the room no longer has simply stops reaching
+    # it. Groups may hold groups, so `group_tree` is what everything else uses
+    # -- it cannot hold a cycle, because building it refuses one.
+    light_groups: tuple[LightGroup, ...]
+
     # The switches on this room's walls. A switch drives exactly one room, so
     # it belongs to the room rather than to a flat list that had to name the
     # room in every entry.
@@ -385,6 +399,19 @@ class RoomConfig:
     def slug(self) -> str:
         """Human-facing id for service calls and logs. Never a stored reference."""
         return slugify(self.name)
+
+    def group_tree(self) -> GroupTree:
+        """This room's light groups, resolved.
+
+        Never raises. Saving a cycle is refused in the flow and in the panel,
+        so one can only arrive by hand-edited storage -- and a room that will
+        not load is a worse answer to that than a room with no groups. The
+        repair issue is raised separately, where there is somewhere to put it.
+        """
+        try:
+            return GroupTree.build(self.light_groups, self.lights)
+        except ValueError:
+            return GroupTree.build((), self.lights)
 
     def adapts(self, entity_id: str) -> bool:
         """Whether adaptive lighting drives this light at all.
@@ -471,6 +498,11 @@ class RoomConfig:
                 for entry in (raw.get(CONF_ROOM_PROFILES) or ())
                 if entry.get(CONF_LIGHT_ENTITY)
             },
+            light_groups=tuple(
+                room_light_group(entry)
+                for entry in (raw.get(CONF_ROOM_GROUPS) or ())
+                if entry.get(CONF_GROUP_ID)
+            ),
             switches=tuple(
                 room_switch(entry, subentry.subentry_id, scene_ids)
                 for entry in (raw.get(CONF_ROOM_SWITCHES) or ())
@@ -1044,6 +1076,18 @@ def room_switch(
     )
 
 
+def room_light_group(raw: dict[str, Any]) -> LightGroup:
+    """One of a room's light groups, as stored inside the room."""
+    return LightGroup(
+        group_id=str(raw.get(CONF_GROUP_ID) or ""),
+        name=str(raw.get(CONF_NAME) or ""),
+        icon=str(raw.get(CONF_ICON) or "mdi:lightbulb-group"),
+        lights=tuple(raw.get(CONF_GROUP_LIGHTS) or ()),
+        groups=tuple(raw.get(CONF_GROUP_GROUPS) or ()),
+        send_entity=str(raw.get(CONF_GROUP_SEND_ENTITY) or "") or None,
+    )
+
+
 def room_light_profile(raw: dict[str, Any]) -> LightProfile:
     """One light's calibration, as stored inside its room."""
     merged = {**_PROFILE_DEFAULTS, **raw}
@@ -1076,6 +1120,7 @@ def room_scene(raw: dict[str, Any], room_id: str) -> Scene:
         name=str(raw.get(CONF_NAME) or ""),
         icon=str(raw.get(CONF_ICON) or "mdi:palette"),
         lights=_scene_lights(raw.get(CONF_SCENE_LIGHTS) or {}),
+        groups=_scene_lights(raw.get(CONF_SCENE_GROUPS) or {}),
         on_lights_only=bool(raw.get(CONF_ON_LIGHTS_ONLY, False)),
         rooms=frozenset({room_id}),
         others=OthersPolicy(raw.get(CONF_OTHERS, OthersPolicy.ADAPTIVE.value)),

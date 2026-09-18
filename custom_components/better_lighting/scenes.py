@@ -197,6 +197,11 @@ class Scene:
     color: Color | None = None
     # Empty means "every member of whatever room this is applied to".
     lights: Mapping[str, SceneLightSpec] = field(default_factory=dict)
+    # The same, said about a whole light group: one row for "the ceiling
+    # amber" instead of nine. Resolved into `lights` by `groups.flatten_scene`
+    # before any of this is rendered, so nothing below this line has to know
+    # groups exist.
+    groups: Mapping[str, SceneLightSpec] = field(default_factory=dict)
     on_lights_only: bool = False
     # Rooms this scene is offered in. Empty means everywhere. Purely about
     # what the pickers show: applying a scene has only ever affected the one

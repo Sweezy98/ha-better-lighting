@@ -481,6 +481,7 @@ const SECTION_ICONS = {
   scenes: "mdi:palette",
   switches: "mdi:light-switch",
   calibrations: "mdi:tune-variant",
+  light_groups: "mdi:lightbulb-group",
   rules: "mdi:lightning-bolt-outline",
   presets: "mdi:palette-swatch",
 };
@@ -1713,6 +1714,20 @@ class BetterLightingPanel extends HTMLElement {
           { label: item?.name || this._t("switch") },
         ];
       }
+      case "light_groups": {
+        const top = {
+          label: named("light_groups"),
+          go: to({ kind: "light_groups" }),
+        };
+        const item = (room?.data.light_groups || [])[view.index];
+        if (view.index === undefined) return [rooms, theRoom, top];
+        return [
+          rooms,
+          theRoom,
+          top,
+          { label: item?.name || this._t("light_group") },
+        ];
+      }
       case "calibrations": {
         const top = {
           label: named("calibrations"),
@@ -1835,6 +1850,14 @@ class BetterLightingPanel extends HTMLElement {
       })),
       zones: this._rooms.map((r) => ({ value: r.id, label: r.name })),
       lights: (room?.lights || []).map((id) => ({ value: id, label: id })),
+      // A group may hold other groups of the same room. The one being edited
+      // is left in: dropping it is the flow's trick, and here the index is
+      // not in hand -- the save refuses a loop either way, with the loop
+      // named.
+      light_groups: (room?.data.light_groups || []).map((group) => ({
+        value: group.group_id,
+        label: group.name || group.group_id,
+      })),
     };
   }
 
@@ -2904,7 +2927,14 @@ class BetterLightingPanel extends HTMLElement {
     // is called Lights there, the hub's and the switch's nothing at all --
     // so the panel supplies one word for all of them.
     if (key === "basic") return this._t("basics");
-    return this._labels.sections[key] || String(key).replace(/_/g, " ");
+    // Flow sections first, then the panel's own words: a screen the panel
+    // adds itself -- light groups -- has no section in the flow, and the
+    // slug fallback put "light groups" in the breadcrumb under a menu entry
+    // reading "Light groups".
+    const word = this._schema?.ui?.[key];
+    return (
+      this._labels.sections[key] || word || String(key).replace(/_/g, " ")
+    );
   }
 
   _paint() {
@@ -2930,15 +2960,20 @@ class BetterLightingPanel extends HTMLElement {
     // Only the screens that belong to a room keep that room open. Colour
     // presets and diagnostics are nobody's room, and leaving the room lit
     // while one of those was showing is what made the highlight look broken.
-    const inRoom = ["room", "scenes", "switches", "calibrations"].includes(
-      this._view.kind
-    );
+    const inRoom = [
+      "room",
+      "scenes",
+      "switches",
+      "calibrations",
+      "light_groups",
+    ].includes(this._view.kind);
     // Opening a room shows its screens; the chevron folds it away again.
     if (inRoom && this._expanded === undefined) this._expanded = this._roomId;
     const extras = [
       ["scenes", this._t("scenes")],
       ["switches", this._t("switches")],
       ["calibrations", this._t("calibration")],
+      ["light_groups", this._t("light_groups")],
     ];
 
     const roomRows = this._rooms
@@ -3184,7 +3219,11 @@ class BetterLightingPanel extends HTMLElement {
         // always the room you were last in now that two can be unfolded.
         this._roomId = item.dataset.room || this._roomId;
         this._expanded = this._roomId;
-        if (!["scenes", "switches", "calibrations"].includes(section)) {
+        if (
+          !["scenes", "switches", "calibrations", "light_groups"].includes(
+            section
+          )
+        ) {
           this._view = { kind: "room", section };
           this._paint();
           return;
@@ -3217,9 +3256,13 @@ class BetterLightingPanel extends HTMLElement {
           // testing for the one rather than for the other is how Add under
           // the calibrations started making scenes.
           const items =
-            section === "switches"
-              ? this._room?.data.switches || []
-              : this._room?.data.light_profiles || [];
+            this._room?.data[
+              {
+                switches: "switches",
+                calibrations: "light_profiles",
+                light_groups: "light_groups",
+              }[section]
+            ] || [];
           this._view = {
             kind: section,
             index: chosenItem === "new" ? items.length : Number(chosenItem),
@@ -3378,6 +3421,8 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintCollection("switches", "switch");
       case "calibrations":
         return this._paintCollection("light_profiles", "calibration");
+      case "light_groups":
+        return this._paintCollection("light_groups", "light_group");
       default:
         return this._paintRoomSection();
     }
@@ -3745,11 +3790,22 @@ class BetterLightingPanel extends HTMLElement {
       save: async (next) => {
         const list = [...items];
         list[index] = { ...(items[index] || {}), ...next };
-        const result = await this._call("save_room_collection", {
-          room_id: room.id,
-          key: storageKey,
-          items: list,
-        });
+        let result;
+        try {
+          result = await this._call("save_room_collection", {
+            room_id: room.id,
+            key: storageKey,
+            items: list,
+          });
+        } catch (err) {
+          // The server sends the loop it found and nothing else, since it
+          // does not know which language this page is in. The sentence is
+          // ours; the path is the useful half.
+          if (err?.code === "cycle") {
+            throw new Error(`${this._t("group_cycle")} (${err.message})`);
+          }
+          throw err;
+        }
         this._view = { kind: this._view.kind };
         return result;
       },

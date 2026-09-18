@@ -225,6 +225,7 @@ class TestEverySettingIsReachable:
             "mode",
             "switch",
             "calibration",
+            "light_group",
             "scene",
             "preset",
             "effect",
@@ -394,6 +395,57 @@ class TestEverySettingIsReachable:
         assert [s["name"] for s in stored] == ["Door", "Oven"]
         # Each gets an id so a later edit can find it again.
         assert all(s["switch_id"] for s in stored)
+
+    async def test_a_rooms_light_groups_can_be_saved_as_a_list(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+        room_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_room_collection",
+                "room_id": room_id,
+                "key": "light_groups",
+                "items": [
+                    {"name": "Ceiling", "lights": ["light.one", "light.two"]},
+                ],
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        stored = entry.subentries[room_id].data["light_groups"]
+        assert [g["name"] for g in stored] == ["Ceiling"]
+        assert all(g["group_id"] for g in stored)
+
+    async def test_a_group_that_contains_itself_is_refused(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """Warned and not saved: there is no sensible thing to store instead."""
+        entry, client = await _setup(hass, hass_ws_client)
+        room_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_room_collection",
+                "room_id": room_id,
+                "key": "light_groups",
+                "items": [
+                    {"group_id": "a", "name": "Ceiling", "groups": ["b"]},
+                    {"group_id": "b", "name": "Middle row", "groups": ["a"]},
+                ],
+            }
+        )
+        result = await client.receive_json()
+
+        assert not result["success"]
+        # Named in full, because "this is recursive" does not say which two
+        # entries to go and look at.
+        assert result["error"]["message"] == "Ceiling -> Middle row -> Ceiling"
+        assert not entry.subentries[room_id].data.get("light_groups")
 
     async def test_saving_a_scene_list_keeps_its_per_light_entries(
         self, hass: HomeAssistant, hass_ws_client

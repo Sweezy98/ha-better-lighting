@@ -778,6 +778,62 @@
           "data": {
             "switch": "Switch"
           }
+        },
+        "light_groups": {
+          "title": "Light groups",
+          "description": "Named bundles of this room's lights:\n\n{light_groups}",
+          "menu_options": {
+            "add_light_group": "Add a group",
+            "edit_light_group": "Change a group",
+            "remove_light_group": "Remove a group",
+            "menu": "⬅️ Back"
+          }
+        },
+        "add_light_group": {
+          "title": "Light group",
+          "description": "Several of this room's lights under one name. A group can hold other groups, so a 3x3 of ceiling spots is three rows rather than nine entries. Give it a group entity and the whole group changes in one command, which is what stops the bulbs arriving one after another -- and a scene that sets them differently still addresses them individually.",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "lights": "Lights",
+            "groups": "Groups inside this one",
+            "send_entity": "Send through"
+          },
+          "data_description": {
+            "lights": "Which of this room's lights belong to the group.",
+            "groups": "Other groups this one contains. A group cannot contain itself, directly or through another.",
+            "send_entity": "A Zigbee group, Hue room or light group helper that reaches every member at once. Left empty, the members are addressed one by one, which looks the same and arrives less evenly."
+          }
+        },
+        "light_group_form": {
+          "title": "Light group",
+          "description": "Several of this room's lights under one name. A group can hold other groups, so a 3x3 of ceiling spots is three rows rather than nine entries. Give it a group entity and the whole group changes in one command, which is what stops the bulbs arriving one after another -- and a scene that sets them differently still addresses them individually.",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "lights": "Lights",
+            "groups": "Groups inside this one",
+            "send_entity": "Send through"
+          },
+          "data_description": {
+            "lights": "Which of this room's lights belong to the group.",
+            "groups": "Other groups this one contains. A group cannot contain itself, directly or through another.",
+            "send_entity": "A Zigbee group, Hue room or light group helper that reaches every member at once. Left empty, the members are addressed one by one, which looks the same and arrives less evenly."
+          }
+        },
+        "edit_light_group": {
+          "title": "Which group?",
+          "description": "{light_groups}",
+          "data": {
+            "light_group": "Group"
+          }
+        },
+        "remove_light_group": {
+          "title": "Which group?",
+          "description": "{light_groups}",
+          "data": {
+            "light_group": "Group"
+          }
         }
       },
       "error": {
@@ -788,7 +844,8 @@
         "name_required": "Give the scene a name.",
         "nothing_to_capture": "None of this room's lights are available to capture.",
         "profile_exists": "This light already has a calibration.",
-        "binding_entity_required": "Pick the entity your switch publishes to."
+        "binding_entity_required": "Pick the entity your switch publishes to.",
+        "group_cycle": "A group cannot contain itself, directly or through another group."
       },
       "abort": {
         "reconfigure_successful": "Room updated."

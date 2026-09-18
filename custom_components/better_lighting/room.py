@@ -21,6 +21,7 @@ import hashlib
 import logging
 import zoneinfo
 from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import astral
@@ -84,6 +85,7 @@ from .cycle import (
 from .effects import EffectRequest
 from .effects import frames as effect_frames
 from .effects import resolve as resolve_effect
+from .groups import flatten_scene, route
 from .openings import WindowWatcher
 from .presence import RoomPresence
 from .profiles import Axis, LightCapabilities, LightProfile, Saturation
@@ -148,6 +150,9 @@ class RoomController:
         self.contexts = contexts
         self.profiles = profiles or {}
         self.scenes = scenes or {}
+        # Resolved once: the room's configuration does not change without the
+        # entry reloading, and this is walked on every render.
+        self.groups = room.group_tree()
 
         # Tracked per axis: a room can follow the sun's colour while its
         # brightness stays put, or the other way round.
@@ -1118,7 +1123,18 @@ class RoomController:
         )
 
     def active_scene(self) -> Scene | None:
-        """The scene the current mode resolves to, if any."""
+        """The scene the current mode resolves to, if any.
+
+        Resolved through the room's light groups on the way out, so "the whole
+        ceiling amber" has already become nine per-light entries by the time
+        anything renders. One funnel, so night and insect scenes get it too.
+        """
+        scene = self._active_scene()
+        if scene is None:
+            return None
+        return flatten_scene(scene, self.groups, self.room.lights)
+
+    def _active_scene(self) -> Scene | None:
         mode = self.effective_mode
         if mode is RoomMode.INSECT:
             return self.room.insect_scene(self.scenes)
@@ -1243,9 +1259,15 @@ class RoomController:
     ) -> bool:
         """Decide and send. Returns whether anything was actually issued."""
         async with self._serialised():
+            # Routed before the redundancy filter, not after: a group is worth
+            # using precisely when its bulbs must move together, and dropping
+            # the two that happen to be right already would break it up again.
             commands = [
                 command
-                for command in self.commands_for(trigger, entity_ids, only_lit=only_lit)
+                for command in route(
+                    self.commands_for(trigger, entity_ids, only_lit=only_lit),
+                    self.groups,
+                )
                 if not self._is_redundant(command)
             ]
             if not commands:
@@ -1260,7 +1282,17 @@ class RoomController:
 
         Without this the interval republishes every light every time, which is
         recorder churn and can visibly restart a transition.
+
+        A group command is judged on its members rather than on the group
+        entity: the group is how the command travels, the bulbs are what the
+        question is about, and a group entity's own attributes are whatever
+        the last thing to touch it left behind.
         """
+        if command.members:
+            return all(
+                self._is_redundant(replace(command, entity_id=member, members=()))
+                for member in command.members
+            )
         state = self.hass.states.get(command.entity_id)
         if state is None:
             return False

@@ -34,6 +34,10 @@ from .const import (
     CONF_COLOR_PRESETS,
     CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
+    CONF_GROUP_GROUPS,
+    CONF_GROUP_ID,
+    CONF_GROUP_LIGHTS,
+    CONF_GROUP_SEND_ENTITY,
     CONF_ICON,
     CONF_IGNORE_PRESENCE,
     CONF_LIGHT_ACTION,
@@ -50,6 +54,7 @@ from .const import (
     CONF_RESTORE_ON_POWER_CYCLE,
     CONF_RESUME_MAX_AGE_MIN,
     CONF_RGB_COLOR,
+    CONF_ROOM_GROUPS,
     CONF_ROOM_ID,
     CONF_ROOM_PROFILES,
     CONF_ROOM_SCENES,
@@ -71,6 +76,7 @@ from .const import (
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
+    LIGHT_GROUP_SPECS,
     LIGHT_PROFILE_SPECS,
     MODE_SPECS,
     ROOM_SCENE_SPECS,
@@ -83,6 +89,8 @@ from .const import (
     scene_light_color_specs,
     scene_light_specs,
 )
+from .groups import find_cycle
+from .models import room_light_group
 from .scenes import ALL_LIGHTS
 from .schemas import build_schema, flatten_sections, post_validate
 
@@ -409,6 +417,18 @@ class BetterLightingOptionsFlow(OptionsFlow):
         )
 
 
+def _light_group_cycle(items: list[dict[str, Any]]) -> list[str] | None:
+    """The loop in a proposed set of light groups, by name, or None."""
+    groups = {
+        item[CONF_GROUP_ID]: room_light_group(item)
+        for item in items
+        if item.get(CONF_GROUP_ID)
+    }
+    if (cycle := find_cycle(groups)) is None:
+        return None
+    return [groups[group_id].name or group_id for group_id in cycle]
+
+
 class RoomSubentryFlow(ConfigSubentryFlow):
     """Add or reconfigure a room, and manage the scenes that belong to it.
 
@@ -428,6 +448,8 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         self._pending_light: tuple[str, dict[str, Any]] = ("", {})
         self._profiles: list[dict[str, Any]] = []
         self._editing_profile: int | None = None
+        self._light_groups: list[dict[str, Any]] = []
+        self._editing_light_group: int | None = None
         self._switches: list[dict[str, Any]] = []
         self._switch: dict[str, Any] = {}
         self._editing_switch: int | None = None
@@ -467,6 +489,9 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         ]
         self._profiles = [
             dict(s) for s in (subentry.data.get(CONF_ROOM_PROFILES) or [])
+        ]
+        self._light_groups = [
+            dict(s) for s in (subentry.data.get(CONF_ROOM_GROUPS) or [])
         ]
 
     async def _async_essentials(
@@ -651,6 +676,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
                 "scenes",
                 "switches",
                 "calibrations",
+                "light_groups",
                 # Read back, then leave.
                 "summary",
                 "finish",
@@ -1249,6 +1275,146 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             description_placeholders={"calibrations": self._calibrations_summary()},
         )
 
+    # -- named bundles of this room's lights -------------------------------
+
+    async def async_step_light_groups(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_light_group"]
+        if self._light_groups:
+            options += ["edit_light_group", "remove_light_group"]
+        options.append("menu")
+        return self.async_show_menu(
+            step_id="light_groups",
+            menu_options=options,
+            description_placeholders={"light_groups": self._light_groups_summary()},
+        )
+
+    def _light_groups_summary(self) -> str:
+        if not self._light_groups:
+            return "\u2014"
+        lines = []
+        for group in self._light_groups:
+            held = len(group.get(CONF_GROUP_LIGHTS) or ()) + len(
+                group.get(CONF_GROUP_GROUPS) or ()
+            )
+            sent = group.get(CONF_GROUP_SEND_ENTITY) or "individually"
+            lines.append(f"{group.get(CONF_NAME)}: {held} member(s), via {sent}")
+        return "\n".join(lines)
+
+    def _light_group_picker(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required("light_group"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {
+                                "value": str(index),
+                                "label": str(group.get(CONF_NAME) or index),
+                            }
+                            for index, group in enumerate(self._light_groups)
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        sort=False,
+                    )
+                )
+            }
+        )
+
+    async def async_step_add_light_group(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_light_group_form(
+            "add_light_group", user_input, index=None
+        )
+
+    async def async_step_edit_light_group(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            self._editing_light_group = int(user_input["light_group"])
+            return await self.async_step_light_group_form()
+        return self.async_show_form(
+            step_id="edit_light_group",
+            data_schema=self._light_group_picker(),
+            description_placeholders={"light_groups": self._light_groups_summary()},
+        )
+
+    async def async_step_light_group_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_light_group_form(
+            "light_group_form", user_input, index=self._editing_light_group
+        )
+
+    async def _async_light_group_form(
+        self, step_id: str, user_input: dict[str, Any] | None, *, index: int | None
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors = post_validate(
+                LIGHT_GROUP_SPECS, flatten_sections(LIGHT_GROUP_SPECS, user_input)
+            )
+            if not cleaned.get(CONF_NAME):
+                errors[CONF_NAME] = "name_required"
+            if not errors:
+                proposed = list(self._light_groups)
+                merged = {
+                    **(proposed[index] if index is not None else {}),
+                    **cleaned,
+                }
+                merged.setdefault(CONF_GROUP_ID, ulid_util.ulid_now())
+                if index is None:
+                    proposed.append(merged)
+                else:
+                    proposed[index] = merged
+                if _light_group_cycle(proposed):
+                    # Refused rather than stored: a loop has no meaning to fall
+                    # back to, and the room would lose every group it has.
+                    errors[CONF_GROUP_GROUPS] = "group_cycle"
+                else:
+                    self._light_groups = proposed
+                    self._editing_light_group = None
+                    return await self.async_step_light_groups()
+
+        current = user_input
+        if current is None and index is not None:
+            current = dict(self._light_groups[index])
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=build_schema(
+                LIGHT_GROUP_SPECS,
+                current,
+                options={
+                    "light_groups": [
+                        SelectOptionDict(
+                            value=str(group.get(CONF_GROUP_ID)),
+                            label=str(group.get(CONF_NAME) or group.get(CONF_GROUP_ID)),
+                        )
+                        # Not the one being edited: the one-step loop is best
+                        # made unsayable rather than reported.
+                        for position, group in enumerate(self._light_groups)
+                        if position != index
+                    ]
+                },
+            ),
+            errors=errors,
+        )
+
+    async def async_step_remove_light_group(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            position = int(user_input["light_group"])
+            if 0 <= position < len(self._light_groups):
+                self._light_groups.pop(position)
+            return await self.async_step_light_groups()
+        return self.async_show_form(
+            step_id="remove_light_group",
+            data_schema=self._light_group_picker(),
+            description_placeholders={"light_groups": self._light_groups_summary()},
+        )
+
     # -- the switches on this room's walls --------------------------------
 
     async def async_step_switches(
@@ -1541,6 +1707,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             **self._data,
             CONF_ROOM_SCENES: self._scenes,
             CONF_ROOM_PROFILES: self._profiles,
+            CONF_ROOM_GROUPS: self._light_groups,
             CONF_ROOM_SWITCHES: self._switches,
         }
         title = data[CONF_NAME]

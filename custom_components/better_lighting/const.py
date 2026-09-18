@@ -780,6 +780,53 @@ CONF_ROOM_SWITCHES = "switches"
 CONF_SWITCH_ID = "switch_id"
 # Per-light calibration lives with the room whose lights it calibrates.
 CONF_ROOM_PROFILES = "light_profiles"
+# Named bundles of this room's lights: the three bulbs in one fitting, a row
+# of ceiling spots. A group can hold other groups, which is how a 3x3 matrix
+# is three rows rather than nine entries -- and why saving checks for a loop.
+CONF_ROOM_GROUPS = "light_groups"
+CONF_GROUP_ID = "group_id"
+CONF_GROUP_LIGHTS = "lights"
+CONF_GROUP_GROUPS = "groups"
+CONF_GROUP_SEND_ENTITY = "send_entity"
+
+LIGHT_GROUP_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(
+        CONF_ICON,
+        "mdi:lightbulb-group",
+        selector.IconSelector(selector.IconSelectorConfig()),
+    ),
+    FieldSpec(
+        CONF_GROUP_LIGHTS,
+        [],
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="light", multiple=True)
+        ),
+    ),
+    # Other groups of this room. Offered from what exists, so the picker
+    # cannot name a group that was deleted.
+    FieldSpec(
+        CONF_GROUP_GROUPS,
+        [],
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(options=[], multiple=True)
+        ),
+        options_key="light_groups",
+    ),
+    # The entity that reaches every member at once: a Zigbee group, a Hue
+    # room, a light group helper. Without one the members are addressed
+    # individually, which looks the same and arrives less evenly.
+    FieldSpec(
+        CONF_GROUP_SEND_ENTITY,
+        None,
+        selector.EntitySelector(selector.EntitySelectorConfig(domain="light")),
+    ),
+)
 
 # Whatever else a scene means. A film scene is not only the lights: the
 # amplifier goes on with it and off again when the room comes back.
@@ -867,6 +914,10 @@ ROOM_SCENE_SPECS: tuple[FieldSpec, ...] = (
 
 # Per-light entries inside a scene.
 CONF_SCENE_LIGHTS = "lights"
+# The same, said about a whole light group. Resolved into the per-light
+# entries before anything renders, so a group entry is shorthand and never
+# a second way for a scene to mean something.
+CONF_SCENE_GROUPS = "groups"
 CONF_LIGHT_ACTION = "action"
 CONF_WARM_WHITE = "warm_white"
 CONF_COLD_WHITE = "cold_white"

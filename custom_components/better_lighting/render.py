@@ -113,6 +113,11 @@ class LightCommand:
     data: dict[str, Any]
     axes: Axis = Axis.NONE
     reason: str = ""
+    # Set only when `entity_id` is a group entity standing in for several
+    # lights, so the caller can still reason about the lights themselves --
+    # whether this is redundant, say, which is a question about the bulbs and
+    # not about the group.
+    members: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

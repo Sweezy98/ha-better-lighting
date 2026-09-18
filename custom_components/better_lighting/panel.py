@@ -40,6 +40,7 @@ from .const import (
     CONF_BRIGHTNESS_PCT,
     CONF_COLOR_FORMAT,
     CONF_COLOR_TEMP_KELVIN,
+    CONF_GROUP_ID,
     CONF_ICON,
     CONF_IGNORE_PRESENCE,
     CONF_LIGHT_ACTION,
@@ -49,6 +50,7 @@ from .const import (
     CONF_ON_UNSUPPORTED_COLOR,
     CONF_OTHERS,
     CONF_RGB_COLOR,
+    CONF_ROOM_GROUPS,
     CONF_ROOM_PROFILES,
     CONF_ROOM_SCENES,
     CONF_ROOM_SWITCHES,
@@ -63,6 +65,7 @@ from .const import (
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
+    LIGHT_GROUP_SPECS,
     LIGHT_PROFILE_SPECS,
     MODE_SPECS,
     ROOM_SCENE_SPECS,
@@ -70,7 +73,8 @@ from .const import (
     SubentryType,
 )
 from .cycle import AdaptivePosition
-from .models import effective_scene_order, room_scene
+from .groups import find_cycle
+from .models import effective_scene_order, room_light_group, room_scene
 from .render import RoomMode, Trigger
 from .schemas import post_validate
 
@@ -581,7 +585,12 @@ async def websocket_delete_mode(
         vol.Required("type"): f"{DOMAIN}/save_room_collection",
         vol.Required("room_id"): str,
         vol.Required("key"): vol.In(
-            [CONF_ROOM_SCENES, CONF_ROOM_SWITCHES, CONF_ROOM_PROFILES]
+            [
+                CONF_ROOM_SCENES,
+                CONF_ROOM_SWITCHES,
+                CONF_ROOM_PROFILES,
+                CONF_ROOM_GROUPS,
+            ]
         ),
         vol.Required("items"): list,
     }
@@ -606,10 +615,12 @@ async def websocket_save_collection(
         CONF_ROOM_SCENES: ROOM_SCENE_SPECS,
         CONF_ROOM_SWITCHES: CONTROLLER_SPECS,
         CONF_ROOM_PROFILES: LIGHT_PROFILE_SPECS,
+        CONF_ROOM_GROUPS: LIGHT_GROUP_SPECS,
     }[msg["key"]]
     id_key = {
         CONF_ROOM_SCENES: CONF_SCENE_ID,
         CONF_ROOM_SWITCHES: CONF_SWITCH_ID,
+        CONF_ROOM_GROUPS: CONF_GROUP_ID,
     }.get(msg["key"])
 
     items = []
@@ -625,10 +636,30 @@ async def websocket_save_collection(
             merged[id_key] = ulid_util.ulid_now()
         items.append(merged)
 
+    if msg["key"] == CONF_ROOM_GROUPS and (loop := _group_cycle(items)):
+        # Refused rather than stored: a group that contains itself has no
+        # meaning to fall back to, and the room would silently lose every
+        # group it has. Named in full, because "this is recursive" does not
+        # say which two entries to look at.
+        connection.send_error(msg["id"], "cycle", " -> ".join(loop))
+        return
+
     hass.config_entries.async_update_subentry(
         entry, subentry, data={**subentry.data, msg["key"]: items}
     )
     connection.send_result(msg["id"], {"saved": len(items)})
+
+
+def _group_cycle(items: list[dict[str, Any]]) -> list[str] | None:
+    """The loop in a proposed set of light groups, by name, or None."""
+    groups = {
+        item[CONF_GROUP_ID]: room_light_group(item)
+        for item in items
+        if item.get(CONF_GROUP_ID)
+    }
+    if (cycle := find_cycle(groups)) is None:
+        return None
+    return [groups[group_id].name or group_id for group_id in cycle]
 
 
 @callback

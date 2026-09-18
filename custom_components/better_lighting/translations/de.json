@@ -778,6 +778,62 @@
           "data": {
             "switch": "Schalter"
           }
+        },
+        "light_groups": {
+          "title": "Lichtgruppen",
+          "description": "Benannte Bündel der Lampen dieses Raums:\n\n{light_groups}",
+          "menu_options": {
+            "add_light_group": "Gruppe hinzufügen",
+            "edit_light_group": "Gruppe ändern",
+            "remove_light_group": "Gruppe entfernen",
+            "menu": "⬅️ Zurück"
+          }
+        },
+        "add_light_group": {
+          "title": "Lichtgruppe",
+          "description": "Mehrere Lampen dieses Raums unter einem Namen. Eine Gruppe kann andere Gruppen enthalten, sodass ein 3x3-Raster aus drei Reihen besteht statt aus neun Einträgen. Mit einer Gruppenentität ändert sich die ganze Gruppe in einem Befehl -- so treffen die Lampen nicht nacheinander ein. Eine Szene, die sie unterschiedlich setzt, spricht sie weiterhin einzeln an.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "lights": "Lampen",
+            "groups": "Enthaltene Gruppen",
+            "send_entity": "Senden über"
+          },
+          "data_description": {
+            "lights": "Welche Lampen dieses Raums zur Gruppe gehören.",
+            "groups": "Andere Gruppen, die diese enthält. Eine Gruppe kann sich nicht selbst enthalten, weder direkt noch über eine andere.",
+            "send_entity": "Eine Zigbee-Gruppe, ein Hue-Raum oder ein Lichtgruppen-Helfer, der alle Mitglieder auf einmal erreicht. Bleibt das Feld leer, werden die Mitglieder einzeln angesprochen."
+          }
+        },
+        "light_group_form": {
+          "title": "Lichtgruppe",
+          "description": "Mehrere Lampen dieses Raums unter einem Namen. Eine Gruppe kann andere Gruppen enthalten, sodass ein 3x3-Raster aus drei Reihen besteht statt aus neun Einträgen. Mit einer Gruppenentität ändert sich die ganze Gruppe in einem Befehl -- so treffen die Lampen nicht nacheinander ein. Eine Szene, die sie unterschiedlich setzt, spricht sie weiterhin einzeln an.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "lights": "Lampen",
+            "groups": "Enthaltene Gruppen",
+            "send_entity": "Senden über"
+          },
+          "data_description": {
+            "lights": "Welche Lampen dieses Raums zur Gruppe gehören.",
+            "groups": "Andere Gruppen, die diese enthält. Eine Gruppe kann sich nicht selbst enthalten, weder direkt noch über eine andere.",
+            "send_entity": "Eine Zigbee-Gruppe, ein Hue-Raum oder ein Lichtgruppen-Helfer, der alle Mitglieder auf einmal erreicht. Bleibt das Feld leer, werden die Mitglieder einzeln angesprochen."
+          }
+        },
+        "edit_light_group": {
+          "title": "Welche Gruppe?",
+          "description": "{light_groups}",
+          "data": {
+            "light_group": "Gruppe"
+          }
+        },
+        "remove_light_group": {
+          "title": "Welche Gruppe?",
+          "description": "{light_groups}",
+          "data": {
+            "light_group": "Gruppe"
+          }
         }
       },
       "error": {
@@ -788,7 +844,8 @@
         "name_required": "Der Szene einen Namen geben.",
         "nothing_to_capture": "Keine Lampe dieses Raums ist verfügbar, um übernommen zu werden.",
         "profile_exists": "Für diese Lampe gibt es bereits einen Abgleich.",
-        "binding_entity_required": "Die Entität auswählen, auf die der Schalter meldet."
+        "binding_entity_required": "Die Entität auswählen, auf die der Schalter meldet.",
+        "group_cycle": "Eine Gruppe kann sich nicht selbst enthalten, weder direkt noch über eine andere Gruppe."
       },
       "abort": {
         "reconfigure_successful": "Raum aktualisiert."

@@ -135,6 +135,34 @@ def test_every_stored_key_has_a_default_behind_it() -> None:
     assert not missing, f"read from stored data with no default: {sorted(missing)}"
 
 
+def test_a_room_written_before_zones_and_groups_reads() -> None:
+    """Both are additive, which is why neither needs a migration.
+
+    A room stored by any earlier version has no ``zones`` and no
+    ``light_groups`` key. It must come back with none of either and behave
+    exactly as it did -- no zones means one render unit, which is the shape
+    the renderer had before zones existed at all.
+    """
+    room = models.RoomConfig.from_subentry(
+        _subentry(
+            SubentryType.ROOM,
+            {"name": "Lounge", "lights": ["light.a", "light.b"]},
+            "Lounge",
+        )
+    )
+
+    assert room.zones == ()
+    assert room.light_groups == ()
+    assert room.group_tree().groups == {}
+
+    from custom_components.better_lighting.zones import plan_units
+
+    plans = plan_units(room.lights, room.zones)
+    assert len(plans) == 1
+    assert plans[0].lights == ("light.a", "light.b")
+    assert plans[0].zone is None
+
+
 def test_the_stored_vocabulary_still_says_zone() -> None:
     """Rooms were called zones once, and on disk they still are.
 

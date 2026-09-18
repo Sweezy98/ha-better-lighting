@@ -226,6 +226,7 @@ class TestEverySettingIsReachable:
             "switch",
             "calibration",
             "light_group",
+            "room_zone",
             "scene",
             "preset",
             "effect",
@@ -419,6 +420,53 @@ class TestEverySettingIsReachable:
         stored = entry.subentries[room_id].data["light_groups"]
         assert [g["name"] for g in stored] == ["Ceiling"]
         assert all(g["group_id"] for g in stored)
+
+    async def test_a_rooms_zones_can_be_saved_as_a_list(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        entry, client = await _setup(hass, hass_ws_client)
+        room_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_room_collection",
+                "room_id": room_id,
+                "key": "zones",
+                "items": [{"name": "Desk", "lights": ["light.one"]}],
+            }
+        )
+        assert (await client.receive_json())["success"]
+        await hass.async_block_till_done()
+
+        stored = entry.subentries[room_id].data["zones"]
+        assert [z["name"] for z in stored] == ["Desk"]
+        assert all(z["zone_id"] for z in stored)
+
+    async def test_a_light_in_two_zones_is_refused(
+        self, hass: HomeAssistant, hass_ws_client
+    ) -> None:
+        """Two answers to what a bulb should be doing is the bug, not a feature."""
+        entry, client = await _setup(hass, hass_ws_client)
+        room_id = subentry_ids(entry)["Kitchen"]
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/save_room_collection",
+                "room_id": room_id,
+                "key": "zones",
+                "items": [
+                    {"zone_id": "a", "name": "Desk", "lights": ["light.one"]},
+                    {"zone_id": "b", "name": "Couch", "lights": ["light.one"]},
+                ],
+            }
+        )
+        result = await client.receive_json()
+
+        assert not result["success"]
+        assert result["error"]["message"] == "light.one: Desk & Couch"
+        assert not entry.subentries[room_id].data.get("zones")
 
     async def test_a_group_that_contains_itself_is_refused(
         self, hass: HomeAssistant, hass_ws_client

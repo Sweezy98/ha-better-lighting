@@ -54,6 +54,7 @@ from .const import (
     CONF_ROOM_PROFILES,
     CONF_ROOM_SCENES,
     CONF_ROOM_SWITCHES,
+    CONF_ROOM_ZONES,
     CONF_RULES,
     CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
@@ -62,6 +63,7 @@ from .const import (
     CONF_STATES,
     CONF_SWITCH_ID,
     CONF_TRANSITION,
+    CONF_ZONE_ID,
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
@@ -70,13 +72,15 @@ from .const import (
     MODE_SPECS,
     ROOM_SCENE_SPECS,
     ROOM_SPECS,
+    ROOM_ZONE_SPECS,
     SubentryType,
 )
 from .cycle import AdaptivePosition
 from .groups import find_cycle
-from .models import effective_scene_order, room_light_group, room_scene
+from .models import effective_scene_order, room_light_group, room_scene, room_zone
 from .render import RoomMode, Trigger
 from .schemas import post_validate
+from .zones import overlapping_lights
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -590,6 +594,7 @@ async def websocket_delete_mode(
                 CONF_ROOM_SWITCHES,
                 CONF_ROOM_PROFILES,
                 CONF_ROOM_GROUPS,
+                CONF_ROOM_ZONES,
             ]
         ),
         vol.Required("items"): list,
@@ -616,11 +621,13 @@ async def websocket_save_collection(
         CONF_ROOM_SWITCHES: CONTROLLER_SPECS,
         CONF_ROOM_PROFILES: LIGHT_PROFILE_SPECS,
         CONF_ROOM_GROUPS: LIGHT_GROUP_SPECS,
+        CONF_ROOM_ZONES: ROOM_ZONE_SPECS,
     }[msg["key"]]
     id_key = {
         CONF_ROOM_SCENES: CONF_SCENE_ID,
         CONF_ROOM_SWITCHES: CONF_SWITCH_ID,
         CONF_ROOM_GROUPS: CONF_GROUP_ID,
+        CONF_ROOM_ZONES: CONF_ZONE_ID,
     }.get(msg["key"])
 
     items = []
@@ -635,6 +642,22 @@ async def websocket_save_collection(
         if id_key and not merged.get(id_key):
             merged[id_key] = ulid_util.ulid_now()
         items.append(merged)
+
+    if msg["key"] == CONF_ROOM_ZONES and (
+        shared := overlapping_lights([room_zone(item) for item in items])
+    ):
+        # Two answers to "what should this bulb be doing" is the bug that
+        # one light, one room exists to prevent. A zone is the same argument
+        # one level down, so it is refused the same way.
+        connection.send_error(
+            msg["id"],
+            "overlap",
+            ", ".join(
+                f"{light}: {' & '.join(names)}"
+                for light, names in sorted(shared.items())
+            ),
+        )
+        return
 
     if msg["key"] == CONF_ROOM_GROUPS and (loop := _group_cycle(items)):
         # Refused rather than stored: a group that contains itself has no

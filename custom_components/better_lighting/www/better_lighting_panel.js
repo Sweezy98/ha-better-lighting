@@ -482,6 +482,7 @@ const SECTION_ICONS = {
   switches: "mdi:light-switch",
   calibrations: "mdi:tune-variant",
   light_groups: "mdi:lightbulb-group",
+  room_zones: "mdi:select-group",
   rules: "mdi:lightning-bolt-outline",
   presets: "mdi:palette-swatch",
 };
@@ -1713,6 +1714,15 @@ class BetterLightingPanel extends HTMLElement {
           top,
           { label: item?.name || this._t("switch") },
         ];
+      }
+      case "room_zones": {
+        const top = {
+          label: named("room_zones"),
+          go: to({ kind: "room_zones" }),
+        };
+        const item = (room?.data.zones || [])[view.index];
+        if (view.index === undefined) return [rooms, theRoom, top];
+        return [rooms, theRoom, top, { label: item?.name || this._t("room_zone") }];
       }
       case "light_groups": {
         const top = {
@@ -2966,6 +2976,7 @@ class BetterLightingPanel extends HTMLElement {
       "switches",
       "calibrations",
       "light_groups",
+      "room_zones",
     ].includes(this._view.kind);
     // Opening a room shows its screens; the chevron folds it away again.
     if (inRoom && this._expanded === undefined) this._expanded = this._roomId;
@@ -2974,6 +2985,7 @@ class BetterLightingPanel extends HTMLElement {
       ["switches", this._t("switches")],
       ["calibrations", this._t("calibration")],
       ["light_groups", this._t("light_groups")],
+      ["room_zones", this._t("room_zones")],
     ];
 
     const roomRows = this._rooms
@@ -3220,9 +3232,13 @@ class BetterLightingPanel extends HTMLElement {
         this._roomId = item.dataset.room || this._roomId;
         this._expanded = this._roomId;
         if (
-          !["scenes", "switches", "calibrations", "light_groups"].includes(
-            section
-          )
+          ![
+            "scenes",
+            "switches",
+            "calibrations",
+            "light_groups",
+            "room_zones",
+          ].includes(section)
         ) {
           this._view = { kind: "room", section };
           this._paint();
@@ -3261,6 +3277,7 @@ class BetterLightingPanel extends HTMLElement {
                 switches: "switches",
                 calibrations: "light_profiles",
                 light_groups: "light_groups",
+                room_zones: "zones",
               }[section]
             ] || [];
           this._view = {
@@ -3423,6 +3440,8 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintCollection("light_profiles", "calibration");
       case "light_groups":
         return this._paintCollection("light_groups", "light_group");
+      case "room_zones":
+        return this._paintCollection("zones", "room_zone");
       default:
         return this._paintRoomSection();
     }
@@ -3803,6 +3822,9 @@ class BetterLightingPanel extends HTMLElement {
           // ours; the path is the useful half.
           if (err?.code === "cycle") {
             throw new Error(`${this._t("group_cycle")} (${err.message})`);
+          }
+          if (err?.code === "overlap") {
+            throw new Error(`${this._t("zone_overlap")} (${err.message})`);
           }
           throw err;
         }

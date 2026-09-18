@@ -141,6 +141,7 @@ from .const import (
     CONF_ROOM_PROFILES,
     CONF_ROOM_SCENES,
     CONF_ROOM_SWITCHES,
+    CONF_ROOM_ZONES,
     CONF_RULE_ACTION,
     CONF_RULE_DEFER_IF_OCCUPIED,
     CONF_RULE_ENABLED,
@@ -177,6 +178,11 @@ from .const import (
     CONF_WARM_WHITE,
     CONF_WINDOW_ENTITIES,
     CONF_WRAP_AROUND,
+    CONF_ZONE_DETACH_ON_MODE,
+    CONF_ZONE_DETACHED_SCENE,
+    CONF_ZONE_ID,
+    CONF_ZONE_LIGHTS,
+    CONF_ZONE_OVERRIDES,
     CONTROLLER_SPECS,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
@@ -217,6 +223,7 @@ from .scenes import (
     SceneOverride,
     UnsupportedColorPolicy,
 )
+from .zones import Zone
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigSubentry
@@ -378,6 +385,12 @@ class RoomConfig:
     # -- it cannot hold a cycle, because building it refuses one.
     light_groups: tuple[LightGroup, ...]
 
+    # Parts of this room that can be told something different: the couch and
+    # the desk of one living room. A zone follows the room until it has a
+    # reason not to, so a room with no zones renders exactly as it did before
+    # zones existed.
+    zones: tuple[Zone, ...]
+
     # The switches on this room's walls. A switch drives exactly one room, so
     # it belongs to the room rather than to a flat list that had to name the
     # room in every entry.
@@ -502,6 +515,11 @@ class RoomConfig:
                 room_light_group(entry)
                 for entry in (raw.get(CONF_ROOM_GROUPS) or ())
                 if entry.get(CONF_GROUP_ID)
+            ),
+            zones=tuple(
+                room_zone(entry)
+                for entry in (raw.get(CONF_ROOM_ZONES) or ())
+                if entry.get(CONF_ZONE_ID)
             ),
             switches=tuple(
                 room_switch(entry, subentry.subentry_id, scene_ids)
@@ -1086,6 +1104,42 @@ def room_light_group(raw: dict[str, Any]) -> LightGroup:
         groups=tuple(raw.get(CONF_GROUP_GROUPS) or ()),
         send_entity=str(raw.get(CONF_GROUP_SEND_ENTITY) or "") or None,
     )
+
+
+def room_zone(raw: dict[str, Any]) -> Zone:
+    """One part of a room, as stored inside the room."""
+    return Zone(
+        zone_id=str(raw.get(CONF_ZONE_ID) or ""),
+        name=str(raw.get(CONF_NAME) or ""),
+        icon=str(raw.get(CONF_ICON) or "mdi:sofa-outline"),
+        lights=tuple(raw.get(CONF_ZONE_LIGHTS) or ()),
+        presence_entity=str(raw.get(CONF_PRESENCE_ENTITY) or "") or None,
+        presence_clear_delay=int(raw.get(CONF_PRESENCE_CLEAR_DELAY, 120)),
+        detach_on_mode=bool(raw.get(CONF_ZONE_DETACH_ON_MODE, False)),
+        detached_scene_id=str(raw.get(CONF_ZONE_DETACHED_SCENE) or "") or None,
+        overrides=frozenset(raw.get(CONF_ZONE_OVERRIDES) or ()),
+        settings={
+            key: value for key, value in raw.items() if key not in _ZONE_OWN_KEYS
+        },
+    )
+
+
+# What a zone's form asks about itself. Everything else it stores is an
+# override of one of the room's settings, kept sparse so a zone that overrides
+# nothing stores nothing.
+_ZONE_OWN_KEYS = frozenset(
+    {
+        CONF_ZONE_ID,
+        CONF_NAME,
+        CONF_ICON,
+        CONF_ZONE_LIGHTS,
+        CONF_PRESENCE_ENTITY,
+        CONF_PRESENCE_CLEAR_DELAY,
+        CONF_ZONE_DETACH_ON_MODE,
+        CONF_ZONE_DETACHED_SCENE,
+        CONF_ZONE_OVERRIDES,
+    }
+)
 
 
 def room_light_profile(raw: dict[str, Any]) -> LightProfile:

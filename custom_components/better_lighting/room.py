@@ -87,7 +87,7 @@ from .effects import frames as effect_frames
 from .effects import resolve as resolve_effect
 from .groups import flatten_scene, route
 from .openings import WindowWatcher
-from .presence import RoomPresence
+from .presence import RoomPresence, ZoneOccupancy
 from .profiles import Axis, LightCapabilities, LightProfile, Saturation
 from .render import (
     LightCommand,
@@ -101,6 +101,7 @@ from .render import (
 from .scenes import Scene
 from .scripts import async_run_scripts
 from .util import clamp
+from .zones import ZonePlan, plan_units
 
 if TYPE_CHECKING:
     from .light import RoomLight
@@ -153,6 +154,11 @@ class RoomController:
         # Resolved once: the room's configuration does not change without the
         # entry reloading, and this is walked on every render.
         self.groups = room.group_tree()
+        # Zones currently out of what the room is being told -- the desk,
+        # while somebody is at it and the film is on. Empty is the normal
+        # case, and an empty set costs a room without zones nothing.
+        self._detached: set[str] = set()
+        self._zone_watches: list[ZoneOccupancy] = []
 
         # Tracked per axis: a room can follow the sun's colour while its
         # brightness stays put, or the other way round.
@@ -236,6 +242,18 @@ class RoomController:
                 )
             )
 
+        for zone in self.room.zones:
+            if not zone.presence_entity:
+                continue
+            watch = ZoneOccupancy(
+                self.hass,
+                zone,
+                on_occupied=self._zone_occupied(zone.zone_id),
+                on_cleared=self._zone_cleared(zone.zone_id),
+            )
+            watch.async_setup()
+            self._zone_watches.append(watch)
+
         interval = (
             datetime.timedelta(seconds=self.room.effective_interval(self.hub))
             + _TICK_PADDING
@@ -258,6 +276,9 @@ class RoomController:
 
     @callback
     def async_shutdown(self) -> None:
+        for watch in self._zone_watches:
+            watch.async_shutdown()
+        self._zone_watches.clear()
         for unsubscribe in self._unsubscribers:
             unsubscribe()
         for cancel in self._manual_timers.values():
@@ -283,11 +304,63 @@ class RoomController:
         """Hand this room to a cross-room mode for the length of its session."""
         self.session_owner = (mode_id, session_id)
         self._opt_out_callback = on_opt_out
+        # A desk that is already occupied when the film starts should never be
+        # darkened in the first place, rather than darkened and then put back.
+        self._detached |= {
+            watch.zone.zone_id
+            for watch in self._zone_watches
+            if watch.zone.detach_on_mode and watch.occupied
+        }
 
     @callback
     def release_session_owner(self) -> None:
         self.session_owner = None
         self._opt_out_callback = None
+        # The room is its own again, so there is nothing left to stand apart
+        # from. Whatever the zones were doing, they are back in the room.
+        self._detached.clear()
+
+    def _zone_occupied(self, zone_id: str) -> Callable[[], None]:
+        """Somebody is at this part of the room.
+
+        Only a room being driven by a cross-room mode has anything to step out
+        of. Occupancy at other times is the room's own business -- that is what
+        the room's presence settings are for -- and detaching then would mean
+        a zone quietly ignoring its own room.
+        """
+
+        @callback
+        def _occupied() -> None:
+            if self.session_owner is None or zone_id in self._detached:
+                return
+            self._detached.add(zone_id)
+            self.async_notify()
+            self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
+
+        return _occupied
+
+    def _zone_cleared(self, zone_id: str) -> Callable[[], None]:
+        """Nobody has been at this part of the room for a while.
+
+        Rejoining is the default, so this needs no memory of what the zone was
+        doing: it goes back to whatever the room is being told, which is the
+        film it was standing apart from.
+        """
+
+        @callback
+        def _cleared() -> None:
+            if zone_id not in self._detached:
+                return
+            self._detached.discard(zone_id)
+            self.async_notify()
+            self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
+
+        return _cleared
+
+    @property
+    def detached_zones(self) -> frozenset[str]:
+        """Zones currently standing apart from what the room is being told."""
+        return frozenset(self._detached)
 
     @callback
     def attach_light(self, light: RoomLight) -> None:
@@ -1202,20 +1275,6 @@ class RoomController:
             return []
 
         candidates = entity_ids if entity_ids is not None else list(self.room.lights)
-        if self.effective_mode is RoomMode.ADAPTIVE:
-            # A room's default is "the lights, adaptively" -- and which lights
-            # that means is the room's to say. Everything else it holds is
-            # left for a scene to ask for by name.
-            candidates = [
-                entity_id for entity_id in candidates if self.room.adapts(entity_id)
-            ]
-        members = [
-            snapshot
-            for entity_id in candidates
-            if (snapshot := self._snapshot(entity_id)) is not None
-        ]
-        if not members:
-            return []
 
         try:
             settings = compute_for_transition(
@@ -1232,23 +1291,67 @@ class RoomController:
             return []
         self._sun_error_logged = False
 
-        result = render_room(
-            RenderRequest(
-                mode=self.effective_mode,
-                trigger=trigger,
-                settings=settings,
-                members=members,
-                scene=self.active_scene(),
-                profiles=self.profiles,
-                manual=self.manual,
-                bias_pct=self.bias_pct,
-                adaptive_axes=self.adaptive_axes,
-                transition=self._transition_for(trigger),
-                only_lit=only_lit,
+        # One plan for the room, plus one for each zone that has stepped out
+        # of it. A room with no zones -- and a room whose zones are all
+        # behaving -- yields exactly one plan holding every light, which is
+        # the shape this was before zones existed.
+        commands: list[LightCommand] = []
+        saturation: dict[str, Saturation] = {}
+        for plan in plan_units(candidates, self.room.zones, self._detached):
+            mode, scene = self._intent_for(plan)
+            lights = list(plan.lights)
+            if mode is RoomMode.ADAPTIVE:
+                # "The lights, adaptively" -- and which lights that means is
+                # the room's to say. Everything else it holds is left for a
+                # scene to ask for by name.
+                lights = [
+                    entity_id for entity_id in lights if self.room.adapts(entity_id)
+                ]
+            members = [
+                snapshot
+                for entity_id in lights
+                if (snapshot := self._snapshot(entity_id)) is not None
+            ]
+            if not members:
+                continue
+
+            result = render_room(
+                RenderRequest(
+                    mode=mode,
+                    trigger=trigger,
+                    settings=settings,
+                    members=members,
+                    scene=scene,
+                    profiles=self.profiles,
+                    manual=self.manual,
+                    bias_pct=self.bias_pct,
+                    adaptive_axes=self.adaptive_axes,
+                    transition=self._transition_for(trigger),
+                    only_lit=only_lit,
+                )
             )
-        )
-        self._saturation = result.saturation
-        return result.commands
+            commands += result.commands
+            saturation |= result.saturation
+
+        self._saturation = saturation
+        return commands
+
+    def _intent_for(self, plan: ZonePlan) -> tuple[RoomMode, Scene | None]:
+        """What one plan should be doing: the room's intent, or its own.
+
+        A zone that is following the room shares the room's answer, which is
+        what being part of a room means. A detached one carries on being
+        itself: its own scene if it names one, and otherwise simply the
+        lights, adaptively -- which is what a desk being worked at wants while
+        the rest of the room is dark for a film.
+        """
+        if not plan.detached or plan.zone is None:
+            return self.effective_mode, self.active_scene()
+
+        scene_id = plan.zone.detached_scene_id
+        if scene_id and (own := self.scenes.get(scene_id)) is not None:
+            return RoomMode.SCENE, flatten_scene(own, self.groups, self.room.lights)
+        return RoomMode.ADAPTIVE, None
 
     async def async_render(
         self,

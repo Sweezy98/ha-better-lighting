@@ -38,6 +38,7 @@ from homeassistant.core import (
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .const import CoverCondition
+from .zones import Zone
 
 if TYPE_CHECKING:
     from .models import RoomConfig
@@ -221,6 +222,98 @@ class RoomPresence:
             if self._on_cleared is not None:
                 self._on_cleared()
 
+        if not delay:
+            _cleared(None)
+            return
+        self._clear_timer = async_call_later(self.hass, delay, _cleared)
+
+    @callback
+    def _cancel_timer(self) -> None:
+        if self._clear_timer is not None:
+            self._clear_timer()
+            self._clear_timer = None
+
+
+class ZoneOccupancy:
+    """Is anybody at this particular part of the room?
+
+    Deliberately much smaller than :class:`RoomPresence`. A zone asks one
+    question -- somebody is here, or has not been here for a while -- and the
+    cover gate, the on-action and the off-action are all the room's business.
+    The clear delay is here for the same reason it is there: somebody standing
+    up to fetch a coffee should not put the desk back into the film.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        zone: Zone,
+        *,
+        on_occupied: Callable[[], None],
+        on_cleared: Callable[[], None],
+    ) -> None:
+        self.hass = hass
+        self.zone = zone
+        self._on_occupied = on_occupied
+        self._on_cleared = on_cleared
+        self._occupied: bool | None = None
+        self._clear_timer: CALLBACK_TYPE | None = None
+        self._unsubscribe: CALLBACK_TYPE | None = None
+
+    @callback
+    def async_setup(self) -> None:
+        entity_id = self.zone.presence_entity
+        if not entity_id:
+            return
+        state = self.hass.states.get(entity_id)
+        if state is not None and state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            self._occupied = state.state in _OCCUPIED_STATES
+        self._unsubscribe = async_track_state_change_event(
+            self.hass, [entity_id], self._handle_change
+        )
+
+    @callback
+    def async_shutdown(self) -> None:
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
+        self._cancel_timer()
+
+    @property
+    def occupied(self) -> bool:
+        """Whether somebody is here. A zone with no sensor never is."""
+        return bool(self.zone.presence_entity) and self._occupied is True
+
+    @callback
+    def _handle_change(self, event: Event[EventStateChangedData]) -> None:
+        new_state = event.data["new_state"]
+        if new_state is None or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            # An unavailable sensor tells us nothing; holding the previous
+            # answer is safer than inventing one.
+            return
+        occupied = new_state.state in _OCCUPIED_STATES
+        if occupied == self._occupied:
+            return
+        self._occupied = occupied
+
+        if occupied:
+            self._cancel_timer()
+            _LOGGER.debug("%s: occupied", self.zone.name)
+            self._on_occupied()
+            return
+        self._arm_clear_timer()
+
+    @callback
+    def _arm_clear_timer(self) -> None:
+        self._cancel_timer()
+
+        @callback
+        def _cleared(_now) -> None:
+            self._clear_timer = None
+            _LOGGER.debug("%s: clear", self.zone.name)
+            self._on_cleared()
+
+        delay = self.zone.presence_clear_delay
         if not delay:
             _cleared(None)
             return

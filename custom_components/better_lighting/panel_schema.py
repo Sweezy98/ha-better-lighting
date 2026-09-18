@@ -27,6 +27,7 @@ from .const import (
     CONF_ROOM_ID,
     CONF_RULE_STATES,
     CONF_SCENE_ORDER,
+    CONF_ZONE_DETACHED_SCENE,
     CONTROLLER_SPECS,
     EFFECT_SPECS,
     EFFECT_STEP_SPECS,
@@ -36,6 +37,7 @@ from .const import (
     MODE_SPECS,
     ROOM_SCENE_SPECS,
     ROOM_SPECS,
+    ROOM_ZONE_SPECS,
     FieldSpec,
     Section,
     mode_rule_specs,
@@ -311,6 +313,13 @@ def schema(language: str = "en") -> dict[str, Any]:
             SWITCH_SECTIONS,
         ),
         "calibration": _table(LIGHT_PROFILE_SPECS),
+        # Not "zone": that is the room's own form, still keyed by the word
+        # rooms were stored under before they were called rooms. A zone -- the
+        # part of a room -- is "room_zone" here and nothing on disk.
+        "room_zone": _runtime_choices(
+            _table(ROOM_ZONE_SPECS),
+            {CONF_ZONE_DETACHED_SCENE: "scenes"},
+        ),
         # Which other groups a group may hold depends on the groups the room
         # has, so the picker is filled at runtime -- and filled without the
         # group being edited, which is the cheapest way to make the obvious

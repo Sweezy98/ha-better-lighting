@@ -834,6 +834,68 @@
           "data": {
             "light_group": "Group"
           }
+        },
+        "room_zones": {
+          "title": "Zones",
+          "description": "Parts of this room that can be told something different:\n\n{room_zones}",
+          "menu_options": {
+            "add_room_zone": "Add a zone",
+            "edit_room_zone": "Change a zone",
+            "remove_room_zone": "Remove a zone",
+            "menu": "⬅️ Back"
+          }
+        },
+        "add_room_zone": {
+          "title": "Zone",
+          "description": "A part of this room that can be told something different. A living room is one room and several places: the couch and the desk are lit together and switched together, until somebody is working at the desk while the rest of the room goes dark for a film. A zone follows its room until it has a reason not to, and rejoins it the moment that reason stops.",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "lights": "Lights",
+            "presence_entity": "Occupancy sensor",
+            "presence_clear_delay": "Clear delay",
+            "detach_on_mode": "Step out of a house mode while occupied",
+            "detached_scene_id": "Scene while standing apart"
+          },
+          "data_description": {
+            "lights": "Which of this room's lights belong to the zone. A light can only be in one zone.",
+            "presence_clear_delay": "How long the zone waits after the last sign of occupancy before rejoining the room. Standing up to fetch a coffee should not put the desk back into the film.",
+            "detach_on_mode": "While somebody is here and a house-wide mode is driving the room, this zone carries on by itself instead. With this off, the zone always follows the room.",
+            "detached_scene_id": "What this zone does while it is standing apart. Left empty, it simply lights adaptively, which is what a desk being worked at wants."
+          }
+        },
+        "room_zone_form": {
+          "title": "Zone",
+          "description": "A part of this room that can be told something different. A living room is one room and several places: the couch and the desk are lit together and switched together, until somebody is working at the desk while the rest of the room goes dark for a film. A zone follows its room until it has a reason not to, and rejoins it the moment that reason stops.",
+          "data": {
+            "name": "Name",
+            "icon": "Icon",
+            "lights": "Lights",
+            "presence_entity": "Occupancy sensor",
+            "presence_clear_delay": "Clear delay",
+            "detach_on_mode": "Step out of a house mode while occupied",
+            "detached_scene_id": "Scene while standing apart"
+          },
+          "data_description": {
+            "lights": "Which of this room's lights belong to the zone. A light can only be in one zone.",
+            "presence_clear_delay": "How long the zone waits after the last sign of occupancy before rejoining the room. Standing up to fetch a coffee should not put the desk back into the film.",
+            "detach_on_mode": "While somebody is here and a house-wide mode is driving the room, this zone carries on by itself instead. With this off, the zone always follows the room.",
+            "detached_scene_id": "What this zone does while it is standing apart. Left empty, it simply lights adaptively, which is what a desk being worked at wants."
+          }
+        },
+        "edit_room_zone": {
+          "title": "Which zone?",
+          "description": "{room_zones}",
+          "data": {
+            "room_zone": "Zone"
+          }
+        },
+        "remove_room_zone": {
+          "title": "Which zone?",
+          "description": "{room_zones}",
+          "data": {
+            "room_zone": "Zone"
+          }
         }
       },
       "error": {
@@ -845,7 +907,8 @@
         "nothing_to_capture": "None of this room's lights are available to capture.",
         "profile_exists": "This light already has a calibration.",
         "binding_entity_required": "Pick the entity your switch publishes to.",
-        "group_cycle": "A group cannot contain itself, directly or through another group."
+        "group_cycle": "A group cannot contain itself, directly or through another group.",
+        "light_in_two_zones": "A light can only be in one zone of a room."
       },
       "abort": {
         "reconfigure_successful": "Room updated."

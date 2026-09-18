@@ -59,6 +59,7 @@ from .const import (
     CONF_ROOM_PROFILES,
     CONF_ROOM_SCENES,
     CONF_ROOM_SWITCHES,
+    CONF_ROOM_ZONES,
     CONF_RULE_ACTION,
     CONF_RULE_ENTRY_ACTION,
     CONF_RULE_ENTRY_SCENE,
@@ -73,6 +74,9 @@ from .const import (
     CONF_SWITCH_ID,
     CONF_TRANSITION,
     CONF_WINDOW_ENTITIES,
+    CONF_ZONE_DETACH_ON_MODE,
+    CONF_ZONE_ID,
+    CONF_ZONE_LIGHTS,
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
@@ -81,6 +85,7 @@ from .const import (
     MODE_SPECS,
     ROOM_SCENE_SPECS,
     ROOM_SPECS,
+    ROOM_ZONE_SPECS,
     FieldSpec,
     RestoreOnPowerCycle,
     Section,
@@ -90,9 +95,10 @@ from .const import (
     scene_light_specs,
 )
 from .groups import find_cycle
-from .models import room_light_group
+from .models import room_light_group, room_zone
 from .scenes import ALL_LIGHTS
 from .schemas import build_schema, flatten_sections, post_validate
+from .zones import overlapping_lights
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -450,6 +456,8 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         self._editing_profile: int | None = None
         self._light_groups: list[dict[str, Any]] = []
         self._editing_light_group: int | None = None
+        self._room_zones: list[dict[str, Any]] = []
+        self._editing_room_zone: int | None = None
         self._switches: list[dict[str, Any]] = []
         self._switch: dict[str, Any] = {}
         self._editing_switch: int | None = None
@@ -493,6 +501,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         self._light_groups = [
             dict(s) for s in (subentry.data.get(CONF_ROOM_GROUPS) or [])
         ]
+        self._room_zones = [dict(s) for s in (subentry.data.get(CONF_ROOM_ZONES) or [])]
 
     async def _async_essentials(
         self, user_input: dict[str, Any] | None, *, subentry: Any
@@ -677,6 +686,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
                 "switches",
                 "calibrations",
                 "light_groups",
+                "room_zones",
                 # Read back, then leave.
                 "summary",
                 "finish",
@@ -1275,6 +1285,155 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             description_placeholders={"calibrations": self._calibrations_summary()},
         )
 
+    # -- parts of this room that can be told something different ------------
+
+    async def async_step_room_zones(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_room_zone"]
+        if self._room_zones:
+            options += ["edit_room_zone", "remove_room_zone"]
+        options.append("menu")
+        return self.async_show_menu(
+            step_id="room_zones",
+            menu_options=options,
+            description_placeholders={"room_zones": self._room_zones_summary()},
+        )
+
+    def _room_zones_summary(self) -> str:
+        if not self._room_zones:
+            return "\u2014"
+        lines = []
+        for zone in self._room_zones:
+            count = len(zone.get(CONF_ZONE_LIGHTS) or ())
+            detaches = (
+                "steps out while occupied"
+                if zone.get(CONF_ZONE_DETACH_ON_MODE)
+                else "always follows the room"
+            )
+            lines.append(f"{zone.get(CONF_NAME)}: {count} light(s), {detaches}")
+        return "\n".join(lines)
+
+    def _room_zone_picker(self) -> vol.Schema:
+        return vol.Schema(
+            {
+                vol.Required("room_zone"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {
+                                "value": str(index),
+                                "label": str(zone.get(CONF_NAME) or index),
+                            }
+                            for index, zone in enumerate(self._room_zones)
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        sort=False,
+                    )
+                )
+            }
+        )
+
+    async def async_step_add_room_zone(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_room_zone_form("add_room_zone", user_input, index=None)
+
+    async def async_step_edit_room_zone(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            self._editing_room_zone = int(user_input["room_zone"])
+            return await self.async_step_room_zone_form()
+        return self.async_show_form(
+            step_id="edit_room_zone",
+            data_schema=self._room_zone_picker(),
+            description_placeholders={"room_zones": self._room_zones_summary()},
+        )
+
+    async def async_step_room_zone_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_room_zone_form(
+            "room_zone_form", user_input, index=self._editing_room_zone
+        )
+
+    async def _async_room_zone_form(
+        self, step_id: str, user_input: dict[str, Any] | None, *, index: int | None
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors = post_validate(
+                ROOM_ZONE_SPECS, flatten_sections(ROOM_ZONE_SPECS, user_input)
+            )
+            if not cleaned.get(CONF_NAME):
+                errors[CONF_NAME] = "name_required"
+            stray = [
+                light
+                for light in (cleaned.get(CONF_ZONE_LIGHTS) or ())
+                if light not in (self._data.get(CONF_LIGHTS) or ())
+            ]
+            if stray:
+                # A zone is part of its room, so it can only hold the room's
+                # own lights.
+                errors[CONF_ZONE_LIGHTS] = "light_in_other_zone"
+            if not errors:
+                proposed = list(self._room_zones)
+                merged = {
+                    **(proposed[index] if index is not None else {}),
+                    **cleaned,
+                }
+                merged.setdefault(CONF_ZONE_ID, ulid_util.ulid_now())
+                if index is None:
+                    proposed.append(merged)
+                else:
+                    proposed[index] = merged
+                if overlapping_lights([room_zone(item) for item in proposed]):
+                    errors[CONF_ZONE_LIGHTS] = "light_in_two_zones"
+                else:
+                    self._room_zones = proposed
+                    self._editing_room_zone = None
+                    return await self.async_step_room_zones()
+
+        current = user_input
+        if current is None and index is not None:
+            current = dict(self._room_zones[index])
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=build_schema(
+                ROOM_ZONE_SPECS,
+                current,
+                options={
+                    "lights": [
+                        SelectOptionDict(value=entity_id, label=entity_id)
+                        for entity_id in (self._data.get(CONF_LIGHTS) or ())
+                    ],
+                    "scenes": [
+                        SelectOptionDict(
+                            value=str(scene.get(CONF_SCENE_ID)),
+                            label=str(scene.get(CONF_NAME)),
+                        )
+                        for scene in self._scenes
+                        if scene.get(CONF_SCENE_ID)
+                    ],
+                },
+            ),
+            errors=errors,
+        )
+
+    async def async_step_remove_room_zone(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            position = int(user_input["room_zone"])
+            if 0 <= position < len(self._room_zones):
+                self._room_zones.pop(position)
+            return await self.async_step_room_zones()
+        return self.async_show_form(
+            step_id="remove_room_zone",
+            data_schema=self._room_zone_picker(),
+            description_placeholders={"room_zones": self._room_zones_summary()},
+        )
+
     # -- named bundles of this room's lights -------------------------------
 
     async def async_step_light_groups(
@@ -1708,6 +1867,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             CONF_ROOM_SCENES: self._scenes,
             CONF_ROOM_PROFILES: self._profiles,
             CONF_ROOM_GROUPS: self._light_groups,
+            CONF_ROOM_ZONES: self._room_zones,
             CONF_ROOM_SWITCHES: self._switches,
         }
         title = data[CONF_NAME]

@@ -784,6 +784,16 @@ CONF_ROOM_PROFILES = "light_profiles"
 # of ceiling spots. A group can hold other groups, which is how a 3x3 matrix
 # is three rows rather than nine entries -- and why saving checks for a loop.
 CONF_ROOM_GROUPS = "light_groups"
+# Parts of a room that can be told something different: the couch and the desk
+# of one living room. A zone follows its room until it has a reason not to,
+# which is why a room with no zones behaves exactly as it did before they
+# existed.
+CONF_ROOM_ZONES = "zones"
+CONF_ZONE_ID = "zone_id"
+CONF_ZONE_LIGHTS = "lights"
+CONF_ZONE_DETACH_ON_MODE = "detach_on_mode"
+CONF_ZONE_DETACHED_SCENE = "detached_scene_id"
+CONF_ZONE_OVERRIDES = "overrides"
 CONF_GROUP_ID = "group_id"
 CONF_GROUP_LIGHTS = "lights"
 CONF_GROUP_GROUPS = "groups"
@@ -827,6 +837,7 @@ LIGHT_GROUP_SPECS: tuple[FieldSpec, ...] = (
         selector.EntitySelector(selector.EntitySelectorConfig(domain="light")),
     ),
 )
+
 
 # Whatever else a scene means. A film scene is not only the lights: the
 # amplifier goes on with it and off again when the room comes back.
@@ -1479,6 +1490,65 @@ ROOM_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
         CONF_PRESENCE_RESPECTS_MANUAL, True, _boolean(), section=Section.PRESENCE
     ),
     FieldSpec(CONF_COVER_UNKNOWN_BLOCKS, True, _boolean(), section=Section.PRESENCE),
+)
+
+
+ROOM_ZONE_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(
+        CONF_ICON,
+        "mdi:sofa-outline",
+        selector.IconSelector(selector.IconSelectorConfig()),
+    ),
+    FieldSpec(
+        CONF_ZONE_LIGHTS,
+        [],
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="light", multiple=True)
+        ),
+    ),
+    # What makes the desk a desk rather than a corner of the room: somebody is
+    # at it, and the film the rest of the room is watching is not their
+    # problem.
+    FieldSpec(
+        CONF_PRESENCE_ENTITY,
+        None,
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["binary_sensor", "input_boolean", "device_tracker", "person"]
+            )
+        ),
+        section=Section.PRESENCE,
+    ),
+    FieldSpec(
+        CONF_PRESENCE_CLEAR_DELAY,
+        120,
+        _seconds(0, 3600),
+        section=Section.PRESENCE,
+    ),
+    FieldSpec(
+        CONF_ZONE_DETACH_ON_MODE,
+        False,
+        _boolean(),
+        section=Section.PRESENCE,
+    ),
+    # What the zone does while it is out. Nothing named means "the lights,
+    # adaptively", which is what a desk being worked at wants.
+    FieldSpec(
+        CONF_ZONE_DETACHED_SCENE,
+        None,
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(options=[], mode="dropdown")
+        ),
+        options_key="scenes",
+        section=Section.PRESENCE,
+        depends_on=(CONF_ZONE_DETACH_ON_MODE, (True,)),
+    ),
 )
 
 

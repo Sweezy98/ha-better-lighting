@@ -834,6 +834,68 @@
           "data": {
             "light_group": "Gruppe"
           }
+        },
+        "room_zones": {
+          "title": "Zonen",
+          "description": "Teile dieses Raums, die etwas anderes tun dürfen:\n\n{room_zones}",
+          "menu_options": {
+            "add_room_zone": "Zone hinzufügen",
+            "edit_room_zone": "Zone ändern",
+            "remove_room_zone": "Zone entfernen",
+            "menu": "⬅️ Zurück"
+          }
+        },
+        "add_room_zone": {
+          "title": "Zone",
+          "description": "Ein Teil dieses Raums, der etwas anderes tun darf. Ein Wohnzimmer ist ein Raum und mehrere Orte: Couch und Schreibtisch werden gemeinsam beleuchtet und geschaltet -- bis jemand am Schreibtisch arbeitet, während der Rest des Raums für einen Film abdunkelt. Eine Zone folgt ihrem Raum, bis sie einen Grund hat, es nicht zu tun, und kehrt zurück, sobald dieser Grund entfällt.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "lights": "Lampen",
+            "presence_entity": "Anwesenheitssensor",
+            "presence_clear_delay": "Verzögerung bis frei",
+            "detach_on_mode": "Bei Anwesenheit aus einem Hausmodus ausscheren",
+            "detached_scene_id": "Szene während des Ausscherens"
+          },
+          "data_description": {
+            "lights": "Welche Lampen dieses Raums zur Zone gehören. Eine Lampe kann nur in einer Zone sein.",
+            "presence_clear_delay": "Wie lange die Zone nach dem letzten Anwesenheitssignal wartet, bevor sie zum Raum zurückkehrt. Kurz Kaffee holen soll den Schreibtisch nicht in den Film zurückwerfen.",
+            "detach_on_mode": "Solange hier jemand ist und ein hausweiter Modus den Raum steuert, macht diese Zone ihr eigenes Ding. Ist die Option aus, folgt die Zone immer dem Raum.",
+            "detached_scene_id": "Was die Zone tut, während sie ausgeschert ist. Leer gelassen leuchtet sie einfach adaptiv -- das, was ein benutzter Schreibtisch braucht."
+          }
+        },
+        "room_zone_form": {
+          "title": "Zone",
+          "description": "Ein Teil dieses Raums, der etwas anderes tun darf. Ein Wohnzimmer ist ein Raum und mehrere Orte: Couch und Schreibtisch werden gemeinsam beleuchtet und geschaltet -- bis jemand am Schreibtisch arbeitet, während der Rest des Raums für einen Film abdunkelt. Eine Zone folgt ihrem Raum, bis sie einen Grund hat, es nicht zu tun, und kehrt zurück, sobald dieser Grund entfällt.",
+          "data": {
+            "name": "Name",
+            "icon": "Symbol",
+            "lights": "Lampen",
+            "presence_entity": "Anwesenheitssensor",
+            "presence_clear_delay": "Verzögerung bis frei",
+            "detach_on_mode": "Bei Anwesenheit aus einem Hausmodus ausscheren",
+            "detached_scene_id": "Szene während des Ausscherens"
+          },
+          "data_description": {
+            "lights": "Welche Lampen dieses Raums zur Zone gehören. Eine Lampe kann nur in einer Zone sein.",
+            "presence_clear_delay": "Wie lange die Zone nach dem letzten Anwesenheitssignal wartet, bevor sie zum Raum zurückkehrt. Kurz Kaffee holen soll den Schreibtisch nicht in den Film zurückwerfen.",
+            "detach_on_mode": "Solange hier jemand ist und ein hausweiter Modus den Raum steuert, macht diese Zone ihr eigenes Ding. Ist die Option aus, folgt die Zone immer dem Raum.",
+            "detached_scene_id": "Was die Zone tut, während sie ausgeschert ist. Leer gelassen leuchtet sie einfach adaptiv -- das, was ein benutzter Schreibtisch braucht."
+          }
+        },
+        "edit_room_zone": {
+          "title": "Welche Zone?",
+          "description": "{room_zones}",
+          "data": {
+            "room_zone": "Zone"
+          }
+        },
+        "remove_room_zone": {
+          "title": "Welche Zone?",
+          "description": "{room_zones}",
+          "data": {
+            "room_zone": "Zone"
+          }
         }
       },
       "error": {
@@ -845,7 +907,8 @@
         "nothing_to_capture": "Keine Lampe dieses Raums ist verfügbar, um übernommen zu werden.",
         "profile_exists": "Für diese Lampe gibt es bereits einen Abgleich.",
         "binding_entity_required": "Die Entität auswählen, auf die der Schalter meldet.",
-        "group_cycle": "Eine Gruppe kann sich nicht selbst enthalten, weder direkt noch über eine andere Gruppe."
+        "group_cycle": "Eine Gruppe kann sich nicht selbst enthalten, weder direkt noch über eine andere Gruppe.",
+        "light_in_two_zones": "Eine Lampe kann nur in einer Zone eines Raums sein."
       },
       "abort": {
         "reconfigure_successful": "Raum aktualisiert."

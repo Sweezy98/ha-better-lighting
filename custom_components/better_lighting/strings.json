@@ -454,12 +454,14 @@
             "name": "Name",
             "binding_type": "How this switch is heard",
             "binding_entity": "Switch entity",
-            "is_default": "Handle plain on/off of this room's light"
+            "is_default": "Handle plain on/off of this room's light",
+            "drives_zone": "Zone"
           },
           "data_description": {
             "binding_type": "'Watch an entity' is the only option that can tell which switch was pressed, which is what lets two switches in one room cycle differently.",
             "binding_entity": "The entity your switch publishes to. Button devices usually appear as an event entity; others use a sensor or binary sensor.",
-            "is_default": "Plain light.turn_on on the room's light is attributed to this switch. Only one switch per room can do this, because Home Assistant cannot say which switch sent it."
+            "is_default": "Plain light.turn_on on the room's light is attributed to this switch. Only one switch per room can do this, because Home Assistant cannot say which switch sent it.",
+            "drives_zone": "Which part of the room this switch drives. Left empty it drives the whole room; naming a zone makes it the desk's switch, lighting the desk and leaving the rest of the room alone."
           },
           "sections": {
             "advanced": {
@@ -520,12 +522,14 @@
             "name": "Name",
             "binding_type": "How this switch is heard",
             "binding_entity": "Switch entity",
-            "is_default": "Handle plain on/off of this room's light"
+            "is_default": "Handle plain on/off of this room's light",
+            "drives_zone": "Zone"
           },
           "data_description": {
             "binding_type": "'Watch an entity' is the only option that can tell which switch was pressed, which is what lets two switches in one room cycle differently.",
             "binding_entity": "The entity your switch publishes to. Button devices usually appear as an event entity; others use a sensor or binary sensor.",
-            "is_default": "Plain light.turn_on on the room's light is attributed to this switch. Only one switch per room can do this, because Home Assistant cannot say which switch sent it."
+            "is_default": "Plain light.turn_on on the room's light is attributed to this switch. Only one switch per room can do this, because Home Assistant cannot say which switch sent it.",
+            "drives_zone": "Which part of the room this switch drives. Left empty it drives the whole room; naming a zone makes it the desk's switch, lighting the desk and leaving the rest of the room alone."
           },
           "sections": {
             "advanced": {

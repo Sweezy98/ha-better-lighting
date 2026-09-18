@@ -1684,7 +1684,22 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         if current is None and index is not None:
             current = dict(self._switches[index])
         return self.async_show_form(
-            step_id=step_id, data_schema=build_schema(specs, current), errors=errors
+            step_id=step_id,
+            data_schema=build_schema(
+                specs,
+                current,
+                options={
+                    "room_zones": [
+                        SelectOptionDict(
+                            value=str(zone.get(CONF_ZONE_ID)),
+                            label=str(zone.get(CONF_NAME) or zone.get(CONF_ZONE_ID)),
+                        )
+                        for zone in self._room_zones
+                        if zone.get(CONF_ZONE_ID)
+                    ]
+                },
+            ),
+            errors=errors,
         )
 
     async def async_step_remove_switch(

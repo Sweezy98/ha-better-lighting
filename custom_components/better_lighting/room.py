@@ -101,7 +101,7 @@ from .render import (
 from .scenes import Scene
 from .scripts import async_run_scripts
 from .util import clamp
-from .zones import ZonePlan, plan_units
+from .zones import Zone, ZonePlan, plan_units
 
 if TYPE_CHECKING:
     from .light import RoomLight
@@ -159,6 +159,10 @@ class RoomController:
         # case, and an empty set costs a room without zones nothing.
         self._detached: set[str] = set()
         self._zone_watches: list[ZoneOccupancy] = []
+        # What a zone is doing when its own switch is driving it, rather than
+        # the room. Present only for zones somebody has pressed a switch for;
+        # an empty dict is the normal case.
+        self._zone_intent: dict[str, tuple[RoomMode, str | None]] = {}
 
         # Tracked per axis: a room can follow the sun's colour while its
         # brightness stays put, or the other way round.
@@ -741,8 +745,19 @@ class RoomController:
 
     # -- presses -----------------------------------------------------------
 
-    def _current_step(self) -> CycleStep | None:
-        """The room's current mode expressed as a cycle position."""
+    def _current_step(self, zone: Zone | None = None) -> CycleStep | None:
+        """The room's -- or one zone's -- mode, expressed as a cycle position."""
+        if zone is not None:
+            intent = self._zone_intent.get(zone.zone_id)
+            if intent is None:
+                # Following the room, so the room's position is the zone's.
+                return self._current_step()
+            mode, scene_id = intent
+            if mode is RoomMode.OFF:
+                return OFF
+            if mode is RoomMode.SCENE and scene_id:
+                return scene_step(scene_id)
+            return ADAPTIVE
         mode = self.mode
         if mode is RoomMode.OFF:
             return OFF
@@ -778,11 +793,12 @@ class RoomController:
             return step.scene_id
         return None
 
-    def _any_member_on(self) -> bool:
+    def _any_member_on(self, zone: Zone | None = None) -> bool:
+        lights = zone.lights if zone is not None else self.room.lights
         return any(
             (state := self.hass.states.get(entity_id)) is not None
             and state.state == STATE_ON
-            for entity_id in self.room.lights
+            for entity_id in lights
         )
 
     def _dismiss(self) -> bool:
@@ -884,16 +900,21 @@ class RoomController:
         three times moves three places without strobing the room through the
         two in between.
         """
+        zone = self._zone_for(controller)
         cycle = controller.cycle(frozenset(self.scenes))
         state = RoomCycleState(
-            current=self._current_step(),
-            is_off=not self._any_member_on(),
+            current=self._current_step(zone),
+            is_off=not self._any_member_on(zone),
             last_index=self._last_index.get(controller.subentry_id),
-            resume=self._resume_step(),
+            # Resuming last night's scene is a room-level memory. A zone's
+            # switch starts from where the zone actually is.
+            resume=None if zone else self._resume_step(),
         )
         # Only the first press of a burst can dismiss; the rest are ordinary
-        # advances from wherever that landed.
-        dismissed = self._dismiss() if direction > 0 else False
+        # advances from wherever that landed. A zone's switch dismisses
+        # nothing: night mode, an open window and a film are all the room's,
+        # and one corner of it does not get to wave them away for everyone.
+        dismissed = self._dismiss() if direction > 0 and not zone else False
 
         result = None
         for step_number in range(max(steps, 1)):
@@ -914,16 +935,29 @@ class RoomController:
         self._last_index[controller.subentry_id] = result.index
         _LOGGER.debug(
             "%s: %s x%d -> %s (%s)",
-            self.room.name,
+            zone.name if zone else self.room.name,
             controller.name,
             steps,
             result.step,
             result.reason,
         )
-        await self.async_apply_step(result.step)
+        await self.async_apply_step(result.step, zone=zone)
 
-    async def async_apply_step(self, step: CycleStep) -> None:
-        """Put the room into the state a cycle position describes."""
+    def _zone_for(self, controller: ControllerConfig) -> Zone | None:
+        """The part of the room this switch drives, if it drives only one."""
+        if not controller.zone_id:
+            return None
+        return next(
+            (z for z in self.room.zones if z.zone_id == controller.zone_id), None
+        )
+
+    async def async_apply_step(
+        self, step: CycleStep, *, zone: Zone | None = None
+    ) -> None:
+        """Put the room -- or one zone of it -- into what a step describes."""
+        if zone is not None:
+            await self._async_set_zone_step(zone, step)
+            return
         match step.kind:
             case StepKind.OFF:
                 await self.async_set_mode(RoomMode.OFF)
@@ -931,6 +965,26 @@ class RoomController:
                 await self.async_set_mode(RoomMode.SCENE, step.scene_id)
             case _:
                 await self.async_set_mode(RoomMode.ADAPTIVE)
+
+    async def _async_set_zone_step(self, zone: Zone, step: CycleStep) -> None:
+        """What one zone's own switch just asked for.
+
+        Stepping a zone back to adaptive puts it back in the room rather than
+        leaving it adaptive on its own: if the room is adaptive too they were
+        identical anyway, and if the room is in a scene then rejoining is what
+        "back to normal" means to somebody standing at the desk. Every other
+        position is the zone speaking for itself, so it stands apart until it
+        is stepped back.
+        """
+        match step.kind:
+            case StepKind.OFF:
+                self._zone_intent[zone.zone_id] = (RoomMode.OFF, None)
+            case StepKind.SCENE if step.scene_id:
+                self._zone_intent[zone.zone_id] = (RoomMode.SCENE, step.scene_id)
+            case _:
+                self._zone_intent.pop(zone.zone_id, None)
+        self.async_notify()
+        await self.async_render(Trigger.ACTIVATE, entity_ids=list(zone.lights))
 
     # -- presence and windows ---------------------------------------------
 
@@ -1222,10 +1276,10 @@ class RoomController:
             return None
         return None
 
-    def adaptive_config(self) -> AdaptiveConfig:
+    def adaptive_config(self, zone: Zone | None = None) -> AdaptiveConfig:
         location: astral.Location = get_astral_location(self.hass)[0]
         timezone = zoneinfo.ZoneInfo(self.hass.config.time_zone)
-        return self.room.adaptive_config(self.hub, location.observer, timezone)
+        return self.room.adaptive_config(self.hub, location.observer, timezone, zone)
 
     def _transition_for(self, trigger: Trigger) -> float:
         if trigger is Trigger.TURN_ON:
@@ -1297,8 +1351,18 @@ class RoomController:
         # the shape this was before zones existed.
         commands: list[LightCommand] = []
         saturation: dict[str, Saturation] = {}
-        for plan in plan_units(candidates, self.room.zones, self._detached):
+        stepped_out = self._detached | set(self._zone_intent)
+        for plan in plan_units(candidates, self.room.zones, stepped_out):
             mode, scene = self._intent_for(plan)
+            # Hub, then room, then the part of the room. A zone that has not
+            # asked for its own curve is not a layer, so this is the room's.
+            plan_settings = settings
+            if plan.zone is not None and plan.zone.own_curve:
+                plan_settings = compute_for_transition(
+                    self.adaptive_config(plan.zone),
+                    self._transition_for(trigger),
+                    is_night=self.is_night,
+                )
             lights = list(plan.lights)
             if mode is RoomMode.ADAPTIVE:
                 # "The lights, adaptively" -- and which lights that means is
@@ -1319,7 +1383,7 @@ class RoomController:
                 RenderRequest(
                     mode=mode,
                     trigger=trigger,
-                    settings=settings,
+                    settings=plan_settings,
                     members=members,
                     scene=scene,
                     profiles=self.profiles,
@@ -1345,6 +1409,17 @@ class RoomController:
         lights, adaptively -- which is what a desk being worked at wants while
         the rest of the room is dark for a film.
         """
+        if plan.zone is not None and plan.zone.zone_id in self._zone_intent:
+            # Somebody pressed this zone's own switch. That outranks both the
+            # room and the occupancy rule: it is the most recent thing a
+            # person actually asked for.
+            mode, scene_id = self._zone_intent[plan.zone.zone_id]
+            if mode is RoomMode.SCENE and scene_id:
+                own = self.scenes.get(scene_id)
+                if own is not None:
+                    return mode, flatten_scene(own, self.groups, self.room.lights)
+            return mode, None
+
         if not plan.detached or plan.zone is None:
             return self.effective_mode, self.active_scene()
 

@@ -231,3 +231,144 @@ class TestWhatADetachedZoneDoes:
 
         assert _controller(entry).detached_zones == frozenset({"desk"})
         assert _brightness(hass, "light.desk") > 200
+
+
+class TestAZonesOwnSwitch:
+    """A switch on the desk lights the desk and leaves the couch alone."""
+
+    async def _with_switch(self, hass: HomeAssistant, **zone_extra):
+        await setup_members(
+            hass,
+            [
+                MemberLight("Couch", is_on=True, brightness=200),
+                MemberLight("Desk", is_on=True, brightness=200),
+            ],
+        )
+        hass.states.async_set(DESK_SENSOR, "off")
+        entry = hub_entry(
+            subentries_data=[
+                room_subentry(
+                    "Living room",
+                    LIGHTS,
+                    scenes=[
+                        {
+                            "scene_id": "work",
+                            "name": "Work",
+                            "lights": {
+                                "light.desk": {"action": "apply", "brightness_pct": 90}
+                            },
+                        }
+                    ],
+                    zones=[{**DESK_ZONE, **zone_extra}],
+                    switches=[
+                        {
+                            "switch_id": "deskswitch",
+                            "name": "Desk switch",
+                            "binding_type": "service_only",
+                            "drives_zone": "desk",
+                            "scene_order": ["__adaptive__", "work"],
+                        }
+                    ],
+                ),
+            ]
+        )
+        await setup_hub(hass, entry)
+        return entry
+
+    async def _press(self, hass: HomeAssistant) -> None:
+        await hass.services.async_call(
+            "better_lighting",
+            "press",
+            {"room": "living_room", "controller": "Desk switch"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    async def test_pressing_it_moves_only_the_zone(self, hass: HomeAssistant) -> None:
+        entry = await self._with_switch(hass)
+        couch_before = _brightness(hass, "light.couch")
+
+        # One press: off adaptive and onto the desk's own scene.
+        await self._press(hass)
+
+        assert _controller(entry)._zone_intent == {"desk": ("scene", "work")}
+        assert _brightness(hass, "light.desk") > 200
+        assert _brightness(hass, "light.couch") == couch_before
+
+    async def test_stepping_back_to_adaptive_rejoins_the_room(
+        self, hass: HomeAssistant
+    ) -> None:
+        """ "Back to normal" means back in the room, not adaptive on its own."""
+        entry = await self._with_switch(hass)
+        controller = _controller(entry)
+
+        await self._press(hass)
+        assert "desk" in controller._zone_intent
+
+        # The list is adaptive then Work, and it wraps.
+        await self._press(hass)
+
+        assert "desk" not in controller._zone_intent
+
+    async def test_the_room_switch_still_moves_the_whole_room(
+        self, hass: HomeAssistant
+    ) -> None:
+        entry = await self._with_switch(hass)
+
+        await hass.services.async_call(
+            "better_lighting", "press", {"room": "living_room"}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        assert _controller(entry)._zone_intent == {}
+
+
+class TestAZoneWithItsOwnCurve:
+    """Hub, then room, then the part of the room: one more layer of the same kind."""
+
+    async def _build(self, hass: HomeAssistant, **zone_extra):
+        await setup_members(
+            hass,
+            [
+                MemberLight("Couch", is_on=True, brightness=200),
+                MemberLight("Desk", is_on=True, brightness=200),
+            ],
+        )
+        hass.states.async_set(DESK_SENSOR, "on")
+        entry = hub_entry(
+            subentries_data=[
+                room_subentry(
+                    "Living room",
+                    LIGHTS,
+                    zones=[{**DESK_ZONE, **zone_extra}],
+                )
+            ]
+        )
+        await setup_hub(hass, entry)
+        return entry
+
+    async def test_a_zone_that_has_not_asked_follows_the_room(
+        self, hass: HomeAssistant
+    ) -> None:
+        entry = await self._build(hass)
+        controller = _controller(entry)
+        zone = entry.subentries and controller.room.zones[0]
+
+        assert not zone.own_curve
+        assert controller.adaptive_config(zone) == controller.adaptive_config()
+
+    async def test_a_zone_can_be_brighter_than_the_room_it_is_in(
+        self, hass: HomeAssistant
+    ) -> None:
+        entry = await self._build(
+            hass,
+            adaptive_override_enabled=True,
+            min_brightness_pct=60,
+            max_brightness_pct=100,
+        )
+        controller = _controller(entry)
+        zone = controller.room.zones[0]
+
+        assert zone.own_curve
+        assert controller.adaptive_config(zone).min_brightness_pct == 60
+        assert controller.adaptive_config().min_brightness_pct != 60

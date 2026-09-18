@@ -778,6 +778,13 @@ CONF_ROOM_SCENES = "scenes"
 # The light switches that drive this room.
 CONF_ROOM_SWITCHES = "switches"
 CONF_SWITCH_ID = "switch_id"
+# The part of the room this switch drives, if it drives only one: the desk's
+# switch lights the desk and leaves the couch alone.
+#
+# Not "zone_id", which is what a switch stored as a subentry of its own wrote
+# for the *room* it belonged to, back when rooms were called zones. Reusing it
+# would read a legacy switch's room as its zone.
+CONF_SWITCH_ZONE = "drives_zone"
 # Per-light calibration lives with the room whose lights it calibrates.
 CONF_ROOM_PROFILES = "light_profiles"
 # Named bundles of this room's lights: the three bulbs in one fitting, a row
@@ -1137,6 +1144,16 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         None,
         selector.TextSelector(selector.TextSelectorConfig()),
         required=True,
+    ),
+    # Left empty, the switch drives the room. Naming a zone makes it the
+    # desk's switch: it lights the desk and leaves the couch alone.
+    FieldSpec(
+        CONF_SWITCH_ZONE,
+        None,
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(options=[], mode="dropdown")
+        ),
+        options_key="room_zones",
     ),
     FieldSpec(
         CONF_ROOM_ID,
@@ -1549,6 +1566,12 @@ ROOM_ZONE_SPECS: tuple[FieldSpec, ...] = (
         section=Section.PRESENCE,
         depends_on=(CONF_ZONE_DETACH_ON_MODE, (True,)),
     ),
+    # A zone may answer for its own curve, the same way a room may answer for
+    # its own rather than the hub's: the switch is `adaptive_override`, and
+    # with it off every value below is ignored and the room's curve applies.
+    # Which lights adapt is left out deliberately -- that is a fact about the
+    # room, and a zone naming its own would be a second answer to it.
+    *(spec for spec in ROOM_ADAPTIVE_SPECS if spec.key != CONF_ADAPTIVE_LIGHTS),
 )
 
 

@@ -454,12 +454,14 @@
             "name": "Name",
             "binding_type": "Wie dieser Schalter erkannt wird",
             "binding_entity": "Schalter-Entität",
-            "is_default": "Einfaches Ein/Aus des Raumlichts übernehmen"
+            "is_default": "Einfaches Ein/Aus des Raumlichts übernehmen",
+            "drives_zone": "Zone"
           },
           "data_description": {
             "binding_type": "„Entität beobachten“ ist die einzige Option, die erkennen kann, welcher Schalter gedrückt wurde — nur so können zwei Schalter in einem Raum unterschiedlich durchschalten.",
             "binding_entity": "Die Entität, auf die der Schalter meldet. Tastergeräte erscheinen meist als Event-Entität, andere als Sensor oder binärer Sensor.",
-            "is_default": "Ein einfaches light.turn_on auf das Raumlicht wird diesem Schalter zugeordnet. Das kann nur ein Schalter pro Raum, da Home Assistant nicht erkennen kann, welcher Schalter es gesendet hat."
+            "is_default": "Ein einfaches light.turn_on auf das Raumlicht wird diesem Schalter zugeordnet. Das kann nur ein Schalter pro Raum, da Home Assistant nicht erkennen kann, welcher Schalter es gesendet hat.",
+            "drives_zone": "Welchen Teil des Raums dieser Schalter steuert. Leer gelassen steuert er den ganzen Raum; mit einer Zone wird er zum Schalter des Schreibtischs und lässt den Rest des Raums in Ruhe."
           },
           "sections": {
             "advanced": {
@@ -520,12 +522,14 @@
             "name": "Name",
             "binding_type": "Wie dieser Schalter erkannt wird",
             "binding_entity": "Schalter-Entität",
-            "is_default": "Einfaches Ein/Aus des Raumlichts übernehmen"
+            "is_default": "Einfaches Ein/Aus des Raumlichts übernehmen",
+            "drives_zone": "Zone"
           },
           "data_description": {
             "binding_type": "„Entität beobachten“ ist die einzige Option, die erkennen kann, welcher Schalter gedrückt wurde — nur so können zwei Schalter in einem Raum unterschiedlich durchschalten.",
             "binding_entity": "Die Entität, auf die der Schalter meldet. Tastergeräte erscheinen meist als Event-Entität, andere als Sensor oder binärer Sensor.",
-            "is_default": "Ein einfaches light.turn_on auf das Raumlicht wird diesem Schalter zugeordnet. Das kann nur ein Schalter pro Raum, da Home Assistant nicht erkennen kann, welcher Schalter es gesendet hat."
+            "is_default": "Ein einfaches light.turn_on auf das Raumlicht wird diesem Schalter zugeordnet. Das kann nur ein Schalter pro Raum, da Home Assistant nicht erkennen kann, welcher Schalter es gesendet hat.",
+            "drives_zone": "Welchen Teil des Raums dieser Schalter steuert. Leer gelassen steuert er den ganzen Raum; mit einer Zone wird er zum Schalter des Schreibtischs und lässt den Rest des Raums in Ruhe."
           },
           "sections": {
             "advanced": {

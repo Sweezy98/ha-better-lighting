@@ -88,6 +88,8 @@ Inside a room:
 | **Scene** | A list of this room's lights and what each should look like — brightness, colour, off, or left alone. Nothing is house-wide: a reading scene for the living room and one for the bedroom are different lists of different lights. Build one by hand, or **capture the room as it is now**. |
 | **Light switch** | A switch on this room's wall, with its own ordered list of this room's scenes. Understands rockers: the lower half gets its own actions, and holding either end dims or brightens. |
 | **Light calibration** | Per-light minimum, maximum and offsets, to match a mismatched bulb to its neighbours. |
+| **Light group** | Several of this room's lights under one name — the three bulbs in one fitting, a row of ceiling spots. Given a Zigbee group entity, the whole group changes in one command instead of arriving one bulb at a time. Groups can hold groups, so a 3×3 of spots is three rows. |
+| **Zone** | A part of this room that may be told something different — the couch and the desk of one living room. A zone follows its room until it has a reason not to. |
 
 In the global config:
 
@@ -95,6 +97,51 @@ In the global config:
 |---|---|
 | **Colour presets** | The house's named colours — "TV orange", "candle" — so a colour used in several scenes is described once and picked by name. |
 | **Night mode helper** | The one helper that says the house is asleep. Each room decides for itself whether that dims it, darkens it, applies a scene, or does nothing. |
+
+### Zones: the desk that does not go dark for the film
+
+A living room is one room and several places. The couch and the desk are lit
+together, switched together and adapt together — which is what makes them one
+room — but a desk somebody is working at should not be darkened because the rest
+of the room is watching a film.
+
+So a zone **follows its room until it has a reason not to**, and rejoining is the
+default:
+
+- Give the zone an occupancy sensor and turn on *step out of a house mode while
+  occupied*. While somebody is there **and** a cross-room mode is driving the
+  room, that zone carries on by itself — its own scene if it names one, and
+  otherwise simply the lights, adaptively. A desk already occupied when the film
+  starts is never darkened in the first place.
+- When the sensor has been clear for the zone's delay, it rejoins the room and
+  goes back to whatever the room is being told. Nothing has to be put back by
+  hand.
+- A **switch can name a zone**, and then it drives only that zone: the desk's
+  switch lights the desk and leaves the couch alone. Stepping that switch back
+  to adaptive puts the zone back in the room.
+- A zone can answer for **its own adaptive curve** — brighter and cooler than the
+  room it sits in. That is one more layer of the same kind: hub, then room, then
+  the part of the room.
+
+Occupancy on its own detaches nothing: with no mode driving the room, a busy desk
+is the room's own business, which is what the room's presence settings are for.
+A light may be in at most one zone, for the same reason it is in at most one
+room, and saving is refused if two zones claim the same bulb.
+
+### Light groups: three bulbs, told once
+
+Three smart bulbs in one fitting should change together. Asking Home Assistant
+to set three entities sends three Zigbee commands and you can watch them arrive;
+a Zigbee group entity is one multicast. Name the group, point it at that entity,
+and the group is used whenever every member is being told the same thing — and
+abandoned the moment one differs, so a scene with one red, one green and one blue
+bulb still addresses them individually.
+
+Groups can contain groups. A 3×3 of ceiling spots is three rows of three, and a
+scene can set the whole ceiling amber and the middle row dim in two lines rather
+than nine. A light's own entry beats every group holding it. A group cannot
+contain itself, directly or through another, and saving one that does is refused
+with the loop named.
 
 ### One light, one room
 

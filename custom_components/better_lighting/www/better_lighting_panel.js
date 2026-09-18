@@ -1868,6 +1868,10 @@ class BetterLightingPanel extends HTMLElement {
         value: group.group_id,
         label: group.name || group.group_id,
       })),
+      room_zones: (room?.data.zones || []).map((zone) => ({
+        value: zone.zone_id,
+        label: zone.name || zone.zone_id,
+      })),
     };
   }
 

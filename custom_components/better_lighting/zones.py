@@ -66,6 +66,17 @@ class Zone:
     def overrides_section(self, section: str) -> bool:
         return section in self.overrides
 
+    @property
+    def own_curve(self) -> bool:
+        """Whether this zone answers for its own adaptive curve.
+
+        The same switch a room has against the hub: off, and every curve value
+        the zone stores is ignored and the room's applies. A desk that wants
+        to be brighter and cooler than the room it is in turns this on; a zone
+        that is simply a part of the room leaves it alone.
+        """
+        return bool(self.settings.get("adaptive_override_enabled"))
+
 
 @dataclass(frozen=True, slots=True)
 class ZonePlan:

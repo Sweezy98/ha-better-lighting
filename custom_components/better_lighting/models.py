@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Self
 
 import astral
@@ -171,6 +171,7 @@ from .const import (
     CONF_SUNRISE_OFFSET,
     CONF_SUNSET_OFFSET,
     CONF_SWITCH_ID,
+    CONF_SWITCH_ZONE,
     CONF_TAKE_OVER_CONTROL,
     CONF_TIME_DARK,
     CONF_TIME_LIGHT,
@@ -566,12 +567,39 @@ class RoomConfig:
         hub: HubConfig,
         observer: astral.Observer,
         timezone: datetime.tzinfo,
+        zone: Zone | None = None,
     ) -> AdaptiveConfig:
         """Layer the room's overrides onto the hub defaults.
 
         A room that has not opted in carries the hub's curve wholesale, so
         changing a global default reaches every room that did not ask to differ.
+
+        A zone given here and answering for its own curve is one more layer of
+        exactly the same kind: hub, then room, then the part of the room. A
+        zone that has not opted in is not a layer at all, which is why passing
+        one changes nothing until somebody asks it to.
         """
+        if zone is not None and zone.own_curve:
+            return replace(
+                self,
+                adaptive_override=True,
+                min_brightness_pct=float(
+                    zone.settings.get(CONF_MIN_BRIGHTNESS_PCT, self.min_brightness_pct)
+                ),
+                max_brightness_pct=float(
+                    zone.settings.get(CONF_MAX_BRIGHTNESS_PCT, self.max_brightness_pct)
+                ),
+                min_color_temp_k=int(
+                    zone.settings.get(CONF_MIN_COLOR_TEMP_K, self.min_color_temp_k)
+                ),
+                max_color_temp_k=int(
+                    zone.settings.get(CONF_MAX_COLOR_TEMP_K, self.max_color_temp_k)
+                ),
+                brightness_mode=BrightnessMode(
+                    zone.settings.get(CONF_BRIGHTNESS_MODE, self.brightness_mode.value)
+                ),
+            ).adaptive_config(hub, observer, timezone)
+
         override = self.adaptive_override
         return AdaptiveConfig(
             observer=observer,
@@ -702,6 +730,9 @@ class ControllerConfig:
     subentry_id: str
     name: str
     room_id: str
+    # Set when this switch drives one part of the room rather than the room:
+    # the desk's own switch lights the desk and leaves the couch alone.
+    zone_id: str | None
     binding_type: BindingType
     binding_entity: str | None
     is_default: bool
@@ -787,6 +818,7 @@ class ControllerConfig:
             subentry_id=subentry_id,
             name=raw.get(CONF_NAME) or fallback_name,
             room_id=room_id,
+            zone_id=raw.get(CONF_SWITCH_ZONE) or None,
             binding_type=BindingType(raw[CONF_BINDING_TYPE]),
             binding_entity=raw.get(CONF_BINDING_ENTITY) or None,
             is_default=bool(raw[CONF_IS_DEFAULT]),
@@ -850,6 +882,8 @@ def synthetic_controller(
         subentry_id=f"{room.subentry_id}:default",
         name=f"{room.name} (default)",
         room_id=room.subentry_id,
+        # The room's own light entity is the whole room, never a part of it.
+        zone_id=None,
         binding_type=BindingType.ROOM_LIGHT,
         binding_entity=None,
         is_default=True,

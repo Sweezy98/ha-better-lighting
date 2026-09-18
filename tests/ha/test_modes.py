@@ -1,4 +1,4 @@
-"""Cross-zone modes: the home-cinema scenario of requirement 2."""
+"""Cross-room modes: the home-cinema scenario of requirement 2."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from custom_components.better_lighting.const import DOMAIN, SubentryType
 from tests.conftest import (
     MemberLight,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
     subentry_ids,
-    zone_subentry,
 )
 from tests.ha.test_scenes import scene_subentry
 
@@ -41,10 +41,10 @@ def mode_subentry(
     )
 
 
-def rule(states, zones, action, **kw) -> dict:
+def rule(states, rooms, action, **kw) -> dict:
     return {
         "mode_states": states,
-        "zones": zones,
+        "zones": rooms,
         "action": action,
         "scene_id": kw.get("scene_id"),
         "respect_presence": kw.get("respect_presence", True),
@@ -89,8 +89,8 @@ async def build(
 
     entry = hub_entry(
         subentries_data=[
-            zone_subentry("Lounge", ["light.lounge_main", "light.lounge_lamp"]),
-            zone_subentry("Kitchen", ["light.kitchen_main"], **kitchen_extra),
+            room_subentry("Lounge", ["light.lounge_main", "light.lounge_lamp"]),
+            room_subentry("Kitchen", ["light.kitchen_main"], **kitchen_extra),
             scene_subentry("Movie", brightness=5),
             scene_subentry("Path", brightness=15),
         ]
@@ -164,8 +164,8 @@ class TestExit:
         )
         entry = hub_entry(
             subentries_data=[
-                zone_subentry("Lounge", ["light.lounge_main", "light.lounge_lamp"]),
-                zone_subentry("Kitchen", ["light.kitchen_main"]),
+                room_subentry("Lounge", ["light.lounge_main", "light.lounge_lamp"]),
+                room_subentry("Kitchen", ["light.kitchen_main"]),
                 scene_subentry("Movie", brightness=5),
             ]
         )
@@ -416,7 +416,7 @@ class TestOptOut:
         await hass.services.async_call(
             DOMAIN,
             "rejoin_mode",
-            {"mode": "Home Cinema", "zone": "kitchen"},
+            {"mode": "Home Cinema", "room": "kitchen"},
             blocking=True,
         )
         await hass.async_block_till_done()

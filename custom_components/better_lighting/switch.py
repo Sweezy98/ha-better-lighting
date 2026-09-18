@@ -1,4 +1,4 @@
-"""The per-zone adaptive and night-mode switches, and the mode on/off switch."""
+"""The per-room adaptive and night-mode switches, and the mode on/off switch."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import BetterLightingConfigEntry
 from .const import DOMAIN, NightBehavior
-from .models import ZoneConfig
+from .models import RoomConfig
 from .modes import ModeGroupRuntime
 from .profiles import Axis
-from .zone import ZoneController
+from .room import RoomController
 
 PARALLEL_UPDATES = 0
 
@@ -26,15 +26,15 @@ async def async_setup_entry(
     entry: BetterLightingConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Create the adaptive and night switches per zone, and one per mode."""
+    """Create the adaptive and night switches per room, and one per mode."""
     runtime = entry.runtime_data
-    for subentry_id, zone in runtime.zones.items():
+    for subentry_id, room in runtime.rooms.items():
         controller = runtime.controllers[subentry_id]
         async_add_entities(
             [
-                AdaptiveAxisSwitch(zone, controller, Axis.BRIGHTNESS),
-                AdaptiveAxisSwitch(zone, controller, Axis.COLOR),
-                NightSwitch(zone, controller),
+                AdaptiveAxisSwitch(room, controller, Axis.BRIGHTNESS),
+                AdaptiveAxisSwitch(room, controller, Axis.COLOR),
+                NightSwitch(room, controller),
             ],
             config_subentry_id=subentry_id,
         )
@@ -44,23 +44,23 @@ async def async_setup_entry(
         )
 
 
-class _ZoneSwitch(SwitchEntity, RestoreEntity):
+class _RoomSwitch(SwitchEntity, RestoreEntity):
     """Shared plumbing: device binding and following the controller."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, zone: ZoneConfig, controller: ZoneController, key: str) -> None:
-        self.zone = zone
+    def __init__(self, room: RoomConfig, controller: RoomController, key: str) -> None:
+        self.room = room
         self.controller = controller
-        self._attr_unique_id = f"{zone.subentry_id}_{key}"
+        self._attr_unique_id = f"{room.subentry_id}_{key}"
         self._attr_translation_key = key
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, zone.subentry_id)},
-            name=zone.name,
+            identifiers={(DOMAIN, room.subentry_id)},
+            name=room.name,
             manufacturer="Better Lighting",
-            model="Zone",
+            model="Room",
             entry_type=DeviceEntryType.SERVICE,
         )
 
@@ -73,7 +73,7 @@ class _ZoneSwitch(SwitchEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
-class AdaptiveAxisSwitch(_ZoneSwitch):
+class AdaptiveAxisSwitch(_RoomSwitch):
     """Whether this room tracks the sun on one axis.
 
     Two switches rather than one, because the axes are genuinely independent:
@@ -84,11 +84,11 @@ class AdaptiveAxisSwitch(_ZoneSwitch):
     """
 
     def __init__(
-        self, zone: ZoneConfig, controller: ZoneController, axis: Axis
+        self, room: RoomConfig, controller: RoomController, axis: Axis
     ) -> None:
         self.axis = axis
         key = "adaptive_brightness" if axis is Axis.BRIGHTNESS else "adaptive_color"
-        super().__init__(zone, controller, key)
+        super().__init__(room, controller, key)
         self._attr_icon = (
             "mdi:brightness-auto" if axis is Axis.BRIGHTNESS else "mdi:palette-outline"
         )
@@ -113,10 +113,10 @@ class AdaptiveAxisSwitch(_ZoneSwitch):
         await self.controller.async_set_adaptive_axis(self.axis, False)
 
 
-class NightSwitch(_ZoneSwitch):
-    """Whether this zone is in night mode.
+class NightSwitch(_RoomSwitch):
+    """Whether this room is in night mode.
 
-    When the zone names a source entity this mirrors it, and the source wins on
+    When the room names a source entity this mirrors it, and the source wins on
     every change -- so the user keeps one source of truth for "the house is
     asleep" and this switch is a readout that can still be nudged by hand until
     the source next changes.
@@ -124,8 +124,8 @@ class NightSwitch(_ZoneSwitch):
 
     _attr_icon = "mdi:sleep"
 
-    def __init__(self, zone: ZoneConfig, controller: ZoneController) -> None:
-        super().__init__(zone, controller, "night")
+    def __init__(self, room: RoomConfig, controller: RoomController) -> None:
+        super().__init__(room, controller, "night")
 
     @property
     def is_on(self) -> bool:
@@ -133,14 +133,14 @@ class NightSwitch(_ZoneSwitch):
 
     @property
     def available(self) -> bool:
-        return self.zone.night_behavior is not NightBehavior.OFF
+        return self.room.night_behavior is not NightBehavior.OFF
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
-            "source_entity": self.zone.night_source_entity,
-            "behavior": self.zone.night_behavior.value,
-            "ignores_presence": self.zone.night_ignore_presence,
+            "source_entity": self.room.night_source_entity,
+            "behavior": self.room.night_behavior.value,
+            "ignores_presence": self.room.night_ignore_presence,
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:

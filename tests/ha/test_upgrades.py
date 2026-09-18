@@ -36,9 +36,9 @@ class TestAnOlderInstallStillReads:
         """The room-defined adaptive default has to be invisible to a house
         that has never heard of it, or an update would silently stop driving
         lights somebody depends on."""
-        zone = models.ZoneConfig.from_subentry(
+        room = models.RoomConfig.from_subentry(
             _subentry(
-                SubentryType.ZONE,
+                SubentryType.ROOM,
                 {
                     "name": "Kitchen",
                     "lights": ["light.one", "light.two"],
@@ -48,16 +48,16 @@ class TestAnOlderInstallStillReads:
             )
         )
 
-        assert zone.adaptive_lights == ()
-        assert zone.adapts("light.one")
+        assert room.adaptive_lights == ()
+        assert room.adapts("light.one")
         # Including a light added to the room after the update.
-        assert zone.adapts("light.added_later")
+        assert room.adapts("light.added_later")
 
     def test_the_hub_gains_the_retention_default(self) -> None:
         assert models.HubConfig.from_options({}).log_retention_hours == 48
 
     def test_a_switch_keeps_working_and_gains_the_new_answers(self) -> None:
-        switch = models.zone_switch(
+        switch = models.room_switch(
             {"switch_id": "one", "name": "Wall"}, "zone1", ["scene1", "scene2"]
         )
 
@@ -90,7 +90,7 @@ class TestAnOlderInstallStillReads:
         )
 
         assert mode.rules[0].scripts == ()
-        assert mode.rules[0].zones == frozenset({"zone1"})
+        assert mode.rules[0].rooms == frozenset({"zone1"})
 
 
 def test_every_stored_key_has_a_default_behind_it() -> None:
@@ -112,10 +112,10 @@ def test_every_stored_key_has_a_default_behind_it() -> None:
     known = set()
     for table in (
         const.HUB_SPECS,
-        const.ZONE_SPECS,
+        const.ROOM_SPECS,
         const.LIGHT_PROFILE_SPECS,
         const.SCENE_SPECS,
-        const.ZONE_SCENE_SPECS,
+        const.ROOM_SCENE_SPECS,
         const.CONTROLLER_SPECS,
         const.MODE_SPECS,
         const.COLOR_PRESET_SPECS,
@@ -133,3 +133,34 @@ def test_every_stored_key_has_a_default_behind_it() -> None:
         if key not in known:
             missing.append(f"{name} ({key})")
     assert not missing, f"read from stored data with no default: {sorted(missing)}"
+
+
+def test_the_stored_vocabulary_still_says_zone() -> None:
+    """Rooms were called zones once, and on disk they still are.
+
+    A subentry's type cannot be changed after the fact: ``async_update_subentry``
+    takes no ``subentry_type``, and remove-and-re-add runs
+    ``async_clear_config_subentry`` over the device *and* entity registries,
+    which would throw away every name, entity id and area the user set by hand.
+    So the rename stopped at the identifiers, and these keys are frozen.
+
+    Pinning them here because the next change introduces a real zone -- a part
+    of a room -- and the temptation to tidy these up will be considerable.
+    """
+    from custom_components.better_lighting.const import (
+        CONF_ROOM_ID,
+        CONF_RULE_ROOMS,
+        CONF_SCENE_ROOMS,
+        SubentryType,
+    )
+    from custom_components.better_lighting.modes import EVENT_ROOM_OPTED_OUT
+    from custom_components.better_lighting.room import EVENT_ROOM_MODE_CHANGED
+    from custom_components.better_lighting.services import ATTR_ROOM_LEGACY
+
+    assert SubentryType.ROOM.value == "zone"
+    assert CONF_ROOM_ID == "zone_id"
+    assert CONF_RULE_ROOMS == "zones"
+    assert CONF_SCENE_ROOMS == "scene_zones"
+    assert EVENT_ROOM_MODE_CHANGED == "better_lighting_zone_mode_changed"
+    assert EVENT_ROOM_OPTED_OUT == "better_lighting_zone_opted_out"
+    assert ATTR_ROOM_LEGACY == "zone"

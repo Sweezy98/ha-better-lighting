@@ -17,7 +17,7 @@ from typing import Any
 from homeassistant.components.light import VALID_TRANSITION
 from homeassistant.helpers import selector
 
-from .session import OptedOutOnExit, RestoreMode, ZoneAction
+from .session import OptedOutOnExit, RestoreMode, RoomAction
 
 DOMAIN = "better_lighting"
 
@@ -33,9 +33,17 @@ PLATFORMS: list[str] = ["button", "event", "light", "select", "switch"]
 
 
 class SubentryType(StrEnum):
-    """The five kinds of configuration object held by the hub entry."""
+    """The five kinds of configuration object held by the hub entry.
 
-    ZONE = "zone"
+    ``ROOM`` is stored as ``"zone"`` because that is what it was called when
+    the first installations were written, and a subentry's type cannot be
+    changed after the fact: ``async_update_subentry`` does not accept one, and
+    remove-and-re-add clears the device *and* entity registry entries for that
+    subentry, losing every name, entity id and area the user set by hand. The
+    word on disk is worth less than their customisation, so it stays.
+    """
+
+    ROOM = "zone"
     SCENE = "scene"
     CONTROLLER = "controller"
     LIGHT_PROFILE = "light_profile"
@@ -114,7 +122,7 @@ class BindingType(StrEnum):
     # A bare light.turn_on on the zone's own light entity. This is the one that
     # works with a plain wall switch and no configuration, but it cannot tell
     # *which* switch pressed it -- so only one controller per zone may use it.
-    ZONE_LIGHT = "zone_light"
+    ROOM_LIGHT = "zone_light"
 
 
 class PressAction(StrEnum):
@@ -124,7 +132,7 @@ class PressAction(StrEnum):
     CYCLE_NEXT = "cycle_next"
     CYCLE_PREVIOUS = "cycle_previous"
     RESET_ADAPTIVE = "reset_adaptive"
-    ZONE_OFF = "zone_off"
+    ROOM_OFF = "zone_off"
     TOGGLE_NIGHT = "toggle_night"
     # Relative dimming, for the hold on a rocker's up and down halves. A bias
     # rather than an absolute level, so the room keeps tracking the sun while
@@ -386,7 +394,7 @@ CONF_COLOR_LIGHTS_DARK_MEMBERS = "color_lights_dark_members"
 
 BRIGHTNESS_STRATEGIES = ["average", "median", "max", "min"]
 
-ZONE_SPECS: tuple[FieldSpec, ...] = (
+ROOM_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_NAME,
         None,
@@ -440,7 +448,7 @@ CONF_NIGHT_TRANSITION = "night_transition"
 CONF_RESTORE_ON_POWER_CYCLE = "restore_on_power_cycle"
 CONF_RESUME_MAX_AGE_MIN = "resume_max_age_minutes"
 
-ZONE_POWER_SPECS: tuple[FieldSpec, ...] = (
+ROOM_POWER_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_RESTORE_ON_POWER_CYCLE,
         RestoreOnPowerCycle.ADAPTIVE.value,
@@ -471,7 +479,7 @@ ZONE_POWER_SPECS: tuple[FieldSpec, ...] = (
 # said it wants one.
 _OVERRIDDEN = (CONF_ADAPTIVE_OVERRIDE, (True,))
 
-ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
+ROOM_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
     # When False every value below is ignored and the hub defaults apply, so a
     # zone only carries its own curve when the user deliberately asked for one.
     # Deliberately outside the override: which lights adapt is a fact about
@@ -539,7 +547,7 @@ ZONE_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(CONF_ADAPTIVE_COLOR_ON, True, _boolean(), section=Section.ADAPTIVE),
 )
 
-ZONE_NIGHT_SPECS: tuple[FieldSpec, ...] = (
+ROOM_NIGHT_SPECS: tuple[FieldSpec, ...] = (
     # Night mode follows an existing helper rather than a schedule of its own,
     # so the user keeps one source of truth for "the house is asleep".
     FieldSpec(
@@ -668,7 +676,7 @@ CONF_IGNORE_PRESENCE = "ignore_presence"
 CONF_OTHERS = "others"
 CONF_ON_UNSUPPORTED_COLOR = "on_unsupported_color"
 CONF_SCENE_ID = "scene_id"
-CONF_SCENE_ZONES = "scene_zones"
+CONF_SCENE_ROOMS = "scene_zones"
 
 
 # The data model supports all eight Home Assistant colour formats; the UI
@@ -699,7 +707,7 @@ SCENE_SPECS: tuple[FieldSpec, ...] = (
     # This never changes what applying a scene does -- a scene only ever
     # affects the room it is applied to.
     FieldSpec(
-        CONF_SCENE_ZONES,
+        CONF_SCENE_ROOMS,
         [],
         _select([], "zone", multiple=True),
         options_key="zones",
@@ -766,12 +774,12 @@ SCENE_COLOR_SPECS: dict[str, FieldSpec] = {
 # the television at 7% orange, the ceiling off, the desk lamp at 20% keeping
 # whatever colour the sun says" can be said at all. Which axes the scene takes
 # over follows from what each light actually names.
-CONF_ZONE_SCENES = "scenes"
+CONF_ROOM_SCENES = "scenes"
 # The light switches that drive this room.
-CONF_ZONE_SWITCHES = "switches"
+CONF_ROOM_SWITCHES = "switches"
 CONF_SWITCH_ID = "switch_id"
 # Per-light calibration lives with the room whose lights it calibrates.
-CONF_ZONE_PROFILES = "light_profiles"
+CONF_ROOM_PROFILES = "light_profiles"
 
 # Whatever else a scene means. A film scene is not only the lights: the
 # amplifier goes on with it and off again when the room comes back.
@@ -818,7 +826,7 @@ def _scripts() -> Any:
     )
 
 
-ZONE_SCENE_SPECS: tuple[FieldSpec, ...] = (
+ROOM_SCENE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_NAME,
         None,
@@ -987,7 +995,7 @@ def scene_light_color_specs(color_format: str | None) -> tuple[FieldSpec, ...]:
 # Controller subentry: one light switch, with its own ordered list.
 # --------------------------------------------------------------------------
 
-CONF_ZONE_ID = "zone_id"
+CONF_ROOM_ID = "zone_id"
 CONF_BINDING_TYPE = "binding_type"
 CONF_BINDING_ENTITY = "binding_entity"
 CONF_PRESS_STATES = "press_states"
@@ -1069,7 +1077,7 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
         required=True,
     ),
     FieldSpec(
-        CONF_ZONE_ID,
+        CONF_ROOM_ID,
         None,
         _select([], "zone"),
         required=True,
@@ -1181,7 +1189,7 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
     # --- the lower half of a rocker ---
     FieldSpec(
         CONF_DOWN_PRESS_ACTION,
-        PressAction.ZONE_OFF.value,
+        PressAction.ROOM_OFF.value,
         _select(PRESS_ACTIONS, "press_action"),
         section=Section.DOWN,
     ),
@@ -1307,7 +1315,7 @@ CONF_INSECT_COLOR_TEMP_K = "insect_color_temp_k"
 CONF_INSECT_RGB_COLOR = "insect_rgb_color"
 CONF_INSECT_BRIGHTNESS_PCT = "insect_brightness_pct"
 
-ZONE_INSECT_SPECS: tuple[FieldSpec, ...] = (
+ROOM_INSECT_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_INSECT_ACTION,
         InsectAction.COLOR_TEMP.value,
@@ -1361,7 +1369,7 @@ ZONE_INSECT_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(CONF_INSECT_OVERRIDABLE, True, _boolean(), section=Section.INSECT),
 )
 
-ZONE_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
+ROOM_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_PRESENCE_ENTITY,
         None,
@@ -1440,7 +1448,7 @@ CONF_RULES = "rules"
 IDLE_STATE = "off"
 
 CONF_RULE_STATES = "mode_states"
-CONF_RULE_ZONES = "zones"
+CONF_RULE_ROOMS = "zones"
 CONF_RULE_ACTION = "action"
 CONF_RULE_SCENE = "scene_id"
 CONF_RULE_RESPECT_PRESENCE = "respect_presence"
@@ -1459,7 +1467,7 @@ CONF_RULE_ENABLED = "enabled"
 
 DEFAULT_MODE_STATES = ["playing", "paused", "credits"]
 
-ZONE_ACTIONS = [a.value for a in ZoneAction]
+ROOM_ACTIONS = [a.value for a in RoomAction]
 RESTORE_MODES = [r.value for r in RestoreMode]
 OPTED_OUT_ON_EXIT = [o.value for o in OptedOutOnExit]
 ON_FREE_ACTIONS = ["turn_off", "keep", "reapply_mode_action"]
@@ -1543,22 +1551,22 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
         # rather than about any one room, and demanding a room for it meant
         # picking one at random and hoping nothing else was configured for it.
         FieldSpec(
-            CONF_RULE_ZONES,
+            CONF_RULE_ROOMS,
             None,
             _select([], "zone"),
             options_key="zones",
         ),
         FieldSpec(
             CONF_RULE_ACTION,
-            ZoneAction.KEEP.value,
-            _select(ZONE_ACTIONS, "zone_action"),
+            RoomAction.KEEP.value,
+            _select(ROOM_ACTIONS, "zone_action"),
         ),
         FieldSpec(
             CONF_RULE_SCENE,
             None,
             _select([], "scene"),
             options_key="scenes",
-            depends_on=(CONF_RULE_ACTION, (ZoneAction.APPLY_SCENE.value,)),
+            depends_on=(CONF_RULE_ACTION, (RoomAction.APPLY_SCENE.value,)),
         ),
         FieldSpec(CONF_RULE_ENABLED, True, _boolean()),
         FieldSpec(
@@ -1578,8 +1586,8 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
         # state change that emptied the room in the first place.
         FieldSpec(
             CONF_RULE_ENTRY_ACTION,
-            ZoneAction.KEEP.value,
-            _select(ZONE_ACTIONS, "zone_action"),
+            RoomAction.KEEP.value,
+            _select(ROOM_ACTIONS, "zone_action"),
             section=Section.ADVANCED,
         ),
         FieldSpec(
@@ -1587,7 +1595,7 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
             None,
             _select([], "scene"),
             options_key="scenes",
-            depends_on=(CONF_RULE_ENTRY_ACTION, (ZoneAction.APPLY_SCENE.value,)),
+            depends_on=(CONF_RULE_ENTRY_ACTION, (RoomAction.APPLY_SCENE.value,)),
             section=Section.ADVANCED,
         ),
         FieldSpec(
@@ -1599,18 +1607,18 @@ def mode_rule_specs(states: list[str]) -> tuple[FieldSpec, ...]:
     )
 
 
-ZONE_SPECS = (
-    ZONE_SPECS
-    + ZONE_ADAPTIVE_SPECS
-    + ZONE_NIGHT_SPECS
-    + ZONE_POWER_SPECS
-    + ZONE_PRESENCE_SPECS
-    + ZONE_INSECT_SPECS
+ROOM_SPECS = (
+    ROOM_SPECS
+    + ROOM_ADAPTIVE_SPECS
+    + ROOM_NIGHT_SPECS
+    + ROOM_POWER_SPECS
+    + ROOM_PRESENCE_SPECS
+    + ROOM_INSECT_SPECS
 )
 
 
 SPECS_BY_SUBENTRY: dict[str, tuple[FieldSpec, ...]] = {
-    SubentryType.ZONE.value: ZONE_SPECS,
+    SubentryType.ROOM.value: ROOM_SPECS,
     SubentryType.LIGHT_PROFILE.value: LIGHT_PROFILE_SPECS,
     SubentryType.SCENE.value: SCENE_SPECS,
     SubentryType.CONTROLLER.value: CONTROLLER_SPECS,

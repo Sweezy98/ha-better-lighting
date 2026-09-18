@@ -4,9 +4,9 @@ The config flow stores plain JSON; these dataclasses are the typed view the
 runtime works with, so a missing or stale key is defaulted in exactly one place.
 
 This module also owns the three-layer resolution the user asked for:
-**hub defaults -> zone override -> per-light profile**. Note the deliberate
+**hub defaults -> room override -> per-light profile**. Note the deliberate
 asymmetry between the first two layers and the third, which the UI strings
-spell out: hub and zone values define the *curve* (what "darkest" and
+spell out: hub and room values define the *curve* (what "darkest" and
 "brightest" mean across the day), while a light profile *clamps and calibrates*
 whatever the curve produced.
 """
@@ -132,6 +132,10 @@ from .const import (
     CONF_RESTORE_ON_POWER_CYCLE,
     CONF_RESUME_MAX_AGE_MIN,
     CONF_RGB_COLOR,
+    CONF_ROOM_ID,
+    CONF_ROOM_PROFILES,
+    CONF_ROOM_SCENES,
+    CONF_ROOM_SWITCHES,
     CONF_RULE_ACTION,
     CONF_RULE_DEFER_IF_OCCUPIED,
     CONF_RULE_ENABLED,
@@ -139,10 +143,10 @@ from .const import (
     CONF_RULE_ENTRY_SCENE,
     CONF_RULE_ON_FREE,
     CONF_RULE_RESPECT_PRESENCE,
+    CONF_RULE_ROOMS,
     CONF_RULE_SCENE,
     CONF_RULE_SCRIPTS,
     CONF_RULE_STATES,
-    CONF_RULE_ZONES,
     CONF_RULES,
     CONF_SCENE_EFFECT,
     CONF_SCENE_ENTER_SCRIPTS,
@@ -151,8 +155,8 @@ from .const import (
     CONF_SCENE_LIGHTS,
     CONF_SCENE_ORDER,
     CONF_SCENE_ORDER_EXCLUDED,
+    CONF_SCENE_ROOMS,
     CONF_SCENE_TRANSITION,
-    CONF_SCENE_ZONES,
     CONF_SEND_SPLIT_DELAY_MS,
     CONF_SEPARATE_TURN_ON,
     CONF_SNAPSHOT_ON_ENTER,
@@ -167,16 +171,12 @@ from .const import (
     CONF_WARM_WHITE,
     CONF_WINDOW_ENTITIES,
     CONF_WRAP_AROUND,
-    CONF_ZONE_ID,
-    CONF_ZONE_PROFILES,
-    CONF_ZONE_SCENES,
-    CONF_ZONE_SWITCHES,
     CONTROLLER_SPECS,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
     MODE_SPECS,
+    ROOM_SPECS,
     SCENE_SPECS,
-    ZONE_SPECS,
     BindingType,
     BrightnessMode,
     CoverCondition,
@@ -188,8 +188,8 @@ from .const import (
     PressAction,
     RestoreMode,
     RestoreOnPowerCycle,
+    RoomAction,
     SceneLightAction,
-    ZoneAction,
     defaults_for,
 )
 from .cycle import (
@@ -215,7 +215,7 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigSubentry
 
 _HUB_DEFAULTS = defaults_for(HUB_SPECS)
-_ZONE_DEFAULTS = defaults_for(ZONE_SPECS)
+_ROOM_DEFAULTS = defaults_for(ROOM_SPECS)
 _PROFILE_DEFAULTS = defaults_for(LIGHT_PROFILE_SPECS)
 _SCENE_DEFAULTS = defaults_for(SCENE_SPECS)
 _CONTROLLER_DEFAULTS = defaults_for(CONTROLLER_SPECS)
@@ -224,7 +224,7 @@ _MODE_DEFAULTS = defaults_for(MODE_SPECS)
 
 @dataclass(frozen=True, slots=True)
 class HubConfig:
-    """Global defaults every zone inherits."""
+    """Global defaults every room inherits."""
 
     interval: int
     transition: float
@@ -235,8 +235,8 @@ class HubConfig:
     min_color_temp_k: int
     max_color_temp_k: int
     brightness_mode: BrightnessMode
-    # The house-wide "everyone is asleep" helper. Each zone decides what to do
-    # about it; a zone that still carries its own from an older version keeps
+    # The house-wide "everyone is asleep" helper. Each room decides what to do
+    # about it; a room that still carries its own from an older version keeps
     # using that until this one is set.
     night_source_entity: str | None
     # How long the activity log is kept across restarts. Zero keeps nothing.
@@ -294,7 +294,7 @@ class HubConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class ZoneConfig:
+class RoomConfig:
     """One room: its lights, its curve, and how its group entity behaves."""
 
     subentry_id: str
@@ -422,17 +422,17 @@ class ZoneConfig:
             name="Insect mode",
             icon="mdi:bee",
             lights={ALL_LIGHTS: spec},
-            zones=frozenset({self.subentry_id}),
+            rooms=frozenset({self.subentry_id}),
         )
 
     @classmethod
     def from_subentry(cls, subentry: ConfigSubentry) -> Self:
-        raw = {**_ZONE_DEFAULTS, **dict(subentry.data)}
+        raw = {**_ROOM_DEFAULTS, **dict(subentry.data)}
         # Built first because the switches are built from them: what a switch
         # cycles is a question about the room's scenes.
         scenes = tuple(
-            zone_scene(entry, subentry.subentry_id)
-            for entry in (raw.get(CONF_ZONE_SCENES) or ())
+            room_scene(entry, subentry.subentry_id)
+            for entry in (raw.get(CONF_ROOM_SCENES) or ())
         )
         scene_ids = [scene.scene_id for scene in scenes]
         return cls(
@@ -467,13 +467,13 @@ class ZoneConfig:
             night_ignore_presence=bool(raw[CONF_NIGHT_IGNORE_PRESENCE]),
             scenes=scenes,
             light_profiles={
-                entry[CONF_LIGHT_ENTITY]: zone_light_profile(entry)
-                for entry in (raw.get(CONF_ZONE_PROFILES) or ())
+                entry[CONF_LIGHT_ENTITY]: room_light_profile(entry)
+                for entry in (raw.get(CONF_ROOM_PROFILES) or ())
                 if entry.get(CONF_LIGHT_ENTITY)
             },
             switches=tuple(
-                zone_switch(entry, subentry.subentry_id, scene_ids)
-                for entry in (raw.get(CONF_ZONE_SWITCHES) or ())
+                room_switch(entry, subentry.subentry_id, scene_ids)
+                for entry in (raw.get(CONF_ROOM_SWITCHES) or ())
             ),
             restore_on_power_cycle=RestoreOnPowerCycle(
                 raw[CONF_RESTORE_ON_POWER_CYCLE]
@@ -517,10 +517,10 @@ class ZoneConfig:
         observer: astral.Observer,
         timezone: datetime.tzinfo,
     ) -> AdaptiveConfig:
-        """Layer the zone's overrides onto the hub defaults.
+        """Layer the room's overrides onto the hub defaults.
 
-        A zone that has not opted in carries the hub's curve wholesale, so
-        changing a global default reaches every zone that did not ask to differ.
+        A room that has not opted in carries the hub's curve wholesale, so
+        changing a global default reaches every room that did not ask to differ.
         """
         override = self.adaptive_override
         return AdaptiveConfig(
@@ -539,9 +539,9 @@ class ZoneConfig:
             max_color_temp_k=(
                 self.max_color_temp_k if override else hub.max_color_temp_k
             ),
-            # Night values are always the zone's own: a bedroom and a hallway
+            # Night values are always the room's own: a bedroom and a hallway
             # rarely want the same thing after dark, and the hub value is only
-            # the seed the zone form was pre-filled with.
+            # the seed the room form was pre-filled with.
             night_brightness_pct=self.night_brightness_pct,
             night_color_temp_k=self.night_color_temp_k,
             time_dark=datetime.timedelta(seconds=hub.time_dark),
@@ -634,7 +634,7 @@ class SceneConfig:
                 brightness_pct=brightness,
                 color=color,
                 on_lights_only=bool(raw[CONF_ON_LIGHTS_ONLY]),
-                zones=frozenset(raw.get(CONF_SCENE_ZONES) or ()),
+                rooms=frozenset(raw.get(CONF_SCENE_ROOMS) or ()),
                 ignore_presence=bool(raw[CONF_IGNORE_PRESENCE]),
                 others=OthersPolicy(raw[CONF_OTHERS]),
                 transition=float(raw[CONF_TRANSITION]),
@@ -651,7 +651,7 @@ class ControllerConfig:
 
     subentry_id: str
     name: str
-    zone_id: str
+    room_id: str
     binding_type: BindingType
     binding_entity: str | None
     is_default: bool
@@ -671,7 +671,7 @@ class ControllerConfig:
     down_press_states: frozenset[str] = frozenset()
     down_double_press_states: frozenset[str] = frozenset()
     down_long_press_states: frozenset[str] = frozenset()
-    down_press_action: PressAction = PressAction.ZONE_OFF
+    down_press_action: PressAction = PressAction.ROOM_OFF
     down_double_press_action: PressAction = PressAction.NONE
     down_long_press_action: PressAction = PressAction.DIM
     dim_step_pct: float = 10.0
@@ -720,7 +720,7 @@ class ControllerConfig:
         return cls.from_mapping(
             raw,
             subentry_id=subentry.subentry_id,
-            zone_id=raw.get(CONF_ZONE_ID) or "",
+            room_id=raw.get(CONF_ROOM_ID) or "",
             fallback_name=subentry.title,
         )
 
@@ -730,13 +730,13 @@ class ControllerConfig:
         raw: dict[str, Any],
         *,
         subentry_id: str,
-        zone_id: str,
+        room_id: str,
         fallback_name: str = "Switch",
     ) -> Self:
         return cls(
             subentry_id=subentry_id,
             name=raw.get(CONF_NAME) or fallback_name,
-            zone_id=zone_id,
+            room_id=room_id,
             binding_type=BindingType(raw[CONF_BINDING_TYPE]),
             binding_entity=raw.get(CONF_BINDING_ENTITY) or None,
             is_default=bool(raw[CONF_IS_DEFAULT]),
@@ -763,7 +763,7 @@ class ControllerConfig:
                 raw.get(CONF_DOWN_LONG_PRESS_STATES) or ()
             ),
             down_press_action=PressAction(
-                raw.get(CONF_DOWN_PRESS_ACTION, PressAction.ZONE_OFF.value)
+                raw.get(CONF_DOWN_PRESS_ACTION, PressAction.ROOM_OFF.value)
             ),
             down_double_press_action=PressAction(
                 raw.get(CONF_DOWN_DOUBLE_PRESS_ACTION, PressAction.NONE.value)
@@ -788,19 +788,19 @@ class ControllerConfig:
 
 
 def synthetic_controller(
-    zone: ZoneConfig, scene_ids: tuple[str, ...]
+    room: RoomConfig, scene_ids: tuple[str, ...]
 ) -> ControllerConfig:
-    """The controller a zone gets when the user has not configured one.
+    """The controller a room gets when the user has not configured one.
 
     Its list is adaptive followed by every scene, so a plain wall switch wired
-    straight to the zone's light entity cycles the room with no configuration
+    straight to the room's light entity cycles the room with no configuration
     at all. Adding a real controller replaces it and takes over the ordering.
     """
     return ControllerConfig(
-        subentry_id=f"{zone.subentry_id}:default",
-        name=f"{zone.name} (default)",
-        zone_id=zone.subentry_id,
-        binding_type=BindingType.ZONE_LIGHT,
+        subentry_id=f"{room.subentry_id}:default",
+        name=f"{room.name} (default)",
+        room_id=room.subentry_id,
+        binding_type=BindingType.ROOM_LIGHT,
         binding_entity=None,
         is_default=True,
         scene_order=(ADAPTIVE_STEP, *scene_ids),
@@ -817,7 +817,7 @@ def synthetic_controller(
     )
 
 
-def _rule_zones(stored: Any) -> frozenset[str]:
+def _rule_rooms(stored: Any) -> frozenset[str]:
     """The rooms a rule governs.
 
     Stored as a single room now, but rules written when one rule could span
@@ -830,7 +830,7 @@ def _rule_zones(stored: Any) -> frozenset[str]:
     return frozenset(stored)
 
 
-def _entry_action(raw: dict[str, Any]) -> ZoneAction:
+def _entry_action(raw: dict[str, Any]) -> RoomAction:
     """What a room does when somebody walks back into it mid-session.
 
     Rules written before this was a choice carry only a scene, and meant
@@ -838,23 +838,23 @@ def _entry_action(raw: dict[str, Any]) -> ZoneAction:
     """
     stored = raw.get(CONF_RULE_ENTRY_ACTION)
     if stored:
-        return ZoneAction(stored)
-    return ZoneAction.APPLY_SCENE if raw.get(CONF_RULE_ENTRY_SCENE) else ZoneAction.KEEP
+        return RoomAction(stored)
+    return RoomAction.APPLY_SCENE if raw.get(CONF_RULE_ENTRY_SCENE) else RoomAction.KEEP
 
 
 @dataclass(frozen=True, slots=True)
 class ModeRule:
-    """What one cross-zone mode does to one room, in one or more of its states."""
+    """What one cross-room mode does to one room, in one or more of its states."""
 
     states: frozenset[str]
-    zones: frozenset[str]
-    action: ZoneAction = ZoneAction.KEEP
+    rooms: frozenset[str]
+    action: RoomAction = RoomAction.KEEP
     scene_id: str | None = None
     # Requirement 2: a room with somebody in it is not plunged into darkness.
     respect_presence: bool = True
     defer_if_occupied: bool = True
     # What somebody walking in mid-session gets.
-    presence_entry_action: ZoneAction = ZoneAction.KEEP
+    presence_entry_action: RoomAction = RoomAction.KEEP
     presence_entry_scene: str | None = None
     on_free_action: str = "turn_off"
     # Run whenever this rule takes effect, alongside whatever it does to the
@@ -868,8 +868,8 @@ class ModeRule:
     def from_dict(cls, raw: dict[str, Any]) -> ModeRule:
         return cls(
             states=frozenset(raw.get(CONF_RULE_STATES) or ()),
-            zones=_rule_zones(raw.get(CONF_RULE_ZONES)),
-            action=ZoneAction(raw.get(CONF_RULE_ACTION, ZoneAction.KEEP.value)),
+            rooms=_rule_rooms(raw.get(CONF_RULE_ROOMS)),
+            action=RoomAction(raw.get(CONF_RULE_ACTION, RoomAction.KEEP.value)),
             scene_id=raw.get(CONF_RULE_SCENE) or None,
             respect_presence=bool(raw.get(CONF_RULE_RESPECT_PRESENCE, True)),
             defer_if_occupied=bool(raw.get(CONF_RULE_DEFER_IF_OCCUPIED, True)),
@@ -900,10 +900,10 @@ class ModeConfig:
         return slugify(self.name)
 
     @property
-    def zone_ids(self) -> frozenset[str]:
+    def room_ids(self) -> frozenset[str]:
         """Every room any rule mentions."""
         return (
-            frozenset().union(*(rule.zones for rule in self.rules))
+            frozenset().union(*(rule.rooms for rule in self.rules))
             if self.rules
             else frozenset()
         )
@@ -918,10 +918,10 @@ class ModeConfig:
         return tuple(
             rule
             for rule in self.rules
-            if rule.enabled and state in rule.states and not rule.zones and rule.scripts
+            if rule.enabled and state in rule.states and not rule.rooms and rule.scripts
         )
 
-    def rule_for(self, state: str, zone_id: str) -> ModeRule | None:
+    def rule_for(self, state: str, room_id: str) -> ModeRule | None:
         """The rule governing one room in one state.
 
         Later rules win, so a broad rule can be written first and a specific
@@ -929,7 +929,7 @@ class ModeConfig:
         """
         found = None
         for rule in self.rules:
-            if rule.enabled and state in rule.states and zone_id in rule.zones:
+            if rule.enabled and state in rule.states and room_id in rule.rooms:
                 found = rule
         return found
 
@@ -1022,8 +1022,8 @@ def effective_scene_order(
     return tuple(order) or (ADAPTIVE_STEP,)
 
 
-def zone_switch(
-    raw: dict[str, Any], zone_id: str, scene_ids: Sequence[str] = ()
+def room_switch(
+    raw: dict[str, Any], room_id: str, scene_ids: Sequence[str] = ()
 ) -> ControllerConfig:
     """One of a room's switches, as stored inside the room."""
     merged = {**_CONTROLLER_DEFAULTS, **raw}
@@ -1040,11 +1040,11 @@ def zone_switch(
     return ControllerConfig.from_mapping(
         merged,
         subentry_id=str(raw.get(CONF_SWITCH_ID) or ""),
-        zone_id=zone_id,
+        room_id=room_id,
     )
 
 
-def zone_light_profile(raw: dict[str, Any]) -> LightProfile:
+def room_light_profile(raw: dict[str, Any]) -> LightProfile:
     """One light's calibration, as stored inside its room."""
     merged = {**_PROFILE_DEFAULTS, **raw}
     return LightProfile(
@@ -1063,7 +1063,7 @@ def zone_light_profile(raw: dict[str, Any]) -> LightProfile:
     )
 
 
-def zone_scene(raw: dict[str, Any], zone_id: str) -> Scene:
+def room_scene(raw: dict[str, Any], room_id: str) -> Scene:
     """One of a room's own scenes.
 
     Carries no brightness or colour of its own -- every value lives on a light.
@@ -1077,7 +1077,7 @@ def zone_scene(raw: dict[str, Any], zone_id: str) -> Scene:
         icon=str(raw.get(CONF_ICON) or "mdi:palette"),
         lights=_scene_lights(raw.get(CONF_SCENE_LIGHTS) or {}),
         on_lights_only=bool(raw.get(CONF_ON_LIGHTS_ONLY, False)),
-        zones=frozenset({zone_id}),
+        rooms=frozenset({room_id}),
         others=OthersPolicy(raw.get(CONF_OTHERS, OthersPolicy.ADAPTIVE.value)),
         ignore_presence=bool(raw.get(CONF_IGNORE_PRESENCE, False)),
         transition=(

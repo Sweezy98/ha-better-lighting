@@ -50,12 +50,16 @@ from .const import (
     CONF_RESTORE_ON_POWER_CYCLE,
     CONF_RESUME_MAX_AGE_MIN,
     CONF_RGB_COLOR,
+    CONF_ROOM_ID,
+    CONF_ROOM_PROFILES,
+    CONF_ROOM_SCENES,
+    CONF_ROOM_SWITCHES,
     CONF_RULE_ACTION,
     CONF_RULE_ENTRY_ACTION,
     CONF_RULE_ENTRY_SCENE,
+    CONF_RULE_ROOMS,
     CONF_RULE_SCENE,
     CONF_RULE_STATES,
-    CONF_RULE_ZONES,
     CONF_RULES,
     CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
@@ -64,17 +68,13 @@ from .const import (
     CONF_SWITCH_ID,
     CONF_TRANSITION,
     CONF_WINDOW_ENTITIES,
-    CONF_ZONE_ID,
-    CONF_ZONE_PROFILES,
-    CONF_ZONE_SCENES,
-    CONF_ZONE_SWITCHES,
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
     MODE_SPECS,
-    ZONE_SCENE_SPECS,
-    ZONE_SPECS,
+    ROOM_SCENE_SPECS,
+    ROOM_SPECS,
     FieldSpec,
     RestoreOnPowerCycle,
     Section,
@@ -92,7 +92,7 @@ HUB_TITLE = "Better Lighting"
 
 
 def scene_options(
-    entry: ConfigEntry, zone_id: str | None = None
+    entry: ConfigEntry, room_id: str | None = None
 ) -> list[dict[str, str]]:
     """The scenes available to pick.
 
@@ -101,11 +101,11 @@ def scene_options(
     """
     options = []
     for sub in entry.subentries.values():
-        if sub.subentry_type != SubentryType.ZONE.value:
+        if sub.subentry_type != SubentryType.ROOM.value:
             continue
-        if zone_id is not None and sub.subentry_id != zone_id:
+        if room_id is not None and sub.subentry_id != room_id:
             continue
-        for scene in sub.data.get(CONF_ZONE_SCENES) or ():
+        for scene in sub.data.get(CONF_ROOM_SCENES) or ():
             if not scene.get(CONF_SCENE_ID):
                 continue
             # Prefixed when the list spans rooms, because two rooms may well
@@ -114,28 +114,28 @@ def scene_options(
             options.append(
                 {
                     "value": scene[CONF_SCENE_ID],
-                    "label": label if zone_id is not None else f"{sub.title} · {label}",
+                    "label": label if room_id is not None else f"{sub.title} · {label}",
                 }
             )
     return options
 
 
-def _zone_subentries(entry: ConfigEntry) -> dict[str, Any]:
-    """Every zone subentry, keyed by subentry_id."""
+def _room_subentries(entry: ConfigEntry) -> dict[str, Any]:
+    """Every room subentry, keyed by subentry_id."""
     return {
         sub.subentry_id: sub
         for sub in entry.subentries.values()
-        if sub.subentry_type == SubentryType.ZONE.value
+        if sub.subentry_type == SubentryType.ROOM.value
     }
 
 
-def validate_zone_lights(
+def validate_room_lights(
     entry: ConfigEntry, lights: list[str], *, exclude_subentry_id: str | None = None
 ) -> dict[str, str]:
-    """Enforce the one-light-one-zone invariant.
+    """Enforce the one-light-one-room invariant.
 
     This is the rule the whole architecture rests on: because a light belongs to
-    exactly one zone, manual-override tracking, render ownership and press
+    exactly one room, manual-override tracking, render ownership and press
     attribution are all unambiguous without any of Adaptive Lighting's
     multi-switch disambiguation machinery.
     """
@@ -143,7 +143,7 @@ def validate_zone_lights(
         return {CONF_LIGHTS: "no_lights"}
 
     claimed: dict[str, str] = {}
-    for subentry_id, subentry in _zone_subentries(entry).items():
+    for subentry_id, subentry in _room_subentries(entry).items():
         if subentry_id == exclude_subentry_id:
             continue
         for entity_id in subentry.data.get(CONF_LIGHTS) or ():
@@ -152,7 +152,7 @@ def validate_zone_lights(
     for entity_id in lights:
         if entity_id in claimed:
             _LOGGER.debug(
-                "%s is already a member of zone %r", entity_id, claimed[entity_id]
+                "%s is already a member of room %r", entity_id, claimed[entity_id]
             )
             return {CONF_LIGHTS: "light_in_other_zone"}
 
@@ -203,7 +203,7 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """The kinds of object that can be added to the hub."""
         return {
-            SubentryType.ZONE.value: ZoneSubentryFlow,
+            SubentryType.ROOM.value: RoomSubentryFlow,
             SubentryType.MODE.value: ModeSubentryFlow,
         }
 
@@ -409,8 +409,8 @@ class BetterLightingOptionsFlow(OptionsFlow):
         )
 
 
-class ZoneSubentryFlow(ConfigSubentryFlow):
-    """Add or reconfigure a zone, and manage the scenes that belong to it.
+class RoomSubentryFlow(ConfigSubentryFlow):
+    """Add or reconfigure a room, and manage the scenes that belong to it.
 
     A room's settings come first, then a menu for its scenes. Scenes live here
     rather than in a list of their own because a scene is a list of *this*
@@ -461,12 +461,12 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         if subentry is None:
             return
         self._data = dict(subentry.data)
-        self._scenes = [dict(s) for s in (subentry.data.get(CONF_ZONE_SCENES) or [])]
+        self._scenes = [dict(s) for s in (subentry.data.get(CONF_ROOM_SCENES) or [])]
         self._switches = [
-            dict(s) for s in (subentry.data.get(CONF_ZONE_SWITCHES) or [])
+            dict(s) for s in (subentry.data.get(CONF_ROOM_SWITCHES) or [])
         ]
         self._profiles = [
-            dict(s) for s in (subentry.data.get(CONF_ZONE_PROFILES) or [])
+            dict(s) for s in (subentry.data.get(CONF_ROOM_PROFILES) or [])
         ]
 
     async def _async_essentials(
@@ -477,8 +477,8 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            cleaned, errors = post_validate(ZONE_SPECS, user_input)
-            errors |= validate_zone_lights(
+            cleaned, errors = post_validate(ROOM_SPECS, user_input)
+            errors |= validate_room_lights(
                 entry,
                 cleaned.get(CONF_LIGHTS) or [],
                 exclude_subentry_id=subentry.subentry_id if subentry else None,
@@ -490,7 +490,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="user",
             data_schema=build_schema(
-                ZONE_SPECS,
+                ROOM_SPECS,
                 user_input or self._data,
                 include=(Section.BASIC,),
                 flat=True,
@@ -508,9 +508,9 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            cleaned, errors = post_validate(ZONE_SPECS, user_input)
+            cleaned, errors = post_validate(ROOM_SPECS, user_input)
             if section is Section.BASIC:
-                errors |= validate_zone_lights(
+                errors |= validate_room_lights(
                     entry,
                     cleaned.get(CONF_LIGHTS) or [],
                     exclude_subentry_id=(
@@ -524,7 +524,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id=step_id,
             data_schema=build_schema(
-                ZONE_SPECS,
+                ROOM_SPECS,
                 user_input or self._data,
                 include=(section,),
                 flat=True,
@@ -569,7 +569,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             == RestoreOnPowerCycle.LAST_SCENE.value
         )
         if user_input is not None:
-            cleaned, errors = post_validate(ZONE_SPECS, user_input)
+            cleaned, errors = post_validate(ROOM_SPECS, user_input)
             if not errors:
                 self._data |= cleaned
                 now_resumes = (
@@ -582,7 +582,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
 
         specs = tuple(
             spec
-            for spec in ZONE_SPECS
+            for spec in ROOM_SPECS
             if spec.section is Section.POWER
             and (resumes or spec.key != CONF_RESUME_MAX_AGE_MIN)
         )
@@ -749,8 +749,8 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            flat = flatten_sections(ZONE_SCENE_SPECS, user_input)
-            cleaned, errors = post_validate(ZONE_SCENE_SPECS, flat)
+            flat = flatten_sections(ROOM_SCENE_SPECS, user_input)
+            cleaned, errors = post_validate(ROOM_SCENE_SPECS, flat)
             if not errors:
                 lights = self._scene.get(CONF_SCENE_LIGHTS) or {}
                 self._scene = {
@@ -767,7 +767,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             current = dict(self._scenes[index])
         return self.async_show_form(
             step_id=step_id,
-            data_schema=build_schema(ZONE_SCENE_SPECS, current),
+            data_schema=build_schema(ROOM_SCENE_SPECS, current),
             errors=errors,
         )
 
@@ -1309,7 +1309,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         return tuple(
             spec
             for spec in CONTROLLER_SPECS
-            if spec.key not in (CONF_ZONE_ID, CONF_SCENE_ORDER)
+            if spec.key not in (CONF_ROOM_ID, CONF_SCENE_ORDER)
         )
 
     async def async_step_add_switch(
@@ -1539,9 +1539,9 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         data = {
             **self._data,
-            CONF_ZONE_SCENES: self._scenes,
-            CONF_ZONE_PROFILES: self._profiles,
-            CONF_ZONE_SWITCHES: self._switches,
+            CONF_ROOM_SCENES: self._scenes,
+            CONF_ROOM_PROFILES: self._profiles,
+            CONF_ROOM_SWITCHES: self._switches,
         }
         title = data[CONF_NAME]
         if self._subentry is None:
@@ -1551,17 +1551,17 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         )
 
 
-def zone_options(entry: ConfigEntry) -> list[dict[str, str]]:
-    """The zones defined so far, for a controller to be bound to."""
+def room_options(entry: ConfigEntry) -> list[dict[str, str]]:
+    """The rooms defined so far, for a controller to be bound to."""
     return [
         {"value": sub.subentry_id, "label": sub.title}
         for sub in entry.subentries.values()
-        if sub.subentry_type == SubentryType.ZONE.value
+        if sub.subentry_type == SubentryType.ROOM.value
     ]
 
 
 class ModeSubentryFlow(ConfigSubentryFlow):
-    """Add or reconfigure a cross-zone mode, such as Home Cinema.
+    """Add or reconfigure a cross-room mode, such as Home Cinema.
 
     Settings first, then a loop for the rules. A rule can name several states
     and several rooms at once, so "these three rooms go dark while the film is
@@ -1664,7 +1664,7 @@ class ModeSubentryFlow(ConfigSubentryFlow):
 
     def _rules_summary(self) -> str:
         entry = self._get_entry()
-        zones = {z["value"]: z["label"] for z in zone_options(entry)}
+        rooms = {z["value"]: z["label"] for z in room_options(entry)}
         scenes = {s["value"]: s["label"] for s in scene_options(entry)}
         if not self._rules:
             return "(no rules yet -- the mode will not change anything)"
@@ -1672,7 +1672,7 @@ class ModeSubentryFlow(ConfigSubentryFlow):
         for index, rule in enumerate(self._rules, start=1):
             states = ", ".join(rule.get(CONF_RULE_STATES) or ())
             rooms = ", ".join(
-                zones.get(z, z) for z in (rule.get(CONF_RULE_ZONES) or ())
+                rooms.get(z, z) for z in (rule.get(CONF_RULE_ROOMS) or ())
             )
             action = rule.get(CONF_RULE_ACTION, "keep")
             if action == "apply_scene":
@@ -1748,9 +1748,9 @@ class ModeSubentryFlow(ConfigSubentryFlow):
             # A scene belongs to one room, so a rule cannot borrow another
             # room's. Checked here rather than by narrowing the picker,
             # because the room is chosen on the same form as the scene.
-            zone = cleaned.get(CONF_RULE_ZONES)
-            if zone:
-                theirs = {s["value"] for s in scene_options(entry, zone)}
+            room = cleaned.get(CONF_RULE_ROOMS)
+            if room:
+                theirs = {s["value"] for s in scene_options(entry, room)}
                 for key in (CONF_RULE_SCENE, CONF_RULE_ENTRY_SCENE):
                     if cleaned.get(key) and cleaned[key] not in theirs:
                         errors[key] = "scene_in_other_zone"
@@ -1772,7 +1772,7 @@ class ModeSubentryFlow(ConfigSubentryFlow):
                 specs,
                 current,
                 options={
-                    "zones": zone_options(entry),
+                    "zones": room_options(entry),
                     "scenes": scene_options(entry),
                 },
             ),

@@ -80,7 +80,7 @@ class TestOrderOfOperations:
         assert pct_of(target.brightness) == pytest.approx(50, abs=0.5)
 
     def test_bias_stacks_on_top_of_the_calibration(self):
-        """The zone-wide relative dim is a further offset, not a replacement."""
+        """The room-wide relative dim is a further offset, not a replacement."""
         profile = LightProfile(brightness_offset_pct=10)
         plain = resolve_target(settings(brightness_pct=50), profile, caps())
         dimmed = resolve_target(

@@ -6,7 +6,7 @@ to its neighbours.
 
 The order of the six steps below is deliberate and load-bearing:
 
-    1. the curve value for the zone
+    1. the curve value for the room
     2. apply the light's OFFSET (and multiplier)
     3. clamp to the light's configured min/max
     4. quantise (percent -> 0..255, Kelvin -> nearest 5 K)
@@ -20,7 +20,7 @@ calibration must never be able to breach a limit the user set explicitly, which
 is exactly what the reverse order would allow.
 
 A corollary worth stating in the UI: per-light min/max are absolute targets, not
-deltas from the zone's range. With a zone value of 15 %, an offset of +10 and a
+deltas from the room's range. With a room value of 15 %, an offset of +10 and a
 minimum of 30, the result is 30 % -- not 25 %.
 
 Pure: imports nothing from ``homeassistant`` except the colour conversions.
@@ -248,7 +248,7 @@ def brightness_from_pct(
     if respect_adapt_flag and not profile.adapt_brightness:
         return None, Saturation.NONE
 
-    # 2. calibration: scale, then offset, then the zone-wide relative dim.
+    # 2. calibration: scale, then offset, then the room-wide relative dim.
     pct = pct * profile.brightness_multiplier + profile.brightness_offset_pct + bias_pct
 
     # 3. the fixture's configured operating limits.

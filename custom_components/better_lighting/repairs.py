@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 ISSUE_MISSING_SCENE = "missing_scene"
-ISSUE_MISSING_ZONE = "missing_zone"
+ISSUE_MISSING_ROOM = "missing_zone"
 ISSUE_SHARED_LIGHT = "shared_light"
 
 
@@ -41,7 +41,7 @@ def async_check_references(
 ) -> None:
     """Raise, or clear, a repair issue for every broken reference."""
     known_scenes = set(runtime.scenes)
-    known_zones = set(runtime.zones)
+    known_rooms = set(runtime.rooms)
     found: set[str] = set()
 
     def _raise(
@@ -58,24 +58,24 @@ def async_check_references(
             translation_placeholders=placeholders,
         )
 
-    for zone in runtime.zones.values():
+    for room in runtime.rooms.values():
         for label, scene_id in (
-            ("night scene", zone.night_scene_id),
-            ("insect scene", zone.insect_scene_id),
-            ("presence scene", zone.presence_on_scene_id),
+            ("night scene", room.night_scene_id),
+            ("insect scene", room.insect_scene_id),
+            ("presence scene", room.presence_on_scene_id),
         ):
             if scene_id and scene_id not in known_scenes:
                 _raise(
-                    f"{ISSUE_MISSING_SCENE}_{zone.subentry_id}_{label.replace(' ', '_')}",
+                    f"{ISSUE_MISSING_SCENE}_{room.subentry_id}_{label.replace(' ', '_')}",
                     ISSUE_MISSING_SCENE,
-                    {"holder": f"the {label} of {zone.name}", "what": "a scene"},
+                    {"holder": f"the {label} of {room.name}", "what": "a scene"},
                 )
 
     for controller in runtime.switches.values():
-        if controller.zone_id not in known_zones:
+        if controller.room_id not in known_rooms:
             _raise(
-                f"{ISSUE_MISSING_ZONE}_{controller.subentry_id}",
-                ISSUE_MISSING_ZONE,
+                f"{ISSUE_MISSING_ROOM}_{controller.subentry_id}",
+                ISSUE_MISSING_ROOM,
                 {"holder": f"the switch {controller.name}", "what": "a room"},
             )
         # Adaptive is a step in the list, written the way a scene is but
@@ -103,28 +103,28 @@ def async_check_references(
                     ISSUE_MISSING_SCENE,
                     {"holder": f"a rule of {mode.name}", "what": "a scene"},
                 )
-            if missing_zones := rule.zones - known_zones:
+            if missing_rooms := rule.rooms - known_rooms:
                 _raise(
-                    f"{ISSUE_MISSING_ZONE}_{mode.subentry_id}",
-                    ISSUE_MISSING_ZONE,
+                    f"{ISSUE_MISSING_ROOM}_{mode.subentry_id}",
+                    ISSUE_MISSING_ROOM,
                     {
                         "holder": f"a rule of {mode.name}",
-                        "what": f"{len(missing_zones)} room(s)",
+                        "what": f"{len(missing_rooms)} room(s)",
                     },
                 )
 
     # Two rooms claiming one light is refused by the config flow, but a light
     # can still be renamed into a collision, or config edited by hand.
     claimed: dict[str, str] = {}
-    for zone in runtime.zones.values():
-        for entity_id in zone.lights:
+    for room in runtime.rooms.values():
+        for entity_id in room.lights:
             if (other := claimed.get(entity_id)) is not None:
                 _raise(
                     f"{ISSUE_SHARED_LIGHT}_{entity_id}",
                     ISSUE_SHARED_LIGHT,
-                    {"light": entity_id, "first": other, "second": zone.name},
+                    {"light": entity_id, "first": other, "second": room.name},
                 )
-            claimed[entity_id] = zone.name
+            claimed[entity_id] = room.name
 
     _async_clear_stale(hass, entry_id, found)
 
@@ -139,7 +139,7 @@ def _async_clear_stale(
         if issue.domain != DOMAIN or issue.issue_id in still_broken:
             continue
         if issue.issue_id.startswith(
-            (ISSUE_MISSING_SCENE, ISSUE_MISSING_ZONE, ISSUE_SHARED_LIGHT)
+            (ISSUE_MISSING_SCENE, ISSUE_MISSING_ROOM, ISSUE_SHARED_LIGHT)
         ):
             ir.async_delete_issue(hass, DOMAIN, issue.issue_id)
 

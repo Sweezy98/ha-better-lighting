@@ -38,8 +38,8 @@ async def async_get_config_entry_diagnostics(
 
     return {
         "hub": _as_dict(runtime.hub),
-        "zones": {
-            zone_id: _zone_diagnostics(runtime, zone_id) for zone_id in runtime.zones
+        "rooms": {
+            room_id: _room_diagnostics(runtime, room_id) for room_id in runtime.rooms
         },
         "scenes": {
             scene_id: {
@@ -56,7 +56,7 @@ async def async_get_config_entry_diagnostics(
         "controllers": {
             controller_id: {
                 "name": controller.name,
-                "zone_id": controller.zone_id,
+                "zone_id": controller.room_id,
                 "binding": controller.binding_type.value,
                 "binding_entity": controller.binding_entity,
                 "is_default": controller.is_default,
@@ -82,7 +82,7 @@ async def async_get_config_entry_diagnostics(
         },
         "deferred": [
             {
-                "zone_id": action.zone_id,
+                "zone_id": action.room_id,
                 "session_id": action.session_id,
                 "mode_state": action.mode_state,
                 "action": action.action.value,
@@ -93,19 +93,19 @@ async def async_get_config_entry_diagnostics(
     }
 
 
-def _zone_diagnostics(runtime: Any, zone_id: str) -> dict[str, Any]:
-    zone = runtime.zones[zone_id]
-    controller = runtime.controllers.get(zone_id)
+def _room_diagnostics(runtime: Any, room_id: str) -> dict[str, Any]:
+    room = runtime.rooms[room_id]
+    controller = runtime.controllers.get(room_id)
     data: dict[str, Any] = {
-        "name": zone.name,
-        "lights": list(zone.lights),
-        "adaptive_override": zone.adaptive_override,
-        "night_source": zone.night_source_entity,
-        "night_behavior": zone.night_behavior.value,
-        "presence_entity": zone.presence_entity,
-        "presence_covers": list(zone.presence_covers),
-        "window_entities": list(zone.window_entities),
-        "restore_on_power_cycle": zone.restore_on_power_cycle.value,
+        "name": room.name,
+        "lights": list(room.lights),
+        "adaptive_override": room.adaptive_override,
+        "night_source": room.night_source_entity,
+        "night_behavior": room.night_behavior.value,
+        "presence_entity": room.presence_entity,
+        "presence_covers": list(room.presence_covers),
+        "window_entities": list(room.window_entities),
+        "restore_on_power_cycle": room.restore_on_power_cycle.value,
     }
     if controller is None:
         return data
@@ -145,11 +145,11 @@ def _mode_diagnostics(runtime: Any, mode_id: str) -> dict[str, Any]:
     data: dict[str, Any] = {
         "name": mode.name,
         "states": list(mode.states),
-        "zones": sorted(mode.zone_ids),
+        "rooms": sorted(mode.room_ids),
         "rules": [
             {
                 "states": sorted(rule.states),
-                "zones": sorted(rule.zones),
+                "rooms": sorted(rule.rooms),
                 "action": rule.action.value,
                 "scene_id": rule.scene_id,
                 "respect_presence": rule.respect_presence,
@@ -170,8 +170,8 @@ def _mode_diagnostics(runtime: Any, mode_id: str) -> dict[str, Any]:
             ),
             "snapshot_previously_on": (
                 {
-                    zone_id: sorted(zone_snapshot.previously_on)
-                    for zone_id, zone_snapshot in mode_runtime.snapshot.zones.items()
+                    room_id: sorted(room_snapshot.previously_on)
+                    for room_id, room_snapshot in mode_runtime.snapshot.rooms.items()
                 }
                 if mode_runtime.snapshot
                 else None

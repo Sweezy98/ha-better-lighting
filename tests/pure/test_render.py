@@ -15,11 +15,11 @@ from custom_components.better_lighting.profiles import (
 from custom_components.better_lighting.render import (
     LightSnapshot,
     RenderRequest,
+    RoomMode,
     Trigger,
-    ZoneMode,
     batch,
     emitted_axes,
-    render_zone,
+    render_room,
 )
 from custom_components.better_lighting.scenes import (
     OthersPolicy,
@@ -65,7 +65,7 @@ def member(entity_id: str, *, on: bool = True, modes=None, available=True):
 
 def request(**overrides) -> RenderRequest:
     base = {
-        "mode": ZoneMode.ADAPTIVE,
+        "mode": RoomMode.ADAPTIVE,
         "trigger": Trigger.ACTIVATE,
         "settings": SETTINGS,
         "members": [member("light.one"), member("light.two")],
@@ -107,7 +107,7 @@ class TestSceneOverrideModes:
             brightness_pct=20,
             color={"color_temp_kelvin": 2200},
         )
-        data = by_entity(render_zone(request(mode=ZoneMode.SCENE, scene=scene)))
+        data = by_entity(render_room(request(mode=RoomMode.SCENE, scene=scene)))
         assert data["light.one"]["color_temp_kelvin"] == 2200
         # 20% of 255 is 51.
         assert data["light.one"]["brightness"] == pytest.approx(51, abs=1)
@@ -119,7 +119,7 @@ class TestSceneOverrideModes:
             brightness_pct=20,
             color={"color_temp_kelvin": 2200},
         )
-        data = by_entity(render_zone(request(mode=ZoneMode.SCENE, scene=scene)))
+        data = by_entity(render_room(request(mode=RoomMode.SCENE, scene=scene)))
         assert data["light.one"]["brightness"] == pytest.approx(51, abs=1)
         # The scene's colour is ignored; the curve's is used.
         assert data["light.one"]["color_temp_kelvin"] == 4000
@@ -131,7 +131,7 @@ class TestSceneOverrideModes:
             brightness_pct=20,
             color={"color_temp_kelvin": 2200},
         )
-        data = by_entity(render_zone(request(mode=ZoneMode.SCENE, scene=scene)))
+        data = by_entity(render_room(request(mode=RoomMode.SCENE, scene=scene)))
         assert data["light.one"]["color_temp_kelvin"] == 2200
         # 60% of 255 is 153: the curve's brightness, not the scene's.
         assert data["light.one"]["brightness"] == pytest.approx(153, abs=1)
@@ -143,7 +143,7 @@ class TestSceneOverrideModes:
             brightness_pct=20,
             color={"color_temp_kelvin": 2200},
         )
-        data = by_entity(render_zone(request(mode=ZoneMode.SCENE, scene=scene)))
+        data = by_entity(render_room(request(mode=RoomMode.SCENE, scene=scene)))
         assert data["light.one"]["color_temp_kelvin"] == 4000
         assert data["light.one"]["brightness"] == pytest.approx(153, abs=1)
 
@@ -159,7 +159,7 @@ class TestPartialAdaptiveTick:
             color={"color_temp_kelvin": 2200},
         )
         data = by_entity(
-            render_zone(request(mode=ZoneMode.SCENE, scene=scene, trigger=Trigger.TICK))
+            render_room(request(mode=RoomMode.SCENE, scene=scene, trigger=Trigger.TICK))
         )
         assert "color_temp_kelvin" in data["light.one"]
         assert "brightness" not in data["light.one"], (
@@ -174,7 +174,7 @@ class TestPartialAdaptiveTick:
             color={"color_temp_kelvin": 2200},
         )
         data = by_entity(
-            render_zone(request(mode=ZoneMode.SCENE, scene=scene, trigger=Trigger.TICK))
+            render_room(request(mode=RoomMode.SCENE, scene=scene, trigger=Trigger.TICK))
         )
         assert "brightness" in data["light.one"]
         assert "color_temp_kelvin" not in data["light.one"]
@@ -186,16 +186,16 @@ class TestPartialAdaptiveTick:
             brightness_pct=20,
             color={"color_temp_kelvin": 2200},
         )
-        result = render_zone(
-            request(mode=ZoneMode.SCENE, scene=scene, trigger=Trigger.TICK)
+        result = render_room(
+            request(mode=RoomMode.SCENE, scene=scene, trigger=Trigger.TICK)
         )
         assert result.commands == []
 
     def test_activate_sends_both_in_one_command(self):
         scene = Scene("s", override=SceneOverride.BRIGHTNESS, brightness_pct=20)
         data = by_entity(
-            render_zone(
-                request(mode=ZoneMode.SCENE, scene=scene, trigger=Trigger.ACTIVATE)
+            render_room(
+                request(mode=RoomMode.SCENE, scene=scene, trigger=Trigger.ACTIVATE)
             )
         )
         assert {"brightness", "color_temp_kelvin"} <= set(data["light.one"])
@@ -205,7 +205,7 @@ class TestTickInvariant:
     """A tick adjusts what is lit. It never changes on/off state."""
 
     def test_tick_ignores_dark_lights(self):
-        result = render_zone(
+        result = render_room(
             request(
                 members=[member("light.one", on=True), member("light.two", on=False)],
                 trigger=Trigger.TICK,
@@ -217,19 +217,19 @@ class TestTickInvariant:
         scene = Scene(
             "s", lights={"light.one": SceneLightSpec()}, others=OthersPolicy.OFF
         )
-        result = render_zone(
-            request(mode=ZoneMode.SCENE, scene=scene, trigger=Trigger.TICK)
+        result = render_room(
+            request(mode=RoomMode.SCENE, scene=scene, trigger=Trigger.TICK)
         )
         assert off_entities(result) == set()
 
-    @pytest.mark.parametrize("mode", list(ZoneMode))
+    @pytest.mark.parametrize("mode", list(RoomMode))
     def test_no_mode_makes_a_tick_switch_a_dark_light_on(self, mode):
-        result = render_zone(
+        result = render_room(
             request(
                 mode=mode,
                 trigger=Trigger.TICK,
                 members=[member("light.one", on=False)],
-                scene=Scene("s", brightness_pct=50) if mode is ZoneMode.SCENE else None,
+                scene=Scene("s", brightness_pct=50) if mode is RoomMode.SCENE else None,
             )
         )
         assert by_entity(result) == {}
@@ -240,9 +240,9 @@ class TestOnLightsOnly:
 
     def test_dark_lights_get_no_commands_at_all(self):
         scene = Scene("s", brightness_pct=30, on_lights_only=True)
-        result = render_zone(
+        result = render_room(
             request(
-                mode=ZoneMode.SCENE,
+                mode=RoomMode.SCENE,
                 scene=scene,
                 members=[member("light.one", on=True), member("light.two", on=False)],
             )
@@ -252,9 +252,9 @@ class TestOnLightsOnly:
 
     def test_without_the_flag_dark_lights_are_lit(self):
         scene = Scene("s", brightness_pct=30, on_lights_only=False)
-        result = render_zone(
+        result = render_room(
             request(
-                mode=ZoneMode.SCENE,
+                mode=RoomMode.SCENE,
                 scene=scene,
                 members=[member("light.one", on=True), member("light.two", on=False)],
             )
@@ -265,7 +265,7 @@ class TestOnLightsOnly:
 class TestOthersPolicy:
     def test_unnamed_members_keep_adapting_by_default(self):
         scene = Scene("s", brightness_pct=20, lights={"light.one": SceneLightSpec()})
-        data = by_entity(render_zone(request(mode=ZoneMode.SCENE, scene=scene)))
+        data = by_entity(render_room(request(mode=RoomMode.SCENE, scene=scene)))
         # light.two is not in the scene but is on, so it keeps the curve.
         assert data["light.two"]["brightness"] == pytest.approx(153, abs=1)
 
@@ -276,7 +276,7 @@ class TestOthersPolicy:
             lights={"light.one": SceneLightSpec()},
             others=OthersPolicy.OFF,
         )
-        result = render_zone(request(mode=ZoneMode.SCENE, scene=scene))
+        result = render_room(request(mode=RoomMode.SCENE, scene=scene))
         assert off_entities(result) == {"light.two"}
 
     def test_unnamed_members_can_be_left_alone(self):
@@ -286,7 +286,7 @@ class TestOthersPolicy:
             lights={"light.one": SceneLightSpec()},
             others=OthersPolicy.LEAVE,
         )
-        result = render_zone(request(mode=ZoneMode.SCENE, scene=scene))
+        result = render_room(request(mode=RoomMode.SCENE, scene=scene))
         assert "light.two" not in by_entity(result)
         assert off_entities(result) == set()
         assert result.skipped["light.two"] == "others_leave"
@@ -294,18 +294,18 @@ class TestOthersPolicy:
 
 class TestManualOverride:
     def test_a_manual_axis_is_not_touched(self):
-        data = by_entity(render_zone(request(manual={"light.one": Axis.BRIGHTNESS})))
+        data = by_entity(render_room(request(manual={"light.one": Axis.BRIGHTNESS})))
         assert "brightness" not in data["light.one"]
         assert "color_temp_kelvin" in data["light.one"]
 
     def test_a_fully_manual_light_is_skipped(self):
-        result = render_zone(request(manual={"light.one": Axis.ALL}))
+        result = render_room(request(manual={"light.one": Axis.ALL}))
         assert "light.one" not in by_entity(result)
         assert result.skipped["light.one"] == "manual"
 
     def test_manual_is_per_light(self):
         """The regression test for Adaptive Lighting's global manual dict."""
-        data = by_entity(render_zone(request(manual={"light.one": Axis.ALL})))
+        data = by_entity(render_room(request(manual={"light.one": Axis.ALL})))
         assert "light.two" in data
 
     def test_a_scene_cannot_override_a_manual_axis(self):
@@ -316,9 +316,9 @@ class TestManualOverride:
             color={"color_temp_kelvin": 2200},
         )
         data = by_entity(
-            render_zone(
+            render_room(
                 request(
-                    mode=ZoneMode.SCENE,
+                    mode=RoomMode.SCENE,
                     scene=scene,
                     manual={"light.one": Axis.COLOR},
                 )
@@ -330,9 +330,9 @@ class TestManualOverride:
 
 class TestModes:
     def test_off_switches_every_lit_member_off(self):
-        result = render_zone(
+        result = render_room(
             request(
-                mode=ZoneMode.OFF,
+                mode=RoomMode.OFF,
                 members=[member("light.one", on=True), member("light.two", on=False)],
             )
         )
@@ -340,11 +340,11 @@ class TestModes:
 
     def test_external_emits_nothing(self):
         """Another subsystem is driving; observe but do not command."""
-        result = render_zone(request(mode=ZoneMode.EXTERNAL))
+        result = render_room(request(mode=RoomMode.EXTERNAL))
         assert result.commands == []
 
     def test_unavailable_members_are_ignored(self):
-        result = render_zone(
+        result = render_room(
             request(members=[member("light.one", available=False), member("light.two")])
         )
         assert set(by_entity(result)) == {"light.two"}
@@ -356,9 +356,9 @@ class TestColourReconciliation:
             "s", override=SceneOverride.COLOR, color={"color_temp_kelvin": 2200}
         )
         data = by_entity(
-            render_zone(
+            render_room(
                 request(
-                    mode=ZoneMode.SCENE,
+                    mode=RoomMode.SCENE,
                     scene=scene,
                     members=[member("light.one", modes={"rgb"})],
                 )
@@ -370,9 +370,9 @@ class TestColourReconciliation:
         """The default: a bulb that cannot do colour keeps its adaptive white."""
         scene = Scene("s", override=SceneOverride.COLOR, color={"hs_color": (280, 90)})
         data = by_entity(
-            render_zone(
+            render_room(
                 request(
-                    mode=ZoneMode.SCENE,
+                    mode=RoomMode.SCENE,
                     scene=scene,
                     members=[member("light.one", modes={"color_temp"})],
                 )
@@ -388,9 +388,9 @@ class TestColourReconciliation:
             on_unsupported_color=UnsupportedColorPolicy.NEAREST_CT,
         )
         data = by_entity(
-            render_zone(
+            render_room(
                 request(
-                    mode=ZoneMode.SCENE,
+                    mode=RoomMode.SCENE,
                     scene=scene,
                     members=[member("light.one", modes={"color_temp"})],
                 )
@@ -410,7 +410,7 @@ class TestPerLightSpecs:
                 "light.two": SceneLightSpec(),
             },
         )
-        data = by_entity(render_zone(request(mode=ZoneMode.SCENE, scene=scene)))
+        data = by_entity(render_room(request(mode=RoomMode.SCENE, scene=scene)))
         assert data["light.one"]["brightness"] < data["light.two"]["brightness"]
 
     def test_partially_specified_light_keeps_the_other_axis_adaptive(self):
@@ -420,7 +420,7 @@ class TestPerLightSpecs:
             override=SceneOverride.BOTH,
             lights={"light.one": SceneLightSpec(color={"color_temp_kelvin": 2200})},
         )
-        data = by_entity(render_zone(request(mode=ZoneMode.SCENE, scene=scene)))
+        data = by_entity(render_room(request(mode=RoomMode.SCENE, scene=scene)))
         assert data["light.one"]["color_temp_kelvin"] == 2200
         assert data["light.one"]["brightness"] == pytest.approx(153, abs=1)
 
@@ -434,7 +434,7 @@ class TestPerLightSpecs:
             },
             others=OthersPolicy.LEAVE,
         )
-        result = render_zone(request(mode=ZoneMode.SCENE, scene=scene))
+        result = render_room(request(mode=RoomMode.SCENE, scene=scene))
         assert "light.one" not in by_entity(result)
 
 
@@ -443,9 +443,9 @@ class TestProfileInteraction:
         """A limit protects the user from the scene as much as from the curve."""
         scene = Scene("s", brightness_pct=100)
         data = by_entity(
-            render_zone(
+            render_room(
                 request(
-                    mode=ZoneMode.SCENE,
+                    mode=RoomMode.SCENE,
                     scene=scene,
                     profiles={"light.one": LightProfile(max_brightness_pct=10)},
                 )
@@ -455,22 +455,22 @@ class TestProfileInteraction:
 
     def test_bias_shifts_a_scene_brightness(self):
         scene = Scene("s", brightness_pct=50)
-        plain = by_entity(render_zone(request(mode=ZoneMode.SCENE, scene=scene)))
+        plain = by_entity(render_room(request(mode=RoomMode.SCENE, scene=scene)))
         dimmed = by_entity(
-            render_zone(request(mode=ZoneMode.SCENE, scene=scene, bias_pct=-20))
+            render_room(request(mode=RoomMode.SCENE, scene=scene, bias_pct=-20))
         )
         assert dimmed["light.one"]["brightness"] < plain["light.one"]["brightness"]
 
 
 class TestBatching:
     def test_identical_payloads_share_one_call(self):
-        result = render_zone(request())
+        result = render_room(request())
         calls = batch(result.commands)
         assert len(calls) == 1
         assert calls[0][1]["entity_id"] == ["light.one", "light.two"]
 
     def test_differing_payloads_are_separate(self):
-        result = render_zone(
+        result = render_room(
             request(profiles={"light.one": LightProfile(brightness_offset_pct=-30)})
         )
         assert len(batch(result.commands)) == 2
@@ -482,6 +482,6 @@ class TestBatching:
             lights={"light.one": SceneLightSpec()},
             others=OthersPolicy.OFF,
         )
-        calls = batch(render_zone(request(mode=ZoneMode.SCENE, scene=scene)).commands)
+        calls = batch(render_room(request(mode=RoomMode.SCENE, scene=scene)).commands)
         actions = {action for action, _ in calls}
         assert actions == {"turn_on", "turn_off"}

@@ -1,7 +1,7 @@
 """Is anybody in this room, and may presence act on it?
 
 Two separate questions, deliberately kept apart. Occupancy is a fact about the
-room, and a cross-zone mode gates on it directly. The **cover gate** is a
+room, and a cross-room mode gates on it directly. The **cover gate** is a
 policy about whether presence should be *lighting* the room at all: requirement
 3 only wants the lights coming on when the blinds are down, because a sunlit
 room does not need them.
@@ -40,27 +40,27 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from .const import CoverCondition
 
 if TYPE_CHECKING:
-    from .models import ZoneConfig
+    from .models import RoomConfig
 
 _LOGGER = logging.getLogger(__name__)
 
 _OCCUPIED_STATES = (STATE_ON, STATE_HOME)
 
 
-class ZonePresence:
+class RoomPresence:
     """Tracks one room's occupancy sensor, if it has one."""
 
     def __init__(
         self,
         hass: HomeAssistant,
-        zone: ZoneConfig,
+        room: RoomConfig,
         *,
         on_occupied: Callable[[], None] | None = None,
         on_cleared: Callable[[], None] | None = None,
         on_gate_opened: Callable[[], None] | None = None,
     ) -> None:
         self.hass = hass
-        self.zone = zone
+        self.room = room
         self._on_occupied = on_occupied
         self._on_cleared = on_cleared
         self._on_gate_opened = on_gate_opened
@@ -72,14 +72,14 @@ class ZonePresence:
     # -- lifecycle ---------------------------------------------------------
 
     async def async_setup(self) -> None:
-        if covers := self.zone.presence_covers:
+        if covers := self.room.presence_covers:
             self._unsubscribers.append(
                 async_track_state_change_event(
                     self.hass, list(covers), self._handle_cover_change
                 )
             )
 
-        entity_id = self.zone.presence_entity
+        entity_id = self.room.presence_entity
         if not entity_id:
             return
         self._occupied = self._read(entity_id)
@@ -98,7 +98,7 @@ class ZonePresence:
 
     @property
     def has_sensor(self) -> bool:
-        return bool(self.zone.presence_entity)
+        return bool(self.room.presence_entity)
 
     @property
     def occupied(self) -> bool | None:
@@ -123,21 +123,21 @@ class ZonePresence:
         of that. Configurable, because a flaky cover would otherwise disable
         the feature entirely.
         """
-        condition = self.zone.cover_condition
-        if condition is CoverCondition.IGNORE or not self.zone.presence_covers:
+        condition = self.room.cover_condition
+        if condition is CoverCondition.IGNORE or not self.room.presence_covers:
             return True
 
         closed: list[bool] = []
-        for entity_id in self.zone.presence_covers:
+        for entity_id in self.room.presence_covers:
             state = self.hass.states.get(entity_id)
             if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                if self.zone.cover_unknown_blocks:
+                if self.room.cover_unknown_blocks:
                     return False
                 continue
             closed.append(state.state == STATE_CLOSED)
 
         if not closed:
-            return not self.zone.cover_unknown_blocks
+            return not self.room.cover_unknown_blocks
         if condition is CoverCondition.ANY_CLOSED:
             return any(closed)
         return all(closed)
@@ -165,7 +165,7 @@ class ZonePresence:
 
         if occupied:
             self._cancel_timer()
-            _LOGGER.debug("%s: occupied", self.zone.name)
+            _LOGGER.debug("%s: occupied", self.room.name)
             if self._on_occupied is not None:
                 self._on_occupied()
             return
@@ -180,7 +180,7 @@ class ZonePresence:
         if now_ok and not was_ok and self._occupied:
             # Somebody is already in the room and the blinds have just come
             # down. Requirement 3's second half.
-            _LOGGER.debug("%s: cover gate opened while occupied", self.zone.name)
+            _LOGGER.debug("%s: cover gate opened while occupied", self.room.name)
             if self._on_gate_opened is not None:
                 self._on_gate_opened()
 
@@ -188,23 +188,23 @@ class ZonePresence:
         """What the gate said immediately before this change."""
         changed = event.data["entity_id"]
         old_state = event.data.get("old_state")
-        condition = self.zone.cover_condition
-        if condition is CoverCondition.IGNORE or not self.zone.presence_covers:
+        condition = self.room.cover_condition
+        if condition is CoverCondition.IGNORE or not self.room.presence_covers:
             return True
 
         closed: list[bool] = []
-        for entity_id in self.zone.presence_covers:
+        for entity_id in self.room.presence_covers:
             state = (
                 old_state if entity_id == changed else self.hass.states.get(entity_id)
             )
             if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                if self.zone.cover_unknown_blocks:
+                if self.room.cover_unknown_blocks:
                     return False
                 continue
             closed.append(state.state == STATE_CLOSED)
 
         if not closed:
-            return not self.zone.cover_unknown_blocks
+            return not self.room.cover_unknown_blocks
         if condition is CoverCondition.ANY_CLOSED:
             return any(closed)
         return all(closed)
@@ -212,12 +212,12 @@ class ZonePresence:
     @callback
     def _arm_clear_timer(self) -> None:
         self._cancel_timer()
-        delay = self.zone.presence_clear_delay
+        delay = self.room.presence_clear_delay
 
         @callback
         def _cleared(_now) -> None:
             self._clear_timer = None
-            _LOGGER.debug("%s: clear", self.zone.name)
+            _LOGGER.debug("%s: clear", self.room.name)
             if self._on_cleared is not None:
                 self._on_cleared()
 

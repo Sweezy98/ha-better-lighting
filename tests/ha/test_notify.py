@@ -11,9 +11,9 @@ from custom_components.better_lighting.const import DOMAIN
 from tests.conftest import (
     MemberLight,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
-    zone_subentry,
 )
 
 
@@ -25,14 +25,14 @@ async def _setup(hass: HomeAssistant, *, lit: bool = True):
             MemberLight("Two", is_on=lit, brightness=120),
         ],
     )
-    return await setup_hub(hass, hub_entry(subentries_data=[zone_subentry()]))
+    return await setup_hub(hass, hub_entry(subentries_data=[room_subentry()]))
 
 
 async def _notify(hass: HomeAssistant, **extra) -> None:
     await hass.services.async_call(
         DOMAIN,
         "notify",
-        {"zone": "kitchen", "duration": 2, **extra},
+        {"room": "kitchen", "duration": 2, **extra},
         blocking=True,
     )
     await hass.async_block_till_done()

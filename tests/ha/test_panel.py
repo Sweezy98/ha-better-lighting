@@ -14,12 +14,12 @@ from custom_components.better_lighting.panel import DRAFT_ID
 from tests.conftest import (
     MemberLight,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
     subentry_ids,
-    zone_subentry,
 )
-from tests.ha.test_scenes import light_spec, zone_scene
+from tests.ha.test_scenes import light_spec, room_scene
 
 pytestmark = pytest.mark.usefixtures("socket_enabled")
 
@@ -29,11 +29,11 @@ async def _setup(hass: HomeAssistant, ws_client):
     await setup_members(hass, [MemberLight("One", is_on=True, brightness=200)])
     entry = hub_entry(
         subentries_data=[
-            zone_subentry(
+            room_subentry(
                 "Kitchen",
                 ["light.one"],
                 scenes=[
-                    zone_scene(
+                    room_scene(
                         "Cosy",
                         {"*": light_spec(brightness_pct=30, color_format="none")},
                     )
@@ -65,13 +65,13 @@ class TestTheApi:
     ) -> None:
         """The point of the panel: see it before you keep it."""
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
         await client.send_json(
             {
                 "id": 1,
                 "type": f"{DOMAIN}/preview",
-                "zone_id": zone_id,
+                "room_id": room_id,
                 "scene": {
                     "name": "Draft",
                     "lights": {"*": {"action": "apply", "brightness_pct": 5}},
@@ -83,27 +83,27 @@ class TestTheApi:
 
         assert hass.states.get("light.one").attributes["brightness"] <= 20
         # Nothing was written: a preview is not a save.
-        stored = entry.subentries[zone_id].data["scenes"]
+        stored = entry.subentries[room_id].data["scenes"]
         assert [scene["name"] for scene in stored] == ["Cosy"]
 
     async def test_stopping_a_preview_puts_the_room_back(
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
-        controller = entry.runtime_data.controllers[zone_id]
+        room_id = subentry_ids(entry)["Kitchen"]
+        controller = entry.runtime_data.controllers[room_id]
 
         await client.send_json(
             {
                 "id": 1,
                 "type": f"{DOMAIN}/preview",
-                "zone_id": zone_id,
+                "room_id": room_id,
                 "scene": {"lights": {"*": {"action": "apply", "brightness_pct": 5}}},
             }
         )
         await client.receive_json()
         await client.send_json(
-            {"id": 2, "type": f"{DOMAIN}/stop_preview", "zone_id": zone_id}
+            {"id": 2, "type": f"{DOMAIN}/stop_preview", "room_id": room_id}
         )
         assert (await client.receive_json())["success"]
         await hass.async_block_till_done()
@@ -114,13 +114,13 @@ class TestTheApi:
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
         await client.send_json(
             {
                 "id": 1,
                 "type": f"{DOMAIN}/save_scene",
-                "zone_id": zone_id,
+                "room_id": room_id,
                 "scene": {
                     "name": "Film",
                     "lights": {"light.one": {"action": "apply", "brightness_pct": 7}},
@@ -131,7 +131,7 @@ class TestTheApi:
         await hass.async_block_till_done()
 
         assert result["success"]
-        stored = entry.subentries[zone_id].data["scenes"]
+        stored = entry.subentries[room_id].data["scenes"]
         assert [scene["name"] for scene in stored] == ["Cosy", "Film"]
         # And it is offered in the room straight away.
         assert "Film" in hass.states.get("select.kitchen_scenes").attributes["options"]
@@ -140,41 +140,41 @@ class TestTheApi:
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
         scene = {"scene_id": "scene_cosy", "name": "Cosy", "lights": {}}
 
         await client.send_json(
             {
                 "id": 1,
                 "type": f"{DOMAIN}/save_scene",
-                "zone_id": zone_id,
+                "room_id": room_id,
                 "scene": scene,
             }
         )
         await client.receive_json()
         await hass.async_block_till_done()
 
-        stored = entry.subentries[zone_id].data["scenes"]
+        stored = entry.subentries[room_id].data["scenes"]
         assert len(stored) == 1
 
     async def test_deleting_removes_it(
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
         await client.send_json(
             {
                 "id": 1,
                 "type": f"{DOMAIN}/delete_scene",
-                "zone_id": zone_id,
+                "room_id": room_id,
                 "scene_id": "scene_cosy",
             }
         )
         assert (await client.receive_json())["success"]
         await hass.async_block_till_done()
 
-        assert entry.subentries[zone_id].data["scenes"] == []
+        assert entry.subentries[room_id].data["scenes"] == []
 
 
 class TestThePanelItself:
@@ -238,12 +238,12 @@ class TestEverySettingIsReachable:
             for group in form
             for field in group["fields"]
         }
-        from custom_components.better_lighting.const import ZONE_SPECS, Section
+        from custom_components.better_lighting.const import ROOM_SPECS, Section
 
         # Everything except a room's name, lights and icon, which belong to
         # Home Assistant's own add-and-reconfigure flow rather than here.
         behaviour = {
-            spec.key for spec in ZONE_SPECS if spec.section is not Section.BASIC
+            spec.key for spec in ROOM_SPECS if spec.section is not Section.BASIC
         }
         assert behaviour <= described
 
@@ -275,22 +275,22 @@ class TestEverySettingIsReachable:
         """Settings and collections are edited separately; one must not eat
         the other."""
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
-        before = entry.subentries[zone_id].data["scenes"]
+        room_id = subentry_ids(entry)["Kitchen"]
+        before = entry.subentries[room_id].data["scenes"]
 
         await client.send_json(
             {
                 "id": 1,
-                "type": f"{DOMAIN}/save_zone",
-                "zone_id": zone_id,
+                "type": f"{DOMAIN}/save_room",
+                "room_id": room_id,
                 "data": {"name": "Kitchen", "lights": ["light.one"], "interval": 120},
             }
         )
         assert (await client.receive_json())["success"]
         await hass.async_block_till_done()
 
-        assert entry.subentries[zone_id].data["scenes"] == before
-        assert entry.subentries[zone_id].data["interval"] == 120
+        assert entry.subentries[room_id].data["scenes"] == before
+        assert entry.subentries[room_id].data["interval"] == 120
 
     async def test_a_room_claiming_another_rooms_light_is_refused(
         self, hass: HomeAssistant, hass_ws_client
@@ -300,7 +300,7 @@ class TestEverySettingIsReachable:
         await client.send_json(
             {
                 "id": 1,
-                "type": f"{DOMAIN}/save_zone",
+                "type": f"{DOMAIN}/save_room",
                 "data": {"name": "Hall", "lights": ["light.one"]},
             }
         )
@@ -373,13 +373,13 @@ class TestEverySettingIsReachable:
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
         await client.send_json(
             {
                 "id": 1,
-                "type": f"{DOMAIN}/save_zone_collection",
-                "zone_id": zone_id,
+                "type": f"{DOMAIN}/save_room_collection",
+                "room_id": room_id,
                 "key": "switches",
                 "items": [
                     {"name": "Door", "binding_type": "service_only"},
@@ -390,7 +390,7 @@ class TestEverySettingIsReachable:
         assert (await client.receive_json())["success"]
         await hass.async_block_till_done()
 
-        stored = entry.subentries[zone_id].data["switches"]
+        stored = entry.subentries[room_id].data["switches"]
         assert [s["name"] for s in stored] == ["Door", "Oven"]
         # Each gets an id so a later edit can find it again.
         assert all(s["switch_id"] for s in stored)
@@ -400,15 +400,15 @@ class TestEverySettingIsReachable:
     ) -> None:
         """The form describes a scene's name; its lights are not form fields."""
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
-        scenes = [dict(s) for s in entry.subentries[zone_id].data["scenes"]]
+        room_id = subentry_ids(entry)["Kitchen"]
+        scenes = [dict(s) for s in entry.subentries[room_id].data["scenes"]]
         scenes[0]["name"] = "Renamed"
 
         await client.send_json(
             {
                 "id": 1,
-                "type": f"{DOMAIN}/save_zone_collection",
-                "zone_id": zone_id,
+                "type": f"{DOMAIN}/save_room_collection",
+                "room_id": room_id,
                 "key": "scenes",
                 "items": scenes,
             }
@@ -416,7 +416,7 @@ class TestEverySettingIsReachable:
         assert (await client.receive_json())["success"]
         await hass.async_block_till_done()
 
-        stored = entry.subentries[zone_id].data["scenes"][0]
+        stored = entry.subentries[room_id].data["scenes"][0]
         assert stored["name"] == "Renamed"
         assert stored["lights"], "per-light entries were dropped"
 
@@ -424,13 +424,13 @@ class TestEverySettingIsReachable:
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
         await client.send_json(
             {
                 "id": 1,
-                "type": f"{DOMAIN}/save_zone_collection",
-                "zone_id": zone_id,
+                "type": f"{DOMAIN}/save_room_collection",
+                "room_id": room_id,
                 "key": "light_profiles",
                 "items": [{"light_entity": "light.one", "brightness_offset_pct": -12}],
             }
@@ -438,7 +438,7 @@ class TestEverySettingIsReachable:
         assert (await client.receive_json())["success"]
         await hass.async_block_till_done()
 
-        stored = entry.subentries[zone_id].data["light_profiles"]
+        stored = entry.subentries[room_id].data["light_profiles"]
         assert stored[0]["brightness_offset_pct"] == -12
 
     async def test_a_hub_with_nothing_in_it_still_answers(
@@ -468,7 +468,7 @@ class TestEverySettingIsReachable:
         await client.send_json(
             {
                 "id": 1,
-                "type": f"{DOMAIN}/save_zone",
+                "type": f"{DOMAIN}/save_room",
                 "data": {"name": "Hall", "lights": ["light.one"]},
             }
         )
@@ -510,7 +510,7 @@ class TestThePanelReplacesTheFlows:
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
         await client.send_json(
             {
@@ -522,7 +522,7 @@ class TestThePanelReplacesTheFlows:
                     "rules": [
                         {
                             "mode_states": ["playing"],
-                            "zones": zone_id,
+                            "zones": room_id,
                             "action": "turn_off",
                         }
                     ],
@@ -541,14 +541,14 @@ class TestThePanelReplacesTheFlows:
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
-        scene_id = entry.subentries[zone_id].data["scenes"][0]["scene_id"]
+        room_id = subentry_ids(entry)["Kitchen"]
+        scene_id = entry.subentries[room_id].data["scenes"][0]["scene_id"]
 
         await client.send_json(
             {
                 "id": 1,
-                "type": f"{DOMAIN}/save_zone_collection",
-                "zone_id": zone_id,
+                "type": f"{DOMAIN}/save_room_collection",
+                "room_id": room_id,
                 "key": "switches",
                 "items": [
                     {
@@ -562,7 +562,7 @@ class TestThePanelReplacesTheFlows:
         assert (await client.receive_json())["success"]
         await hass.async_block_till_done()
 
-        stored = entry.subentries[zone_id].data["switches"][0]
+        stored = entry.subentries[room_id].data["switches"][0]
         assert stored["scene_order"] == [scene_id]
 
     async def test_the_rule_form_asks_for_its_choices_at_runtime(
@@ -661,8 +661,8 @@ class TestThePanelScriptIsNotCachedForever:
         _entry, client = await _setup(hass, hass_ws_client)
 
         await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
-        zone = (await client.receive_json())["result"]["forms"]["zone"]
-        fields = {f["key"]: f for group in zone for f in group["fields"]}
+        room = (await client.receive_json())["result"]["forms"]["zone"]
+        fields = {f["key"]: f for group in room for f in group["fields"]}
 
         assert fields["night_scene_id"]["depends_on"] == {
             "key": "night_behavior",
@@ -680,8 +680,8 @@ class TestThePanelScriptIsNotCachedForever:
         _entry, client = await _setup(hass, hass_ws_client)
 
         await client.send_json({"id": 1, "type": f"{DOMAIN}/schema"})
-        zone = (await client.receive_json())["result"]["forms"]["zone"]
-        fields = {f["key"]: f for group in zone for f in group["fields"]}
+        room = (await client.receive_json())["result"]["forms"]["zone"]
+        fields = {f["key"]: f for group in room for f in group["fields"]}
 
         assert fields["lights"]["kind"] == "entity"
         assert fields["lights"]["multiple"] is True
@@ -720,14 +720,14 @@ class TestThePanelScriptIsNotCachedForever:
         self, hass: HomeAssistant, hass_ws_client
     ) -> None:
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
         await client.send_json({"id": 1, "type": f"{DOMAIN}/diagnostics"})
         result = (await client.receive_json())["result"]
 
-        zone = result["zones"][zone_id]
-        assert zone["name"] == "Kitchen"
-        assert "mode" in zone and "manual" in zone
+        room = result["rooms"][room_id]
+        assert room["name"] == "Kitchen"
+        assert "mode" in room and "manual" in room
 
     async def test_diagnostics_is_the_same_dump_as_the_download(
         self, hass: HomeAssistant, hass_ws_client
@@ -750,9 +750,9 @@ class TestThePanelScriptIsNotCachedForever:
     ) -> None:
         """The least visible thing the integration does, made visible."""
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
-        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "zone_id": zone_id})
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "room_id": room_id})
         result = (await client.receive_json())["result"]
 
         assert len(result["samples"]) == 97
@@ -770,9 +770,9 @@ class TestThePanelScriptIsNotCachedForever:
     ) -> None:
         """Curve, offsets and clamps together, which is what actually lands."""
         entry, client = await _setup(hass, hass_ws_client)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
-        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "zone_id": zone_id})
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "room_id": room_id})
         result = (await client.receive_json())["result"]
 
         assert [light["entity_id"] for light in result["lights"]] == ["light.one"]
@@ -785,7 +785,7 @@ class TestThePanelScriptIsNotCachedForever:
         await setup_members(hass, [MemberLight("One", is_on=True, brightness=200)])
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(
+                room_subentry(
                     "Kitchen",
                     ["light.one"],
                     adaptive_override_enabled=True,
@@ -795,9 +795,9 @@ class TestThePanelScriptIsNotCachedForever:
         )
         await setup_hub(hass, entry)
         client = await hass_ws_client(hass)
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
 
-        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "zone_id": zone_id})
+        await client.send_json({"id": 1, "type": f"{DOMAIN}/curve", "room_id": room_id})
         result = (await client.receive_json())["result"]
 
         assert result["config"]["max_brightness_pct"] == 40
@@ -841,8 +841,8 @@ class TestThePanelScriptIsNotCachedForever:
         _entry, client = await _setup(hass, hass_ws_client)
 
         await client.send_json({"id": 1, "type": f"{DOMAIN}/schema", "language": "de"})
-        zone = (await client.receive_json())["result"]["forms"]["zone"]
-        fields = {f["key"]: f for group in zone for f in group["fields"]}
+        room = (await client.receive_json())["result"]["forms"]["zone"]
+        fields = {f["key"]: f for group in room for f in group["fields"]}
 
         options = fields["night_behavior"]["selector"]["select"]["options"]
         assert all(isinstance(option, dict) for option in options)

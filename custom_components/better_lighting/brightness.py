@@ -1,4 +1,4 @@
-"""Relative brightness maths for zone light groups.
+"""Relative brightness maths for room light groups.
 
 Ported from Relative Light Group's ``brightness.py``, with one deliberate
 change: the functions take plain ``{entity_id: brightness}`` mappings rather
@@ -7,10 +7,10 @@ than Home Assistant ``State`` objects, so this module imports nothing from
 extracts the brightness values from member states before calling in.
 
 These are the *fallback* path.  When Better Lighting owns a light's brightness
-axis it renders an absolute target from the adaptive curve plus the zone bias,
+axis it renders an absolute target from the adaptive curve plus the room bias,
 which preserves each light's configured offset exactly.  These functions are
 used when there is no such model to work from -- lights under manual override,
-or a zone driven by an external mode.
+or a room driven by an external mode.
 """
 
 from __future__ import annotations

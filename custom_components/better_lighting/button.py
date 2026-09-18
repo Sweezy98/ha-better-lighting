@@ -1,4 +1,4 @@
-"""Per-zone buttons: cycle, reset to adaptive, and hand control back."""
+"""Per-room buttons: cycle, reset to adaptive, and hand control back."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import BetterLightingConfigEntry
 from .const import DOMAIN
-from .models import ControllerConfig, ZoneConfig
+from .models import ControllerConfig, RoomConfig
 from .modes import ModeGroupRuntime
-from .zone import ZoneController
+from .room import RoomController
 
 PARALLEL_UPDATES = 0
 
@@ -24,36 +24,36 @@ async def async_setup_entry(
     entry: BetterLightingConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Create the per-zone buttons."""
+    """Create the per-room buttons."""
     runtime = entry.runtime_data
-    for subentry_id, zone in runtime.zones.items():
+    for subentry_id, room in runtime.rooms.items():
         controller = runtime.controllers[subentry_id]
         switch = runtime.default_switch.get(subentry_id)
         async_add_entities(
             [
-                ZoneButton(
-                    zone,
+                RoomButton(
+                    room,
                     controller,
                     "cycle_next",
                     "mdi:skip-next",
                     lambda c=controller, s=switch: c.async_cycle(s, direction=1),
                 ),
-                ZoneButton(
-                    zone,
+                RoomButton(
+                    room,
                     controller,
                     "cycle_previous",
                     "mdi:skip-previous",
                     lambda c=controller, s=switch: c.async_cycle(s, direction=-1),
                 ),
-                ZoneButton(
-                    zone,
+                RoomButton(
+                    room,
                     controller,
                     "reset_adaptive",
                     "mdi:theme-light-dark",
                     _reset_adaptive(controller),
                 ),
-                ZoneButton(
-                    zone,
+                RoomButton(
+                    room,
                     controller,
                     "clear_manual",
                     "mdi:hand-back-left-off",
@@ -74,9 +74,9 @@ async def async_setup_entry(
     async_add_entities([NightLightsOffButton(entry)])
 
 
-def _reset_adaptive(controller: ZoneController) -> Callable[[], Awaitable[None]]:
+def _reset_adaptive(controller: RoomController) -> Callable[[], Awaitable[None]]:
     async def _run() -> None:
-        # Requirement 1: a service or button that forces a zone back to
+        # Requirement 1: a service or button that forces a room back to
         # adaptive, whatever it was doing.
         controller.clear_manual()
         await controller.async_set_adaptive()
@@ -84,7 +84,7 @@ def _reset_adaptive(controller: ZoneController) -> Callable[[], Awaitable[None]]
     return _run
 
 
-def _clear_manual(controller: ZoneController) -> Callable[[], Awaitable[None]]:
+def _clear_manual(controller: RoomController) -> Callable[[], Awaitable[None]]:
     async def _run() -> None:
         controller.clear_manual()
         await controller.async_render(only_lit=True)
@@ -121,16 +121,16 @@ class NightLightsOffButton(ButtonEntity):
             await controller.async_request_night_off()
 
 
-class ZoneButton(ButtonEntity):
-    """A one-shot action on a zone."""
+class RoomButton(ButtonEntity):
+    """A one-shot action on a room."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
 
     def __init__(
         self,
-        zone: ZoneConfig,
-        controller: ZoneController,
+        room: RoomConfig,
+        controller: RoomController,
         key: str,
         icon: str,
         action: Callable[[], Awaitable[None]],
@@ -138,19 +138,19 @@ class ZoneButton(ButtonEntity):
         category: EntityCategory | None = None,
         enabled: bool = True,
     ) -> None:
-        self.zone = zone
+        self.room = room
         self.controller = controller
         self._action = action
-        self._attr_unique_id = f"{zone.subentry_id}_{key}"
+        self._attr_unique_id = f"{room.subentry_id}_{key}"
         self._attr_translation_key = key
         self._attr_icon = icon
         self._attr_entity_category = category
         self._attr_entity_registry_enabled_default = enabled
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, zone.subentry_id)},
-            name=zone.name,
+            identifiers={(DOMAIN, room.subentry_id)},
+            name=room.name,
             manufacturer="Better Lighting",
-            model="Zone",
+            model="Room",
             entry_type=DeviceEntryType.SERVICE,
         )
 
@@ -182,4 +182,4 @@ class ModeClearButton(ButtonEntity):
         await self.runtime.async_end()
 
 
-__all__ = ["ControllerConfig", "ModeClearButton", "ZoneButton", "async_setup_entry"]
+__all__ = ["ControllerConfig", "ModeClearButton", "RoomButton", "async_setup_entry"]

@@ -1194,7 +1194,7 @@
       "name": "Druck",
       "description": "So handeln, als wäre ein Lichtschalter in diesem Raum gedrückt worden.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Raum",
           "description": "Raumname oder -ID."
         },
@@ -1212,7 +1212,7 @@
       "name": "Durchschalten",
       "description": "Diesen Raum in seiner Abfolge weiterschalten.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Raum",
           "description": "Raumname oder -ID."
         },
@@ -1230,7 +1230,7 @@
       "name": "Zurück zu adaptiv",
       "description": "Einen Raum auf adaptives Licht zurücksetzen und dabei Szene und manuelle Änderungen aufheben.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Raum",
           "description": "Raumname oder -ID."
         }
@@ -1240,7 +1240,7 @@
       "name": "Szene aktivieren",
       "description": "Eine Szene auf einen Raum anwenden.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Raum",
           "description": "Raumname oder -ID."
         },
@@ -1254,7 +1254,7 @@
       "name": "Manuelle Änderung aufheben",
       "description": "Lampen wieder der adaptiven Steuerung überlassen.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Raum",
           "description": "Raumname oder -ID."
         },
@@ -1300,7 +1300,7 @@
           "name": "Modus",
           "description": "Modusname oder -ID."
         },
-        "zone": {
+        "room": {
           "name": "Raum",
           "description": "Raumname oder -ID."
         }
@@ -1310,7 +1310,7 @@
       "name": "Erneut um Licht aus bitten",
       "description": "Wiederholt das, was der Nachtmodus beim Einschalten getan hat — für die Räume, in denen er noch aktiv ist. Gedacht für das Licht, das nachts jemand eingeschaltet und angelassen hat: der Nachtschalter hilft dann nicht, weil der Nachtmodus nie aufgehört hat. Wo der Nachtmodus aus ist, passiert nichts.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Räume",
           "description": "Welche Räume gefragt werden. Ohne Angabe das ganze Haus."
         },
@@ -1324,7 +1324,7 @@
       "name": "Mit dem Licht Bescheid geben",
       "description": "Etwas mit dem Licht eines Raums sagen und es danach zurücksetzen: grün, wenn die Wäsche fertig ist, orange, wenn eine Tür offen steht, rot, wenn es darauf ankommt. Danach macht der Raum weiter, was er vorher getan hat, und Lampen, die aus waren, sind wieder aus.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Räume",
           "description": "In welchen Räumen es gesagt wird."
         },
@@ -1358,7 +1358,7 @@
       "name": "Effekt abspielen",
       "description": "Einen Effekt in einem Raum abspielen, bis ihn etwas beendet — eine Kerze für den Abend, ein langsames Pulsieren, solange etwas wartet. Mit einer Dauer endet er von selbst.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Räume",
           "description": "In welchen Räumen es gesagt wird."
         },
@@ -1392,7 +1392,7 @@
       "name": "Effekt beenden",
       "description": "Beendet, was gerade läuft, und setzt den Raum auf das zurück, was er vorher getan hat.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Räume",
           "description": "In welchen Räumen es gesagt wird."
         }

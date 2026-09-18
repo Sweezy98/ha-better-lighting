@@ -17,11 +17,11 @@ from custom_components.better_lighting.diagnostics import (
 from tests.conftest import (
     MemberLight,
     hub_entry,
-    remove_zone_scene,
+    remove_room_scene,
+    room_subentry,
     setup_hub,
     setup_members,
     subentry_ids,
-    zone_subentry,
 )
 from tests.ha.test_modes import _sub, build, mode_subentry, rule, set_state
 from tests.ha.test_scenes import scene_subentry
@@ -63,8 +63,8 @@ class TestSessionSurvivesAReload:
         )
         entry = hub_entry(
             subentries_data=[
-                zone_subentry("Lounge", ["light.lounge_main", "light.lounge_lamp"]),
-                zone_subentry("Kitchen", ["light.kitchen_main"]),
+                room_subentry("Lounge", ["light.lounge_main", "light.lounge_lamp"]),
+                room_subentry("Kitchen", ["light.kitchen_main"]),
                 scene_subentry("Movie", brightness=5),
             ]
         )
@@ -153,15 +153,15 @@ class TestTidyingUp:
         """Its id lingers in every switch that cycled it, which is what a
         repair notice counts when it says a switch points at nothing."""
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        entry = hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        entry = hub_entry(subentries_data=[room_subentry(), scene_subentry("Cosy")])
         await setup_hub(hass, entry)
         ids = subentry_ids(entry)
-        zone = entry.subentries[ids["Kitchen"]]
+        room = entry.subentries[ids["Kitchen"]]
         hass.config_entries.async_update_subentry(
             entry,
-            zone,
+            room,
             data={
-                **zone.data,
+                **room.data,
                 "switches": [
                     {
                         "switch_id": "one",
@@ -182,15 +182,15 @@ class TestTidyingUp:
         """It is written in the list the way a scene is and answers to no
         scene, which is not the same as pointing at one that has gone."""
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        entry = hub_entry(subentries_data=[zone_subentry()])
+        entry = hub_entry(subentries_data=[room_subentry()])
         await setup_hub(hass, entry)
         ids = subentry_ids(entry)
-        zone = entry.subentries[ids["Kitchen"]]
+        room = entry.subentries[ids["Kitchen"]]
         hass.config_entries.async_update_subentry(
             entry,
-            zone,
+            room,
             data={
-                **zone.data,
+                **room.data,
                 "switches": [
                     {
                         "switch_id": "one",
@@ -210,17 +210,17 @@ class TestDanglingReferences:
         self, hass: HomeAssistant
     ) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        entry = hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        entry = hub_entry(subentries_data=[room_subentry(), scene_subentry("Cosy")])
         await setup_hub(hass, entry)
         scene_id = subentry_ids(entry)["Cosy"]
-        zone = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
+        room = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
         hass.config_entries.async_update_subentry(
-            entry, zone, data={**zone.data, "night_scene_id": scene_id}
+            entry, room, data={**room.data, "night_scene_id": scene_id}
         )
         await hass.async_block_till_done()
         assert not _our_issues(hass)
 
-        remove_zone_scene(hass, entry, scene_id)
+        remove_room_scene(hass, entry, scene_id)
         await hass.async_block_till_done()
 
         issues = _our_issues(hass)
@@ -228,21 +228,21 @@ class TestDanglingReferences:
 
     async def test_the_issue_clears_once_fixed(self, hass: HomeAssistant) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        entry = hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        entry = hub_entry(subentries_data=[room_subentry(), scene_subentry("Cosy")])
         await setup_hub(hass, entry)
         scene_id = subentry_ids(entry)["Cosy"]
-        zone = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
+        room = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
         hass.config_entries.async_update_subentry(
-            entry, zone, data={**zone.data, "insect_scene_id": scene_id}
+            entry, room, data={**room.data, "insect_scene_id": scene_id}
         )
         await hass.async_block_till_done()
-        remove_zone_scene(hass, entry, scene_id)
+        remove_room_scene(hass, entry, scene_id)
         await hass.async_block_till_done()
         assert _our_issues(hass)
 
-        zone = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
+        room = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
         hass.config_entries.async_update_subentry(
-            entry, zone, data={**zone.data, "insect_scene_id": None}
+            entry, room, data={**room.data, "insect_scene_id": None}
         )
         await hass.async_block_till_done()
 
@@ -253,10 +253,10 @@ class TestDanglingReferences:
     ) -> None:
         """Lenient at runtime: a missing step is skipped, not crashed on."""
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        entry = hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+        entry = hub_entry(subentries_data=[room_subentry(), scene_subentry("Cosy")])
         await setup_hub(hass, entry)
         scene_id = subentry_ids(entry)["Cosy"]
-        remove_zone_scene(hass, entry, scene_id)
+        remove_room_scene(hass, entry, scene_id)
         await hass.async_block_till_done()
 
         await hass.services.async_call(
@@ -282,7 +282,7 @@ class TestSerialisation:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(),
+                room_subentry(),
                 scene_subentry("Cosy"),
                 scene_subentry("Bright", brightness=100),
             ]
@@ -316,7 +316,7 @@ class TestDiagnostics:
         data = await async_get_config_entry_diagnostics(hass, entry)
 
         assert data["hub"]["interval"] == 90
-        assert len(data["zones"]) == 2
+        assert len(data["rooms"]) == 2
         assert data["scenes"]
         mode = next(iter(data["modes"].values()))
         assert mode["state"] == "playing"
@@ -327,7 +327,7 @@ class TestDiagnostics:
         from homeassistant.core import Context
 
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        entry = hub_entry(subentries_data=[zone_subentry()])
+        entry = hub_entry(subentries_data=[room_subentry()])
         await setup_hub(hass, entry)
         await hass.services.async_call(
             "light", "turn_on", {"entity_id": "light.kitchen"}, blocking=True
@@ -343,9 +343,9 @@ class TestDiagnostics:
         await hass.async_block_till_done()
 
         data = await async_get_config_entry_diagnostics(hass, entry)
-        zone = next(iter(data["zones"].values()))
+        room = next(iter(data["rooms"].values()))
         # The first question a surprising-behaviour report needs answered.
-        assert "light.one" in zone["manual"]
+        assert "light.one" in room["manual"]
 
 
 async def test_a_device_with_no_owner_is_swept_up(hass: HomeAssistant) -> None:
@@ -372,16 +372,16 @@ class TestNothingIsLeftBehind:
     """What each kind of removal has to take with it."""
 
     async def _with_a_switch(self, hass: HomeAssistant):
-        from tests.conftest import add_zone_switch
+        from tests.conftest import add_room_switch
         from tests.ha.test_controllers import controller_subentry
 
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = await setup_hub(hass, hub_entry())
         ids = subentry_ids(entry)
-        switch_id = add_zone_switch(
+        switch_id = add_room_switch(
             hass,
             entry,
-            controller_subentry("Door", zone_id=ids["Kitchen"], scene_order=[]),
+            controller_subentry("Door", room_id=ids["Kitchen"], scene_order=[]),
             ids["Kitchen"],
         )
         await hass.async_block_till_done()
@@ -391,16 +391,16 @@ class TestNothingIsLeftBehind:
         self, hass: HomeAssistant
     ) -> None:
         """A switch lives inside a room, so no subentry removal cleans up."""
-        entry, zone_id, switch_id = await self._with_a_switch(hass)
+        entry, room_id, switch_id = await self._with_a_switch(hass)
         registry = er.async_get(hass)
         assert any(
             switch_id in (e.unique_id or "")
             for e in er.async_entries_for_config_entry(registry, entry.entry_id)
         )
 
-        zone = entry.subentries[zone_id]
+        room = entry.subentries[room_id]
         hass.config_entries.async_update_subentry(
-            entry, zone, data={**zone.data, "switches": []}
+            entry, room, data={**room.data, "switches": []}
         )
         await hass.async_block_till_done()
 
@@ -414,17 +414,17 @@ class TestNothingIsLeftBehind:
     ) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = await setup_hub(hass, hub_entry())
-        zone_id = subentry_ids(entry)["Kitchen"]
+        room_id = subentry_ids(entry)["Kitchen"]
         assert hass.states.get("light.kitchen") is not None
 
-        hass.config_entries.async_remove_subentry(entry, zone_id)
+        hass.config_entries.async_remove_subentry(entry, room_id)
         await hass.async_block_till_done()
 
         registry = er.async_get(hass)
         assert not [
             e
             for e in er.async_entries_for_config_entry(registry, entry.entry_id)
-            if e.unique_id.startswith(zone_id)
+            if e.unique_id.startswith(room_id)
         ]
 
     async def test_a_deleted_modes_stored_session_is_forgotten(

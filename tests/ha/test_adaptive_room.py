@@ -13,13 +13,13 @@ from custom_components.better_lighting.render import Trigger
 from tests.conftest import (
     MemberLight,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
-    zone_subentry,
 )
 from tests.ha.test_scenes import scene_subentry
 
-ZONE = "light.kitchen"
+ROOM = "light.kitchen"
 ADAPTIVE_BRIGHTNESS = "switch.kitchen_adaptive_brightness"
 # British spelling, because the entity id follows the displayed name and
 # the rest of the interface says "colour".
@@ -53,9 +53,9 @@ async def _advance(hass: HomeAssistant, freezer, seconds: int = 200) -> None:
     await hass.async_block_till_done()
 
 
-async def _turn_on_zone(hass: HomeAssistant) -> None:
+async def _turn_on_room(hass: HomeAssistant) -> None:
     await hass.services.async_call(
-        "light", "turn_on", {"entity_id": ZONE}, blocking=True
+        "light", "turn_on", {"entity_id": ROOM}, blocking=True
     )
     await hass.async_block_till_done()
 
@@ -66,7 +66,7 @@ class TestAdaptiveTurnOn:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(hass, hub_entry())
 
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
 
         one = hass.states.get("light.one")
         assert one.state == "on"
@@ -85,7 +85,7 @@ class TestAdaptiveTurnOn:
                 "switch", "turn_off", {"entity_id": entity_id}, blocking=True
             )
         await hass.async_block_till_done()
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
 
         assert hass.states.get("light.one").state == "on"
         assert hass.states.get(ADAPTIVE_BRIGHTNESS).state == "off"
@@ -99,13 +99,13 @@ class TestLightProfiles:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(),
+                room_subentry(),
                 light_profile("light.two", brightness_offset_pct=-25),
             ]
         )
         await setup_hub(hass, entry)
 
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
 
         one = hass.states.get("light.one").attributes["brightness"]
         two = hass.states.get("light.two").attributes["brightness"]
@@ -115,13 +115,13 @@ class TestLightProfiles:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(),
+                room_subentry(),
                 light_profile("light.two", color_temp_offset_k=-500),
             ]
         )
         await setup_hub(hass, entry)
 
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
 
         one = hass.states.get("light.one").attributes["color_temp_kelvin"]
         two = hass.states.get("light.two").attributes["color_temp_kelvin"]
@@ -131,13 +131,13 @@ class TestLightProfiles:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(),
+                room_subentry(),
                 light_profile("light.two", max_brightness_pct=10),
             ]
         )
         await setup_hub(hass, entry)
 
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
 
         # 10% of 255 is ~26; allow for rounding.
         assert hass.states.get("light.two").attributes["brightness"] <= 27
@@ -150,7 +150,7 @@ class TestNightMode:
         hass.states.async_set("input_boolean.asleep", "off")
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(
-            subentries_data=[zone_subentry(night_source_entity="input_boolean.asleep")]
+            subentries_data=[room_subentry(night_source_entity="input_boolean.asleep")]
         )
         await setup_hub(hass, entry)
         assert hass.states.get(NIGHT).state == "off"
@@ -165,7 +165,7 @@ class TestNightMode:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(
+                room_subentry(
                     night_source_entity="input_boolean.asleep",
                     night_brightness_pct=2,
                     night_color_temp_k=1800,
@@ -173,7 +173,7 @@ class TestNightMode:
             ]
         )
         await setup_hub(hass, entry)
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
         day_brightness = hass.states.get("light.one").attributes["brightness"]
 
         hass.states.async_set("input_boolean.asleep", "on")
@@ -181,7 +181,7 @@ class TestNightMode:
 
         night = hass.states.get("light.one").attributes
         assert night["brightness"] < day_brightness
-        # The zone asks for 1800 K but this fixture bottoms out at 2000 K, so
+        # The room asks for 1800 K but this fixture bottoms out at 2000 K, so
         # the request is clamped to what the hardware can actually produce --
         # step 5 of the resolution order.
         assert night["color_temp_kelvin"] == 2000
@@ -192,7 +192,7 @@ class TestNightMode:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(
             options={"night_source_entity": "input_boolean.asleep"},
-            subentries_data=[zone_subentry()],
+            subentries_data=[room_subentry()],
         )
         await setup_hub(hass, entry)
         assert hass.states.get(NIGHT).state == "off"
@@ -212,7 +212,7 @@ class TestNightMode:
             hass,
             hub_entry(
                 options={"night_source_entity": "input_boolean.asleep"},
-                subentries_data=[zone_subentry()],
+                subentries_data=[room_subentry()],
             ),
         )
         assert hass.states.get("light.one").state == "off"
@@ -230,7 +230,7 @@ class TestTick:
     ) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(hass, hub_entry())
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
 
         # A small drift, of the kind a device's own rounding produces. Small
         # enough not to read as a person at the dimmer, large enough that the
@@ -244,7 +244,7 @@ class TestTick:
         await hass.async_block_till_done()
 
         # Two advances: the first releases the deterministic start-up stagger
-        # that keeps zones from all rendering in the same event-loop slot, the
+        # that keeps rooms from all rendering in the same event-loop slot, the
         # second lands on the interval itself.
         await _advance(hass, freezer)
         await _advance(hass, freezer)
@@ -257,7 +257,7 @@ class TestTick:
         """Take-over control: a person at the dimmer outranks the interval."""
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(hass, hub_entry())
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
 
         await hass.services.async_call(
             "light",
@@ -297,7 +297,7 @@ class TestAdaptiveAxes:
     async def _setup(self, hass: HomeAssistant):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(hass, hub_entry())
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
 
     async def _set(self, hass: HomeAssistant, entity_id: str, on: bool) -> None:
         await hass.services.async_call(
@@ -379,10 +379,10 @@ class TestAdaptiveAxes:
         await setup_hub(
             hass,
             hub_entry(
-                subentries_data=[zone_subentry(), scene_subentry("Cosy", brightness=20)]
+                subentries_data=[room_subentry(), scene_subentry("Cosy", brightness=20)]
             ),
         )
-        await _turn_on_zone(hass)
+        await _turn_on_room(hass)
         await self._set(hass, ADAPTIVE_COLOR, False)
 
         await hass.services.async_call(
@@ -423,7 +423,7 @@ class TestNightTurnOff:
             hass,
             hub_entry(
                 subentries_data=[
-                    zone_subentry(
+                    room_subentry(
                         night_source_entity="input_boolean.asleep",
                         night_behavior="turn_off",
                         **extra,
@@ -557,7 +557,7 @@ class TestNightTurnOff:
         await self._sleep(hass)
 
         await hass.services.async_call(
-            "light", "turn_on", {"entity_id": ZONE}, blocking=True
+            "light", "turn_on", {"entity_id": ROOM}, blocking=True
         )
         await hass.async_block_till_done()
 
@@ -566,7 +566,7 @@ class TestNightTurnOff:
 
         assert hass.states.get("light.one").state == "on"
 
-    async def test_the_zones_own_switch_dims_rather_than_darkens(
+    async def test_the_rooms_own_switch_dims_rather_than_darkens(
         self, hass: HomeAssistant
     ) -> None:
         """The helper is the house going to bed; the switch is a person."""

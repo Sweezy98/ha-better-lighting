@@ -13,9 +13,9 @@ from custom_components.better_lighting.const import DOMAIN
 from tests.conftest import (
     MemberLight,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
-    zone_subentry,
 )
 
 
@@ -35,21 +35,21 @@ async def test_runtime_holds_parsed_config(hass: HomeAssistant) -> None:
     entry = await setup_hub(hass, hub_entry())
     runtime = entry.runtime_data
 
-    assert len(runtime.zones) == 1
-    zone = next(iter(runtime.zones.values()))
-    assert zone.name == "Kitchen"
-    assert zone.lights == ("light.one", "light.two")
-    assert zone.slug == "kitchen"
+    assert len(runtime.rooms) == 1
+    room = next(iter(runtime.rooms.values()))
+    assert room.name == "Kitchen"
+    assert room.lights == ("light.one", "light.two")
+    assert room.slug == "kitchen"
     # Unset hub options fall back to the documented defaults.
     assert runtime.hub.interval == 90
     assert runtime.hub.max_color_temp_k == 5500
 
 
-async def test_each_zone_gets_its_own_device(hass: HomeAssistant) -> None:
+async def test_each_room_gets_its_own_device(hass: HomeAssistant) -> None:
     await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
     entry = await setup_hub(hass, hub_entry())
 
-    subentry_id = next(iter(entry.runtime_data.zones))
+    subentry_id = next(iter(entry.runtime_data.rooms))
     entity = er.async_get(hass).async_get("light.kitchen")
     assert entity is not None
     # Binding to the subentry is what lets HA clean up on deletion.
@@ -95,7 +95,7 @@ async def test_a_no_op_update_does_not_reload(hass: HomeAssistant) -> None:
     assert not mock_reload.called
 
 
-async def test_removing_a_zone_removes_its_entity(hass: HomeAssistant) -> None:
+async def test_removing_a_room_removes_its_entity(hass: HomeAssistant) -> None:
     await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
     entry = await setup_hub(hass, hub_entry())
     subentry_id = next(iter(entry.subentries))
@@ -107,14 +107,14 @@ async def test_removing_a_zone_removes_its_entity(hass: HomeAssistant) -> None:
     assert er.async_get(hass).async_get("light.kitchen") is None
 
 
-async def test_two_zones_are_independent(hass: HomeAssistant) -> None:
+async def test_two_rooms_are_independent(hass: HomeAssistant) -> None:
     await setup_members(
         hass, [MemberLight("One"), MemberLight("Two"), MemberLight("Three")]
     )
     entry = hub_entry(
         subentries_data=[
-            zone_subentry("Kitchen", ["light.one", "light.two"]),
-            zone_subentry("Hallway", ["light.three"]),
+            room_subentry("Kitchen", ["light.one", "light.two"]),
+            room_subentry("Hallway", ["light.three"]),
         ]
     )
     await setup_hub(hass, entry)
@@ -127,7 +127,7 @@ async def test_two_zones_are_independent(hass: HomeAssistant) -> None:
     )
     await hass.async_block_till_done()
 
-    # A light belongs to exactly one zone, so acting on one cannot touch another.
+    # A light belongs to exactly one room, so acting on one cannot touch another.
     assert hass.states.get("light.three").state == "on"
     assert hass.states.get("light.one").state == "off"
     assert hass.states.get("light.kitchen").state == "off"

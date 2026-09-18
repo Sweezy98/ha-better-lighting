@@ -16,6 +16,8 @@ import re
 import pytest
 import yaml
 
+from custom_components.better_lighting.const import SubentryType
+
 COMPONENT = pathlib.Path(__file__).parents[2] / "custom_components" / "better_lighting"
 STRINGS = json.loads((COMPONENT / "strings.json").read_text())
 SERVICES_YAML = yaml.safe_load((COMPONENT / "services.yaml").read_text())
@@ -74,9 +76,11 @@ def test_every_service_field_is_described() -> None:
 
 def test_every_subentry_type_has_strings() -> None:
     source = (COMPONENT / "config_flow.py").read_text()
-    used = set(re.findall(r"SubentryType\.(\w+)\.value: \w+SubentryFlow", source))
-    declared = {name.upper() for name in STRINGS["config_subentries"]}
-    assert used == declared
+    names = re.findall(r"SubentryType\.(\w+)\.value: \w+SubentryFlow", source)
+    # Keyed by the stored type, which is not always the member name: see
+    # SubentryType.ROOM.
+    used = {SubentryType[name].value for name in names}
+    assert used == set(STRINGS["config_subentries"])
 
 
 def test_every_entity_translation_key_has_a_name() -> None:
@@ -260,7 +264,7 @@ def test_the_panel_covers_every_settings_surface() -> None:
         "colour presets": "_paintPresets",
         "add a room": "add-room",
         "room settings": "_paintRoomSection",
-        "delete a room": "delete_zone",
+        "delete a room": "delete_room",
         "scenes": "_paintEditor",
         "a light taken as it is": "_captureOne",
         "switches": '"switch"',
@@ -427,7 +431,7 @@ def test_every_room_screen_has_an_icon_in_the_menu() -> None:
 
     panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
     icons = set(re.findall(r"^  (\w+): \"mdi:", panel_js, flags=re.M))
-    wanted = {section.value for section in panel_schema.ZONE_SECTIONS} | {
+    wanted = {section.value for section in panel_schema.ROOM_SECTIONS} | {
         "scenes",
         "switches",
         "calibrations",
@@ -472,11 +476,11 @@ def test_every_select_option_has_a_name() -> None:
 
     tables = (
         const.HUB_SPECS,
-        const.ZONE_SPECS,
+        const.ROOM_SPECS,
         const.MODE_SPECS,
         const.CONTROLLER_SPECS,
         const.LIGHT_PROFILE_SPECS,
-        const.ZONE_SCENE_SPECS,
+        const.ROOM_SCENE_SPECS,
         const.COLOR_PRESET_SPECS,
         const.mode_rule_specs([]),
     )
@@ -648,3 +652,26 @@ def test_the_panel_parses_as_a_module() -> None:
     finally:
         pathlib.Path(copy).unlink(missing_ok=True)
     assert done.returncode == 0, done.stderr
+
+
+def test_every_all_entry_resolves() -> None:
+    """``__all__`` is a list of strings, so a rename walks straight past it.
+
+    The zone-to-room rename left four dangling names behind; nothing else in
+    the suite noticed, because nothing imports by star.
+    """
+    import importlib
+
+    dangling = []
+    for path in sorted(COMPONENT.glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        module = importlib.import_module(
+            f"custom_components.better_lighting.{path.stem}"
+        )
+        dangling += [
+            f"{path.name}: {name}"
+            for name in getattr(module, "__all__", ())
+            if not hasattr(module, name)
+        ]
+    assert not dangling

@@ -1,4 +1,4 @@
-"""Sessions: what a cross-zone mode remembers, and what it owes.
+"""Sessions: what a cross-room mode remembers, and what it owes.
 
 Two ideas live here, both pure so the awkward cases are ordinary tests.
 
@@ -24,8 +24,8 @@ from enum import StrEnum
 from typing import Any
 
 
-class ZoneAction(StrEnum):
-    """What a cross-zone mode does to one room in one of its states."""
+class RoomAction(StrEnum):
+    """What a cross-room mode does to one room in one of its states."""
 
     APPLY_SCENE = "apply_scene"
     TURN_OFF = "turn_off"
@@ -88,10 +88,10 @@ class LightSnapshotEntry:
 
 
 @dataclass(slots=True)
-class ZoneSnapshot:
+class RoomSnapshot:
     """One room, as it was when the session began."""
 
-    zone_id: str
+    room_id: str
     mode: str
     scene_id: str | None
     lights: tuple[LightSnapshotEntry, ...]
@@ -104,7 +104,7 @@ class ZoneSnapshot:
 
     def as_dict(self) -> dict[str, Any]:
         return {
-            "zone_id": self.zone_id,
+            "zone_id": self.room_id,
             "mode": self.mode,
             "scene_id": self.scene_id,
             "restore_on_exit": self.restore_on_exit,
@@ -112,9 +112,9 @@ class ZoneSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, raw: Mapping[str, Any]) -> ZoneSnapshot:
+    def from_dict(cls, raw: Mapping[str, Any]) -> RoomSnapshot:
         return cls(
-            zone_id=raw["zone_id"],
+            room_id=raw["zone_id"],
             mode=raw.get("mode", "adaptive"),
             scene_id=raw.get("scene_id"),
             lights=tuple(
@@ -131,7 +131,7 @@ class ModeSnapshot:
     session_id: str
     mode_id: str
     taken_at: str
-    zones: dict[str, ZoneSnapshot] = field(default_factory=dict)
+    rooms: dict[str, RoomSnapshot] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -139,7 +139,7 @@ class ModeSnapshot:
             "mode_id": self.mode_id,
             "taken_at": self.taken_at,
             "zones": {
-                zone_id: snapshot.as_dict() for zone_id, snapshot in self.zones.items()
+                room_id: snapshot.as_dict() for room_id, snapshot in self.rooms.items()
             },
         }
 
@@ -149,9 +149,9 @@ class ModeSnapshot:
             session_id=raw["session_id"],
             mode_id=raw["mode_id"],
             taken_at=raw.get("taken_at", ""),
-            zones={
-                zone_id: ZoneSnapshot.from_dict(snapshot)
-                for zone_id, snapshot in (raw.get("zones") or {}).items()
+            rooms={
+                room_id: RoomSnapshot.from_dict(snapshot)
+                for room_id, snapshot in (raw.get("zones") or {}).items()
             },
         )
 
@@ -165,11 +165,11 @@ class ModeSnapshot:
 class DeferredAction:
     """An instruction waiting for a room to empty."""
 
-    zone_id: str
+    room_id: str
     session_id: str
     mode_id: str
     mode_state: str
-    action: ZoneAction
+    action: RoomAction
     scene_id: str | None = None
     created_at: float = 0.0
     expires_at: float | None = None
@@ -195,36 +195,36 @@ class DeferredRegistry:
         return iter(self._actions.values())
 
     def enqueue(self, action: DeferredAction) -> None:
-        self._actions[(action.session_id, action.zone_id)] = action
+        self._actions[(action.session_id, action.room_id)] = action
 
-    def get(self, session_id: str, zone_id: str) -> DeferredAction | None:
-        return self._actions.get((session_id, zone_id))
+    def get(self, session_id: str, room_id: str) -> DeferredAction | None:
+        return self._actions.get((session_id, room_id))
 
-    def pop(self, session_id: str, zone_id: str) -> DeferredAction | None:
-        return self._actions.pop((session_id, zone_id), None)
+    def pop(self, session_id: str, room_id: str) -> DeferredAction | None:
+        return self._actions.pop((session_id, room_id), None)
 
-    def for_zone(self, zone_id: str) -> list[DeferredAction]:
-        return [a for a in self._actions.values() if a.zone_id == zone_id]
+    def for_room(self, room_id: str) -> list[DeferredAction]:
+        return [a for a in self._actions.values() if a.room_id == room_id]
 
-    def drop_zone(self, zone_id: str) -> list[DeferredAction]:
+    def drop_room(self, room_id: str) -> list[DeferredAction]:
         """The user took this room back, or it went dark by other means."""
-        dropped = self.for_zone(zone_id)
+        dropped = self.for_room(room_id)
         for action in dropped:
-            self._actions.pop((action.session_id, action.zone_id), None)
+            self._actions.pop((action.session_id, action.room_id), None)
         return dropped
 
     def drop_session(self, session_id: str) -> list[DeferredAction]:
         """The session ended, or moved to a state with different intentions."""
         dropped = [a for a in self._actions.values() if a.session_id == session_id]
         for action in dropped:
-            self._actions.pop((action.session_id, action.zone_id), None)
+            self._actions.pop((action.session_id, action.room_id), None)
         return dropped
 
     def drop_expired(self, now: float) -> list[DeferredAction]:
         """A stuck sensor must not leave an instruction armed forever."""
         expired = [a for a in self._actions.values() if a.is_expired(now)]
         for action in expired:
-            self._actions.pop((action.session_id, action.zone_id), None)
+            self._actions.pop((action.session_id, action.room_id), None)
         return expired
 
     def clear(self) -> None:
@@ -237,8 +237,8 @@ def is_still_wanted(
     active_session_id: str | None,
     active_state: str | None,
     opted_out: Iterable[str],
-    zone_is_off: bool,
-    zone_is_manual: bool,
+    room_is_off: bool,
+    room_is_manual: bool,
     now: float,
 ) -> tuple[bool, str]:
     """Re-check a deferred action at the moment it would fire.
@@ -252,11 +252,11 @@ def is_still_wanted(
         # The mode moved on. The new state's own rule decides afresh; replaying
         # the old one would apply an intention nobody holds any more.
         return False, "state_changed"
-    if action.zone_id in opted_out:
+    if action.room_id in opted_out:
         return False, "opted_out"
-    if action.action is ZoneAction.TURN_OFF and zone_is_off:
+    if action.action is RoomAction.TURN_OFF and room_is_off:
         return False, "already_satisfied"
-    if zone_is_manual:
+    if room_is_manual:
         return False, "manual_override"
     if action.is_expired(now):
         return False, "expired"

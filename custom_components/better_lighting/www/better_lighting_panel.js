@@ -1240,28 +1240,28 @@ class BetterLightingPanel extends HTMLElement {
         )
         .join("");
 
-    const rooms = Object.entries(data.zones || {})
-      .map(([id, zone]) => {
-        const manual = Object.entries(zone.manual || {});
+    const rooms = Object.entries(data.rooms || {})
+      .map(([id, room]) => {
+        const manual = Object.entries(room.manual || {});
         return `<details class="diag">
-          <summary>${zone.name || roomName[id] || id}</summary>
+          <summary>${room.name || roomName[id] || id}</summary>
           <table>${rows([
-            [this._t("diag_mode"), zone.mode],
-            [this._t("diag_effective"), zone.effective_mode],
-            [this._t("diag_scene"), zone.active_scene_id],
-            [this._t("diag_adaptive"), zone.adaptive_enabled],
-            [this._t("diag_night"), zone.night_active],
-            [this._t("diag_insect"), zone.insect_active],
-            [this._t("diag_bias"), zone.bias_pct],
-            [this._t("diag_owner"), zone.session_owner],
+            [this._t("diag_mode"), room.mode],
+            [this._t("diag_effective"), room.effective_mode],
+            [this._t("diag_scene"), room.active_scene_id],
+            [this._t("diag_adaptive"), room.adaptive_enabled],
+            [this._t("diag_night"), room.night_active],
+            [this._t("diag_insect"), room.insect_active],
+            [this._t("diag_bias"), room.bias_pct],
+            [this._t("diag_owner"), room.session_owner],
             [
               this._t("diag_manual"),
               manual.length
                 ? manual.map(([light, axes]) => `${light}: ${axes}`).join("<br>")
                 : this._t("no_manual"),
             ],
-            [this._t("diag_presence"), zone.presence ? JSON.stringify(zone.presence) : undefined],
-            [this._t("diag_window"), zone.window_open],
+            [this._t("diag_presence"), room.presence ? JSON.stringify(room.presence) : undefined],
+            [this._t("diag_window"), room.window_open],
           ])}</table>
         </details>`;
       })
@@ -1342,7 +1342,7 @@ class BetterLightingPanel extends HTMLElement {
       into.innerHTML = `<p class="muted">${this._t("pick_a_room")}</p>`;
       return;
     }
-    const data = await this._call("curve", { zone_id: this._roomId });
+    const data = await this._call("curve", { room_id: this._roomId });
     const samples = data.samples || [];
     if (!samples.length) return;
 
@@ -3416,7 +3416,7 @@ class BetterLightingPanel extends HTMLElement {
     this._wireRowActions(main, {
       duplicate: () => {},
       remove: async (index) => {
-        await this._call("delete_zone", { zone_id: this._rooms[index].id });
+        await this._call("delete_room", { room_id: this._rooms[index].id });
         if (this._roomId === this._rooms[index].id) this._roomId = null;
         await this._load();
       },
@@ -3510,8 +3510,8 @@ class BetterLightingPanel extends HTMLElement {
         values: {},
         choices: this._choices(null),
         save: async (next) => {
-          const result = await this._call("save_zone", {
-            zone_id: null,
+          const result = await this._call("save_room", {
+            room_id: null,
             data: next,
           });
           this._view = { kind: "room", section: null };
@@ -3530,8 +3530,8 @@ class BetterLightingPanel extends HTMLElement {
       values,
       choices: this._choices(room),
       save: async (next) => {
-        const result = await this._call("save_zone", {
-          zone_id: room.id,
+        const result = await this._call("save_room", {
+          room_id: room.id,
           data: { ...values, ...next },
         });
         this._view = { kind: "room", section: group.section };
@@ -3542,7 +3542,7 @@ class BetterLightingPanel extends HTMLElement {
       remove:
         group.section === "basic"
           ? async () => {
-              await this._call("delete_zone", { zone_id: room.id });
+              await this._call("delete_room", { room_id: room.id });
               this._roomId = null;
               this._view = { kind: "room", section: null };
             }
@@ -3715,8 +3715,8 @@ class BetterLightingPanel extends HTMLElement {
       this._wireRowActions(main, {
         duplicate: () => {},
         remove: async (index) => {
-          await this._call("save_zone_collection", {
-            zone_id: room.id,
+          await this._call("save_room_collection", {
+            room_id: room.id,
             key: storageKey,
             items: items.filter((_, i) => i !== index),
           });
@@ -3745,8 +3745,8 @@ class BetterLightingPanel extends HTMLElement {
       save: async (next) => {
         const list = [...items];
         list[index] = { ...(items[index] || {}), ...next };
-        const result = await this._call("save_zone_collection", {
-          zone_id: room.id,
+        const result = await this._call("save_room_collection", {
+          room_id: room.id,
           key: storageKey,
           items: list,
         });
@@ -3755,8 +3755,8 @@ class BetterLightingPanel extends HTMLElement {
       },
       remove: async () => {
         const list = items.filter((_, i) => i !== index);
-        await this._call("save_zone_collection", {
-          zone_id: room.id,
+        await this._call("save_room_collection", {
+          room_id: room.id,
           key: storageKey,
           items: list,
         });
@@ -3949,7 +3949,7 @@ class BetterLightingPanel extends HTMLElement {
           go.disabled = true;
           await this._call("import_scene", {
             entity_id: item.entity_id,
-            zone_ids: [...chosen],
+            room_ids: [...chosen],
           });
           go.textContent = this._t("imported");
           await this._load();
@@ -4091,7 +4091,7 @@ class BetterLightingPanel extends HTMLElement {
     play.innerHTML = `${this._icon("mdi:play")}<span>${this._t("try_it")}</span>`;
     play.addEventListener("click", () =>
       this._hass.callService("better_lighting", "apply_effect", {
-        zone: room,
+        room: room,
         effect: effectId,
         duration: 8,
       })
@@ -4102,7 +4102,7 @@ class BetterLightingPanel extends HTMLElement {
     stop.className = "flat";
     stop.innerHTML = `${this._icon("mdi:stop")}<span>${this._t("stop_it")}</span>`;
     stop.addEventListener("click", () =>
-      this._hass.callService("better_lighting", "stop_effect", { zone: room })
+      this._hass.callService("better_lighting", "stop_effect", { room: room })
     );
     bar.appendChild(stop);
   }
@@ -4340,8 +4340,8 @@ class BetterLightingPanel extends HTMLElement {
           .map((scene) => scene.scene_id)
           .filter((id) => !next.includes(id)),
       };
-      await this._call("save_zone_collection", {
-        zone_id: room.id,
+      await this._call("save_room_collection", {
+        room_id: room.id,
         key: "switches",
         items: list,
       });
@@ -4635,12 +4635,12 @@ class BetterLightingPanel extends HTMLElement {
         const copy = JSON.parse(JSON.stringify(room.scenes[index]));
         delete copy.scene_id;
         copy.name = `${copy.name} ${this._t("copy_suffix")}`;
-        await this._call("save_scene", { zone_id: room.id, scene: copy });
+        await this._call("save_scene", { room_id: room.id, scene: copy });
         await this._load();
       },
       remove: async (index) => {
         await this._call("delete_scene", {
-          zone_id: room.id,
+          room_id: room.id,
           scene_id: room.scenes[index].scene_id,
         });
         await this._load();
@@ -4920,7 +4920,7 @@ class BetterLightingPanel extends HTMLElement {
       if (!(await this._confirm())) return;
       this._dirty = false;
       await this._call("delete_scene", {
-        zone_id: room.id,
+        room_id: room.id,
         scene_id: this._scene.scene_id,
       });
       await this._stopPreview();
@@ -5090,7 +5090,7 @@ class BetterLightingPanel extends HTMLElement {
       }
     }
     const { scene_id: sceneId } = await this._call("save_scene", {
-      zone_id: this._roomId,
+      room_id: this._roomId,
       scene: this._scene,
     });
     this._scene.scene_id = sceneId;
@@ -5108,13 +5108,13 @@ class BetterLightingPanel extends HTMLElement {
 
   async _pushPreview() {
     if (!this._previewing) return;
-    await this._call("preview", { zone_id: this._roomId, scene: this._scene });
+    await this._call("preview", { room_id: this._roomId, scene: this._scene });
   }
 
   async _stopPreview() {
     if (!this._previewing) return;
     this._previewing = false;
-    await this._call("stop_preview", { zone_id: this._roomId });
+    await this._call("stop_preview", { room_id: this._roomId });
   }
 
 }

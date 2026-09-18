@@ -1,4 +1,4 @@
-"""The render pipeline: one function decides what every light in a zone does.
+"""The render pipeline: one function decides what every light in a room does.
 
 All four scene override modes (requirement 7) fall out of a single mask
 operation rather than four code paths:
@@ -53,7 +53,7 @@ ATTR_TRANSITION = "transition"
 class Trigger(StrEnum):
     """Why a render is happening. Decides which axes may be emitted."""
 
-    # A mode or scene change, a zone turning on, a manual reset: make one
+    # A mode or scene change, a room turning on, a manual reset: make one
     # visible move, carrying every axis the engine owns.
     ACTIVATE = "activate"
     # The periodic refresh. Only the axes the scene did not claim.
@@ -66,8 +66,8 @@ class Trigger(StrEnum):
     FORCE = "force"
 
 
-class ZoneMode(StrEnum):
-    """What a zone is currently doing."""
+class RoomMode(StrEnum):
+    """What a room is currently doing."""
 
     OFF = "off"
     ADAPTIVE = "adaptive"
@@ -124,16 +124,16 @@ class RenderResult:
 
 @dataclass(frozen=True, slots=True)
 class RenderRequest:
-    """Everything needed to decide what a zone's lights should do."""
+    """Everything needed to decide what a room's lights should do."""
 
-    mode: ZoneMode
+    mode: RoomMode
     trigger: Trigger
     settings: AdaptiveSettings
     members: Sequence[LightSnapshot]
     scene: Scene | None = None
     profiles: Mapping[str, LightProfile] = field(default_factory=dict)
     # Axes the engine has given up on, per light, because a human moved them.
-    # Per (zone, light) by construction: this map belongs to one zone.
+    # Per (room, light) by construction: this map belongs to one room.
     manual: Mapping[str, Axis] = field(default_factory=dict)
     bias_pct: float = 0.0
     # Which axes this room still tracks the sun on. Applied to the adaptive
@@ -142,7 +142,7 @@ class RenderRequest:
     adaptive_axes: Axis = Axis.ALL
     transition: float | None = None
     # When set, only these members may be switched on -- used to restore the
-    # set that was lit before a cross-zone mode took over.
+    # set that was lit before a cross-room mode took over.
     restore_members: frozenset[str] | None = None
     # Adjust what is already lit and nothing else. Separate from the trigger,
     # because some activations -- night mode turning on, the adaptive switch
@@ -151,8 +151,8 @@ class RenderRequest:
     only_lit: bool = False
 
 
-def render_zone(request: RenderRequest) -> RenderResult:
-    """Decide what every light in a zone should be doing."""
+def render_room(request: RenderRequest) -> RenderResult:
+    """Decide what every light in a room should be doing."""
     commands: list[LightCommand] = []
     saturation: dict[str, Saturation] = {}
     skipped: dict[str, str] = {}
@@ -174,11 +174,11 @@ def render_zone(request: RenderRequest) -> RenderResult:
     if request.trigger is Trigger.TICK or request.only_lit:
         targets &= on_now
 
-    if request.mode is ZoneMode.OFF:
+    if request.mode is RoomMode.OFF:
         data = {ATTR_TRANSITION: request.transition} if request.transition else {}
         return RenderResult(
             [
-                LightCommand(entity_id, "turn_off", dict(data), reason="zone_off")
+                LightCommand(entity_id, "turn_off", dict(data), reason="room_off")
                 for entity_id in sorted(on_now)
             ]
         )
@@ -189,8 +189,8 @@ def render_zone(request: RenderRequest) -> RenderResult:
 
         # -- axis ownership: the one place the four scene modes are decided --
         engine_axes = Axis.ALL & ~request.manual.get(entity_id, Axis.NONE)
-        if request.mode is ZoneMode.EXTERNAL:
-            # Someone else is driving this zone; observe, emit nothing.
+        if request.mode is RoomMode.EXTERNAL:
+            # Someone else is driving this room; observe, emit nothing.
             engine_axes = Axis.NONE
 
         in_scene = scene is not None and entity_id in targets

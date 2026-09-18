@@ -7,19 +7,19 @@ from custom_components.better_lighting.session import (
     DeferredRegistry,
     LightSnapshotEntry,
     ModeSnapshot,
-    ZoneAction,
-    ZoneSnapshot,
+    RoomAction,
+    RoomSnapshot,
     is_still_wanted,
 )
 
 
-def action(zone="kitchen", session="s1", state="playing", **kw) -> DeferredAction:
+def action(room="kitchen", session="s1", state="playing", **kw) -> DeferredAction:
     return DeferredAction(
-        zone_id=zone,
+        room_id=room,
         session_id=session,
         mode_id="cinema",
         mode_state=state,
-        action=ZoneAction.TURN_OFF,
+        action=RoomAction.TURN_OFF,
         **kw,
     )
 
@@ -38,19 +38,19 @@ class TestRegistry:
         registry.enqueue(action("hall"))
         assert len(registry) == 2
 
-    def test_dropping_a_zone(self):
+    def test_dropping_a_room(self):
         registry = DeferredRegistry()
         registry.enqueue(action("kitchen"))
         registry.enqueue(action("hall"))
-        assert len(registry.drop_zone("kitchen")) == 1
-        assert [a.zone_id for a in registry] == ["hall"]
+        assert len(registry.drop_room("kitchen")) == 1
+        assert [a.room_id for a in registry] == ["hall"]
 
     def test_dropping_a_session(self):
         registry = DeferredRegistry()
         registry.enqueue(action("kitchen", "s1"))
         registry.enqueue(action("hall", "s2"))
         registry.drop_session("s1")
-        assert [a.zone_id for a in registry] == ["hall"]
+        assert [a.room_id for a in registry] == ["hall"]
 
     def test_expiry(self):
         """A stuck sensor must not leave an instruction armed forever."""
@@ -74,8 +74,8 @@ class TestStillWanted:
             "active_session_id": "s1",
             "active_state": "playing",
             "opted_out": set(),
-            "zone_is_off": False,
-            "zone_is_manual": False,
+            "room_is_off": False,
+            "room_is_manual": False,
             "now": 0.0,
         }
         return is_still_wanted(action(), **{**base, **overrides})
@@ -97,10 +97,10 @@ class TestStillWanted:
         assert self._check(opted_out={"kitchen"})[1] == "opted_out"
 
     def test_already_satisfied(self):
-        assert self._check(zone_is_off=True)[1] == "already_satisfied"
+        assert self._check(room_is_off=True)[1] == "already_satisfied"
 
     def test_manual_override(self):
-        assert self._check(zone_is_manual=True)[1] == "manual_override"
+        assert self._check(room_is_manual=True)[1] == "manual_override"
 
     def test_expired(self):
         wanted, reason = is_still_wanted(
@@ -108,8 +108,8 @@ class TestStillWanted:
             active_session_id="s1",
             active_state="playing",
             opted_out=set(),
-            zone_is_off=False,
-            zone_is_manual=False,
+            room_is_off=False,
+            room_is_manual=False,
             now=99.0,
         )
         assert (wanted, reason) == (False, "expired")
@@ -117,8 +117,8 @@ class TestStillWanted:
 
 class TestSnapshots:
     def test_previously_on(self):
-        snapshot = ZoneSnapshot(
-            zone_id="kitchen",
+        snapshot = RoomSnapshot(
+            room_id="kitchen",
             mode="adaptive",
             scene_id=None,
             lights=(
@@ -133,9 +133,9 @@ class TestSnapshots:
             session_id="s1",
             mode_id="cinema",
             taken_at="2026-01-01T00:00:00+00:00",
-            zones={
-                "kitchen": ZoneSnapshot(
-                    zone_id="kitchen",
+            rooms={
+                "kitchen": RoomSnapshot(
+                    room_id="kitchen",
                     mode="scene",
                     scene_id="abc",
                     lights=(
@@ -148,12 +148,12 @@ class TestSnapshots:
         )
         restored = ModeSnapshot.from_dict(snapshot.as_dict())
         assert restored.session_id == "s1"
-        light = restored.zones["kitchen"].lights[0]
+        light = restored.rooms["kitchen"].lights[0]
         assert light.brightness == 180
         assert light.color == {"color_temp_kelvin": 2700}
 
     def test_opting_out_marks_the_room_not_to_be_restored(self):
-        snapshot = ZoneSnapshot("kitchen", "adaptive", None, ())
+        snapshot = RoomSnapshot("kitchen", "adaptive", None, ())
         assert snapshot.restore_on_exit is True
         snapshot.restore_on_exit = False
-        assert ZoneSnapshot.from_dict(snapshot.as_dict()).restore_on_exit is False
+        assert RoomSnapshot.from_dict(snapshot.as_dict()).restore_on_exit is False

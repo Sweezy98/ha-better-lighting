@@ -59,7 +59,7 @@ either end of the day. Sensible values are pre-filled; you can change them later
 
 Then, from the integration's page, add the pieces you need:
 
-1. **A zone** — pick a room's lights. This is the only step you actually need. You get a
+1. **A room** — pick its lights. This is the only step you actually need. You get a
    `light.<room>` entity that follows the sun straight away.
 2. **A scene or two** — *Cooking*, *Movie night*, *Reading*. Scenes are house-wide recipes,
    not per-room.
@@ -78,8 +78,8 @@ else belongs to a room and is configured inside it.
 
 | Object | What it is |
 |---|---|
-| **Zone** (room) | One room's lights, controlled together. Creates a `light`, a scene `select`, switches for adaptive and night, and buttons. Holds this room's scenes, switches and light calibration. |
-| **Mode** | A cross-zone mode such as Home Cinema: named states, and what each room does in each. |
+| **Room** | One room's lights, controlled together. Creates a `light`, a scene `select`, switches for adaptive and night, and buttons. Holds this room's scenes, switches and light calibration. |
+| **Mode** | A cross-room mode such as Home Cinema: named states, and what each room does in each. |
 
 Inside a room:
 
@@ -98,7 +98,7 @@ In the global config:
 
 ### One light, one room
 
-A light may belong to **exactly one zone**, and the configuration screen enforces it. That is
+A light may belong to **exactly one room**, and the configuration screen enforces it. That is
 what keeps manual changes, scene control and switch presses unambiguous — the integration
 always knows who owns a given bulb.
 
@@ -130,7 +130,7 @@ without flashing through the two in between.
 
 Better Lighting adds a **Better Lighting** page to the sidebar, and **everything
 is configurable from it** — rooms and all their settings, scenes, switches,
-light calibration, cross-zone modes and the global defaults. The settings
+light calibration, cross-room modes and the global defaults. The settings
 screens under *Devices & services* still work and do the same things; use
 whichever you prefer.
 
@@ -193,7 +193,7 @@ changes the living room and nothing else. Two rooms can each have a *Reading* sc
 different lists of different lights and there is no need to name them apart.
 
 If you want several rooms to change *at the same time* — everything dimming when a film starts
-— that is what a [cross-zone mode](#cross-zone-modes-home-cinema) is for.
+— that is what a [cross-room mode](#cross-room-modes-home-cinema) is for.
 
 ### What a scene is made of
 
@@ -338,7 +338,7 @@ share of the brightness it is given, a time to get there and a time to stay.
 ```yaml
 action: better_lighting.notify
 data:
-  zone: kitchen
+  room: kitchen
   effect: flash
   rgb_color: [0, 255, 0]
   duration: 2
@@ -424,7 +424,7 @@ Presence can be silenced three ways, all meaning the same thing:
 
 - **Night mode ignores presence** — for a bedroom.
 - **A scene ignores presence** — for the living room during a film.
-- **A room a cross-zone mode is driving** follows that mode's actions instead.
+- **A room a cross-room mode is driving** follows that mode's actions instead.
 
 It will also not switch off a room somebody has just set by hand.
 
@@ -435,7 +435,7 @@ and opened again.
 
 ---
 
-## Cross-zone modes: home cinema
+## Cross-room modes: home cinema
 
 A **mode** spans several rooms and has named states — *playing*, *paused*, *credits* — that an
 automation moves between by setting one `select` entity. Each (state, room) pair has a rule:
@@ -480,7 +480,7 @@ episodes does not relight the whole house.
 
 The panel has a **Diagnostics** page: what every room and mode currently
 believes — its mode, its scene, which lights are under manual control, whether
-night or insect mode is showing, which cross-zone session owns it — beside a
+night or insect mode is showing, which cross-room session owns it — beside a
 live log of the events that got it there. A room's state tells you where it
 ended up; the log tells you which press or which film put it there.
 
@@ -506,12 +506,12 @@ can point at.
 | `better_lighting.set_adaptive` | Force a room back to adaptive, clearing any scene or manual change. |
 | `better_lighting.activate_scene` | Apply a scene to a room. |
 | `better_lighting.clear_manual_override` | Hand lights back to the adaptive engine. |
-| `better_lighting.set_mode` | Move a cross-zone mode to one of its states. |
+| `better_lighting.set_mode` | Move a cross-room mode to one of its states. |
 | `better_lighting.end_mode` | End a mode's session and put the rooms back. |
 | `better_lighting.rejoin_mode` | Hand a room you took back to the mode again. |
 
 Rooms can be targeted either by Home Assistant `target` (any of the room's entities) or by
-naming the room in the `zone` field. The second is stabler for automations, since it survives
+naming the room in the `room` field. The second is stabler for automations, since it survives
 renaming an entity.
 
 ---
@@ -531,7 +531,9 @@ than failing, and tells you instead of silently shortening your cycle.
 
 **Events** trace every decision, if you want to watch in Developer Tools:
 `better_lighting_press`, `better_lighting_zone_mode_changed`, `better_lighting_mode_changed`,
-`better_lighting_zone_opted_out`, `better_lighting_deferred_action`.
+`better_lighting_zone_opted_out`, `better_lighting_deferred_action`. Rooms were once called
+zones; the event names and their `zone_id` field keep that spelling so existing automations
+go on working, and each payload now carries `room_id` beside it.
 
 ### A light is physically on but Home Assistant shows it off
 
@@ -644,9 +646,9 @@ exists because of them, and parts of it are their work rather than mine.
 | [relative-light-group] | A light group that dims members relative to their own brightness | The headroom algorithm in `brightness.py`, and the decision to vendor a group base rather than subclass Home Assistant's non-public `LightGroup`. |
 | [scenery] | Named colour and brightness presets, cycled by a select | The colour model and the tolerance-based state comparators in `scenes.py`, ported from its `light_utils.py`. |
 
-Where this integration disagrees with them it is written down: per-`(zone, light)` manual-override
+Where this integration disagrees with them it is written down: per-`(room, light)` manual-override
 tracking rather than a global dictionary keyed by light, zero-flash turn-on from a structural
-invariant rather than by patching `hass.services`, and a zone select whose value is derived from
+invariant rather than by patching `hass.services`, and a room select whose value is derived from
 state we own rather than guessed by matching light attributes.
 
 Please check each project's own licence before reusing what came from it; this repository's

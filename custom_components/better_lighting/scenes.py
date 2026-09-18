@@ -143,7 +143,7 @@ SCENE_AXES: dict[SceneOverride, Axis] = {
 
 
 class OthersPolicy(StrEnum):
-    """What happens to zone members a scene does not name."""
+    """What happens to room members a scene does not name."""
 
     # Keep adapting them. The default: a scene that mentions two lamps should
     # not plunge the rest of the room into darkness.
@@ -195,13 +195,13 @@ class Scene:
     override: SceneOverride = SceneOverride.BOTH
     brightness_pct: float | None = None
     color: Color | None = None
-    # Empty means "every member of whatever zone this is applied to".
+    # Empty means "every member of whatever room this is applied to".
     lights: Mapping[str, SceneLightSpec] = field(default_factory=dict)
     on_lights_only: bool = False
     # Rooms this scene is offered in. Empty means everywhere. Purely about
     # what the pickers show: applying a scene has only ever affected the one
     # room it was applied to.
-    zones: frozenset[str] = frozenset()
+    rooms: frozenset[str] = frozenset()
     others: OthersPolicy = OthersPolicy.ADAPTIVE
     ignore_presence: bool = False
     transition: float | None = None
@@ -214,9 +214,9 @@ class Scene:
     enter_scripts: tuple[str, ...] = ()
     leave_scripts: tuple[str, ...] = ()
 
-    def offered_in(self, zone_id: str) -> bool:
+    def offered_in(self, room_id: str) -> bool:
         """Whether this scene should appear in a given room's choices."""
-        return not self.zones or zone_id in self.zones
+        return not self.rooms or room_id in self.rooms
 
     def spec_for(self, entity_id: str) -> SceneLightSpec:
         """This scene's intent for one light.

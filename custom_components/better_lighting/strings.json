@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Better Lighting",
-        "description": "These are the house-wide defaults. Every zone inherits them, and any zone or individual light can override them later.",
+        "description": "These are the house-wide defaults. Every room inherits them, and any room or individual light can override them later.",
         "data": {
           "interval": "Update interval",
           "transition": "Transition",
@@ -43,7 +43,7 @@
             "data_description": {
               "take_over_control": "When someone changes a light by hand, stop adapting it until it is switched off again or the timer below expires.",
               "separate_turn_on_commands": "Some bulbs drop the colour when brightness arrives in the same command. Enable this only for those.",
-              "intercept_member_calls": "Only needed if your switches are wired to the individual bulbs instead of the zone. Falls back automatically if unavailable.",
+              "intercept_member_calls": "Only needed if your switches are wired to the individual bulbs instead of the room. Falls back automatically if unavailable.",
               "log_retention_hours": "What the diagnostics page shows survives a restart for this long, in this integration's own store rather than the recorder. Zero keeps nothing, and the page then shows only what happens while it is open."
             }
           }
@@ -51,7 +51,7 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "Better Lighting is already set up. Add zones, scenes and controllers from its entry."
+      "single_instance_allowed": "Better Lighting is already set up. Add rooms, scenes and controllers from its entry."
     },
     "error": {
       "invalid_value": "This value is not valid."
@@ -118,7 +118,7 @@
       },
       "defaults": {
         "title": "Adaptive defaults",
-        "description": "Changing these re-applies to every zone that has not overridden them.",
+        "description": "Changing these re-applies to every room that has not overridden them.",
         "data": {
           "interval": "Update interval",
           "transition": "Transition",
@@ -180,10 +180,10 @@
   },
   "config_subentries": {
     "zone": {
-      "entry_type": "Zone",
+      "entry_type": "Room",
       "initiate_flow": {
-        "user": "Add zone",
-        "reconfigure": "Reconfigure zone"
+        "user": "Add room",
+        "reconfigure": "Reconfigure room"
       },
       "step": {
         "user": {
@@ -196,7 +196,7 @@
             "area_id": "Area"
           },
           "data_description": {
-            "lights": "The lights in this room. A light may belong to only one zone, so that manual changes and scene control are never ambiguous."
+            "lights": "The lights in this room. A light may belong to only one room, so that manual changes and scene control are never ambiguous."
           }
         },
         "add_light": {
@@ -368,7 +368,7 @@
           "data_description": {
             "brightness_offset_pct": "Percentage points added to whatever the curve asks for. Use a negative value for a light that reads too bright.",
             "color_temp_offset_k": "Kelvin added to the curve's colour temperature. Negative is warmer. Applied to colour-only bulbs too.",
-            "min_brightness_pct": "An absolute floor for this light, not a shift of the zone's range. A light that flickers below 15% should be set to 15."
+            "min_brightness_pct": "An absolute floor for this light, not a shift of the room's range. A light that flickers below 15% should be set to 15."
           },
           "sections": {
             "advanced": {
@@ -399,7 +399,7 @@
           "data_description": {
             "brightness_offset_pct": "Percentage points added to whatever the curve asks for. Use a negative value for a light that reads too bright.",
             "color_temp_offset_k": "Kelvin added to the curve's colour temperature. Negative is warmer. Applied to colour-only bulbs too.",
-            "min_brightness_pct": "An absolute floor for this light, not a shift of the zone's range. A light that flickers below 15% should be set to 15."
+            "min_brightness_pct": "An absolute floor for this light, not a shift of the room's range. A light that flickers below 15% should be set to 15."
           },
           "sections": {
             "advanced": {
@@ -638,7 +638,7 @@
         },
         "lights": {
           "title": "Lights",
-          "description": "A zone is one room's lights, controlled together. Each light can belong to only one zone.",
+          "description": "A room is one room's lights, controlled together. Each light can belong to only one room.",
           "data": {
             "name": "Name",
             "lights": "Lights",
@@ -646,7 +646,7 @@
             "area_id": "Area"
           },
           "data_description": {
-            "lights": "The lights in this room. A light may belong to only one zone, so that manual changes and scene control are never ambiguous."
+            "lights": "The lights in this room. A light may belong to only one room, so that manual changes and scene control are never ambiguous."
           }
         },
         "group": {
@@ -661,7 +661,7 @@
             "color_lights_dark_members": "A colour change also switches lights on"
           },
           "data_description": {
-            "remember_on_state": "When the zone is switched back on, light only the lights that were on when it was switched off.",
+            "remember_on_state": "When the room is switched back on, light only the lights that were on when it was switched off.",
             "brightness_strategy": "How one brightness value is derived from the lights that are on.",
             "color_lights_dark_members": "Off by default: changing a room's colour adjusts the light that is there rather than lighting the room. Turn this on to match how Home Assistant's own light groups behave.",
             "hide_members": "Hides the individual lights from dashboards and search, so the room is controlled as one thing. They keep working; they are only out of the way.",
@@ -704,7 +704,7 @@
           "data_description": {
             "night_ignore_presence": "For bedrooms: stop a presence sensor turning the light on during the night.",
             "night_scene_id": "Used when 'What night mode does' is set to apply a scene.",
-            "night_behavior": "'Switch the room off' waits until the room is empty before darkening it, and only when the helper above turns on — the zone's own night switch always dims rather than darkens."
+            "night_behavior": "'Switch the room off' waits until the room is empty before darkening it, and only when the helper above turns on — the room's own night switch always dims rather than darkens."
           }
         },
         "power": {
@@ -783,7 +783,7 @@
       "error": {
         "invalid_value": "This value is not valid.",
         "no_lights": "Pick at least one light.",
-        "light_in_other_zone": "One of these lights already belongs to another zone. A light can only be in one zone.",
+        "light_in_other_zone": "One of these lights already belongs to another room. A light can only be in one room.",
         "light_required": "Choose a light.",
         "name_required": "Give the scene a name.",
         "nothing_to_capture": "None of this room's lights are available to capture.",
@@ -791,7 +791,7 @@
         "binding_entity_required": "Pick the entity your switch publishes to."
       },
       "abort": {
-        "reconfigure_successful": "Zone updated."
+        "reconfigure_successful": "Room updated."
       }
     },
     "mode": {
@@ -1194,7 +1194,7 @@
       "name": "Press",
       "description": "Act as though a light switch in this room was pressed.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Room",
           "description": "Room name or id."
         },
@@ -1212,7 +1212,7 @@
       "name": "Cycle",
       "description": "Move this room along its cycle.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Room",
           "description": "Room name or id."
         },
@@ -1230,7 +1230,7 @@
       "name": "Back to adaptive",
       "description": "Return a room to adaptive lighting, clearing any scene or manual override.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Room",
           "description": "Room name or id."
         }
@@ -1240,7 +1240,7 @@
       "name": "Activate scene",
       "description": "Apply a scene to a room.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Room",
           "description": "Room name or id."
         },
@@ -1254,7 +1254,7 @@
       "name": "Clear manual override",
       "description": "Hand lights back to the adaptive engine.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Room",
           "description": "Room name or id."
         },
@@ -1266,7 +1266,7 @@
     },
     "set_mode": {
       "name": "Set mode state",
-      "description": "Move a cross-zone mode to one of its states.",
+      "description": "Move a cross-room mode to one of its states.",
       "fields": {
         "mode": {
           "name": "Mode",
@@ -1300,7 +1300,7 @@
           "name": "Mode",
           "description": "Mode name or id."
         },
-        "zone": {
+        "room": {
           "name": "Room",
           "description": "Room name or id."
         }
@@ -1310,7 +1310,7 @@
       "name": "Ask again for lights out",
       "description": "Repeats what night mode did when it came on, for the rooms where it is still on. For the light somebody put on in the night and left on: the night switch is no help, because night mode never stopped being on. Does nothing where night mode is off.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Rooms",
           "description": "Which rooms to ask. Left out, every room in the house."
         },
@@ -1324,7 +1324,7 @@
       "name": "Notify with the lights",
       "description": "Say something with a room's lights and then put them back: green when the washing is done, amber when a door was left open, red when it matters. Whatever the room was doing resumes afterwards, and lights that were off go back off.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Rooms",
           "description": "Which rooms to say it in."
         },
@@ -1358,7 +1358,7 @@
       "name": "Play an effect",
       "description": "Play an effect on a room until something stops it -- a candle for the evening, a slow pulse while something is waiting. Give it a time to stop by itself.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Rooms",
           "description": "Which rooms to say it in."
         },
@@ -1392,7 +1392,7 @@
       "name": "Stop the effect",
       "description": "Stop whatever is playing and put the room back to what it was doing.",
       "fields": {
-        "zone": {
+        "room": {
           "name": "Rooms",
           "description": "Which rooms to say it in."
         }

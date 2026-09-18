@@ -33,7 +33,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import ulid as ulid_util
 
 from . import adaptive, panel_schema
-from .config_flow import validate_zone_lights
+from .config_flow import validate_room_lights
 from .const import (
     COLOR_FORMAT_NONE,
     CONF_ADAPTIVE_POSITION,
@@ -49,6 +49,9 @@ from .const import (
     CONF_ON_UNSUPPORTED_COLOR,
     CONF_OTHERS,
     CONF_RGB_COLOR,
+    CONF_ROOM_PROFILES,
+    CONF_ROOM_SCENES,
+    CONF_ROOM_SWITCHES,
     CONF_RULES,
     CONF_SCENE_ID,
     CONF_SCENE_LIGHTS,
@@ -57,21 +60,18 @@ from .const import (
     CONF_STATES,
     CONF_SWITCH_ID,
     CONF_TRANSITION,
-    CONF_ZONE_PROFILES,
-    CONF_ZONE_SCENES,
-    CONF_ZONE_SWITCHES,
     CONTROLLER_SPECS,
     DOMAIN,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
     MODE_SPECS,
-    ZONE_SCENE_SPECS,
-    ZONE_SPECS,
+    ROOM_SCENE_SPECS,
+    ROOM_SPECS,
     SubentryType,
 )
 from .cycle import AdaptivePosition
-from .models import effective_scene_order, zone_scene
-from .render import Trigger, ZoneMode
+from .models import effective_scene_order, room_scene
+from .render import RoomMode, Trigger
 from .schemas import post_validate
 
 _LOGGER = logging.getLogger(__name__)
@@ -177,8 +177,8 @@ def async_register_commands(hass: HomeAssistant) -> None:
         websocket_save_scene,
         websocket_delete_scene,
         websocket_save_hub,
-        websocket_save_zone,
-        websocket_delete_zone,
+        websocket_save_room,
+        websocket_delete_room,
         websocket_save_mode,
         websocket_delete_mode,
         websocket_save_collection,
@@ -197,9 +197,9 @@ def _entry(hass: HomeAssistant) -> Any:
     return entries[0] if entries else None
 
 
-def _zone_subentry(entry: Any, zone_id: str) -> Any:
-    subentry = entry.subentries.get(zone_id)
-    if subentry is None or subentry.subentry_type != SubentryType.ZONE.value:
+def _room_subentry(entry: Any, room_id: str) -> Any:
+    subentry = entry.subentries.get(room_id)
+    if subentry is None or subentry.subentry_type != SubentryType.ROOM.value:
         return None
     return subentry
 
@@ -219,8 +219,8 @@ def websocket_config(
     rooms = []
     modes = []
     for subentry in entry.subentries.values():
-        if subentry.subentry_type == SubentryType.ZONE.value:
-            scenes = [dict(s) for s in (subentry.data.get(CONF_ZONE_SCENES) or ())]
+        if subentry.subentry_type == SubentryType.ROOM.value:
+            scenes = [dict(s) for s in (subentry.data.get(CONF_ROOM_SCENES) or ())]
             scene_ids = [s.get(CONF_SCENE_ID) for s in scenes if s.get(CONF_SCENE_ID)]
             rooms.append(
                 {
@@ -249,7 +249,7 @@ def websocket_config(
                                 ),
                             )
                         )
-                        for switch in (subentry.data.get(CONF_ZONE_SWITCHES) or ())
+                        for switch in (subentry.data.get(CONF_ROOM_SWITCHES) or ())
                     ],
                     # Everything else the room stores, so the panel can edit
                     # any of it without a round trip per screen.
@@ -271,7 +271,7 @@ def websocket_config(
 
 
 async def _async_apply_draft(
-    hass: HomeAssistant, zone_id: str, scene: dict[str, Any]
+    hass: HomeAssistant, room_id: str, scene: dict[str, Any]
 ) -> bool:
     """Show a draft on the actual bulbs.
 
@@ -282,15 +282,15 @@ async def _async_apply_draft(
     entry = _entry(hass)
     if entry is None:
         return False
-    controller = entry.runtime_data.controllers.get(zone_id)
+    controller = entry.runtime_data.controllers.get(room_id)
     if controller is None:
         return False
 
     draft = dict(scene)
     draft[CONF_SCENE_ID] = DRAFT_ID
     draft.setdefault(CONF_NAME, "Draft")
-    controller.scenes[DRAFT_ID] = zone_scene(draft, zone_id)
-    await controller.async_set_mode(ZoneMode.SCENE, DRAFT_ID)
+    controller.scenes[DRAFT_ID] = room_scene(draft, room_id)
+    await controller.async_set_mode(RoomMode.SCENE, DRAFT_ID)
     return True
 
 
@@ -298,7 +298,7 @@ async def _async_apply_draft(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/preview",
-        vol.Required("zone_id"): str,
+        vol.Required("room_id"): str,
         vol.Required("scene"): dict,
     }
 )
@@ -307,13 +307,13 @@ async def websocket_preview(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Put a draft on the wall."""
-    ok = await _async_apply_draft(hass, msg["zone_id"], msg["scene"])
+    ok = await _async_apply_draft(hass, msg["room_id"], msg["scene"])
     connection.send_result(msg["id"], {"applied": ok})
 
 
 @websocket_api.require_admin
 @websocket_api.websocket_command(
-    {vol.Required("type"): f"{DOMAIN}/stop_preview", vol.Required("zone_id"): str}
+    {vol.Required("type"): f"{DOMAIN}/stop_preview", vol.Required("room_id"): str}
 )
 @websocket_api.async_response
 async def websocket_stop_preview(
@@ -321,7 +321,7 @@ async def websocket_stop_preview(
 ) -> None:
     """Put the room back on the curve and forget the draft."""
     entry = _entry(hass)
-    controller = entry.runtime_data.controllers.get(msg["zone_id"]) if entry else None
+    controller = entry.runtime_data.controllers.get(msg["room_id"]) if entry else None
     if controller is not None:
         controller.scenes.pop(DRAFT_ID, None)
         await controller.async_set_adaptive()
@@ -332,7 +332,7 @@ async def websocket_stop_preview(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/save_scene",
-        vol.Required("zone_id"): str,
+        vol.Required("room_id"): str,
         vol.Required("scene"): dict,
     }
 )
@@ -342,7 +342,7 @@ async def websocket_save_scene(
 ) -> None:
     """Write a scene into its room, adding or replacing by id."""
     entry = _entry(hass)
-    subentry = _zone_subentry(entry, msg["zone_id"]) if entry else None
+    subentry = _room_subentry(entry, msg["room_id"]) if entry else None
     if subentry is None:
         connection.send_error(msg["id"], "not_found", "No such room")
         return
@@ -354,7 +354,7 @@ async def websocket_save_scene(
     scene.setdefault(CONF_NAME, "Scene")
     scene.setdefault(CONF_SCENE_LIGHTS, {})
 
-    scenes = [dict(s) for s in (subentry.data.get(CONF_ZONE_SCENES) or ())]
+    scenes = [dict(s) for s in (subentry.data.get(CONF_ROOM_SCENES) or ())]
     for index, existing in enumerate(scenes):
         if existing.get(CONF_SCENE_ID) == scene[CONF_SCENE_ID]:
             scenes[index] = scene
@@ -363,7 +363,7 @@ async def websocket_save_scene(
         scenes.append(scene)
 
     hass.config_entries.async_update_subentry(
-        entry, subentry, data={**subentry.data, CONF_ZONE_SCENES: scenes}
+        entry, subentry, data={**subentry.data, CONF_ROOM_SCENES: scenes}
     )
     connection.send_result(msg["id"], {"scene_id": scene[CONF_SCENE_ID]})
 
@@ -372,7 +372,7 @@ async def websocket_save_scene(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/delete_scene",
-        vol.Required("zone_id"): str,
+        vol.Required("room_id"): str,
         vol.Required("scene_id"): str,
     }
 )
@@ -381,18 +381,18 @@ async def websocket_delete_scene(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     entry = _entry(hass)
-    subentry = _zone_subentry(entry, msg["zone_id"]) if entry else None
+    subentry = _room_subentry(entry, msg["room_id"]) if entry else None
     if subentry is None:
         connection.send_error(msg["id"], "not_found", "No such room")
         return
 
     scenes = [
         dict(s)
-        for s in (subentry.data.get(CONF_ZONE_SCENES) or ())
+        for s in (subentry.data.get(CONF_ROOM_SCENES) or ())
         if s.get(CONF_SCENE_ID) != msg["scene_id"]
     ]
     hass.config_entries.async_update_subentry(
-        entry, subentry, data={**subentry.data, CONF_ZONE_SCENES: scenes}
+        entry, subentry, data={**subentry.data, CONF_ROOM_SCENES: scenes}
     )
     connection.send_result(msg["id"], {"deleted": True})
 
@@ -441,13 +441,13 @@ async def websocket_save_hub(
 @websocket_api.require_admin
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): f"{DOMAIN}/save_zone",
-        vol.Optional("zone_id"): vol.Any(str, None),
+        vol.Required("type"): f"{DOMAIN}/save_room",
+        vol.Optional("room_id"): vol.Any(str, None),
         vol.Required("data"): dict,
     }
 )
 @websocket_api.async_response
-async def websocket_save_zone(
+async def websocket_save_room(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Add a room, or replace one room's settings wholesale."""
@@ -456,18 +456,18 @@ async def websocket_save_zone(
         connection.send_error(msg["id"], "not_found", "Not set up")
         return
 
-    zone_id = msg.get("zone_id")
-    cleaned, errors = _clean(ZONE_SPECS, msg["data"])
-    errors |= validate_zone_lights(
-        entry, cleaned.get(CONF_LIGHTS) or [], exclude_subentry_id=zone_id
+    room_id = msg.get("room_id")
+    cleaned, errors = _clean(ROOM_SPECS, msg["data"])
+    errors |= validate_room_lights(
+        entry, cleaned.get(CONF_LIGHTS) or [], exclude_subentry_id=room_id
     )
     if errors:
         connection.send_error(msg["id"], "invalid", json.dumps(errors))
         return
 
     title = cleaned.get(CONF_NAME) or "Room"
-    if zone_id:
-        subentry = _zone_subentry(entry, zone_id)
+    if room_id:
+        subentry = _room_subentry(entry, room_id)
         if subentry is None:
             connection.send_error(msg["id"], "not_found", "No such room")
             return
@@ -475,7 +475,7 @@ async def websocket_save_zone(
         # settings save must not drop them.
         keep = {
             key: subentry.data[key]
-            for key in (CONF_ZONE_SCENES, CONF_ZONE_SWITCHES, CONF_ZONE_PROFILES)
+            for key in (CONF_ROOM_SCENES, CONF_ROOM_SWITCHES, CONF_ROOM_PROFILES)
             if key in subentry.data
         }
         hass.config_entries.async_update_subentry(
@@ -486,7 +486,7 @@ async def websocket_save_zone(
             entry,
             ConfigSubentry(
                 data=cleaned,
-                subentry_type=SubentryType.ZONE.value,
+                subentry_type=SubentryType.ROOM.value,
                 title=title,
                 unique_id=None,
             ),
@@ -496,17 +496,17 @@ async def websocket_save_zone(
 
 @websocket_api.require_admin
 @websocket_api.websocket_command(
-    {vol.Required("type"): f"{DOMAIN}/delete_zone", vol.Required("zone_id"): str}
+    {vol.Required("type"): f"{DOMAIN}/delete_room", vol.Required("room_id"): str}
 )
 @websocket_api.async_response
-async def websocket_delete_zone(
+async def websocket_delete_room(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     entry = _entry(hass)
-    if entry is None or msg["zone_id"] not in entry.subentries:
+    if entry is None or msg["room_id"] not in entry.subentries:
         connection.send_error(msg["id"], "not_found", "No such room")
         return
-    hass.config_entries.async_remove_subentry(entry, msg["zone_id"])
+    hass.config_entries.async_remove_subentry(entry, msg["room_id"])
     connection.send_result(msg["id"], {"deleted": True})
 
 
@@ -578,10 +578,10 @@ async def websocket_delete_mode(
 @websocket_api.require_admin
 @websocket_api.websocket_command(
     {
-        vol.Required("type"): f"{DOMAIN}/save_zone_collection",
-        vol.Required("zone_id"): str,
+        vol.Required("type"): f"{DOMAIN}/save_room_collection",
+        vol.Required("room_id"): str,
         vol.Required("key"): vol.In(
-            [CONF_ZONE_SCENES, CONF_ZONE_SWITCHES, CONF_ZONE_PROFILES]
+            [CONF_ROOM_SCENES, CONF_ROOM_SWITCHES, CONF_ROOM_PROFILES]
         ),
         vol.Required("items"): list,
     }
@@ -597,19 +597,19 @@ async def websocket_save_collection(
     in the order they are stored.
     """
     entry = _entry(hass)
-    subentry = _zone_subentry(entry, msg["zone_id"]) if entry else None
+    subentry = _room_subentry(entry, msg["room_id"]) if entry else None
     if subentry is None:
         connection.send_error(msg["id"], "not_found", "No such room")
         return
 
     specs = {
-        CONF_ZONE_SCENES: ZONE_SCENE_SPECS,
-        CONF_ZONE_SWITCHES: CONTROLLER_SPECS,
-        CONF_ZONE_PROFILES: LIGHT_PROFILE_SPECS,
+        CONF_ROOM_SCENES: ROOM_SCENE_SPECS,
+        CONF_ROOM_SWITCHES: CONTROLLER_SPECS,
+        CONF_ROOM_PROFILES: LIGHT_PROFILE_SPECS,
     }[msg["key"]]
     id_key = {
-        CONF_ZONE_SCENES: CONF_SCENE_ID,
-        CONF_ZONE_SWITCHES: CONF_SWITCH_ID,
+        CONF_ROOM_SCENES: CONF_SCENE_ID,
+        CONF_ROOM_SWITCHES: CONF_SWITCH_ID,
     }.get(msg["key"])
 
     items = []
@@ -695,7 +695,7 @@ def _split_by_room(
     """Which of a scene's lights belong to which room, and which to none."""
     owner: dict[str, str] = {}
     for subentry in entry.subentries.values():
-        if subentry.subentry_type != SubentryType.ZONE.value:
+        if subentry.subentry_type != SubentryType.ROOM.value:
             continue
         for light in subentry.data.get(CONF_LIGHTS) or ():
             owner[light] = subentry.subentry_id
@@ -706,8 +706,8 @@ def _split_by_room(
         if not entity_id.startswith("light."):
             # Scenes can set anything; we only know what to do with lights.
             homeless.append(entity_id)
-        elif (zone_id := owner.get(entity_id)) is not None:
-            by_room.setdefault(zone_id, []).append(entity_id)
+        elif (room_id := owner.get(entity_id)) is not None:
+            by_room.setdefault(room_id, []).append(entity_id)
         else:
             homeless.append(entity_id)
     return by_room, homeless
@@ -737,7 +737,7 @@ def websocket_importable_scenes(
                 # scene covering the lounge and the kitchen becomes a scene in
                 # each, since a scene belongs to exactly one room here.
                 "rooms": {
-                    zone_id: sorted(lights) for zone_id, lights in by_room.items()
+                    room_id: sorted(lights) for room_id, lights in by_room.items()
                 },
                 "skipped": sorted(homeless),
             }
@@ -752,7 +752,7 @@ def websocket_importable_scenes(
     {
         vol.Required("type"): f"{DOMAIN}/import_scene",
         vol.Required("entity_id"): str,
-        vol.Required("zone_ids"): [str],
+        vol.Required("room_ids"): [str],
         vol.Optional("name"): str,
     }
 )
@@ -776,9 +776,9 @@ async def websocket_import_scene(
     by_room, _ = _split_by_room(hass, entry, states)
     created: dict[str, str] = {}
 
-    for zone_id in msg["zone_ids"]:
-        lights = by_room.get(zone_id)
-        subentry = _zone_subentry(entry, zone_id)
+    for room_id in msg["room_ids"]:
+        lights = by_room.get(room_id)
+        subentry = _room_subentry(entry, room_id)
         if not lights or subentry is None:
             continue
         entries = {
@@ -802,13 +802,13 @@ async def websocket_import_scene(
             subentry,
             data={
                 **subentry.data,
-                CONF_ZONE_SCENES: [
-                    *(subentry.data.get(CONF_ZONE_SCENES) or ()),
+                CONF_ROOM_SCENES: [
+                    *(subentry.data.get(CONF_ROOM_SCENES) or ()),
                     scene,
                 ],
             },
         )
-        created[zone_id] = scene[CONF_SCENE_ID]
+        created[room_id] = scene[CONF_SCENE_ID]
 
     connection.send_result(msg["id"], {"created": created})
 
@@ -899,7 +899,7 @@ def websocket_activity(
 
 @websocket_api.require_admin
 @websocket_api.websocket_command(
-    {vol.Required("type"): f"{DOMAIN}/curve", vol.Required("zone_id"): str}
+    {vol.Required("type"): f"{DOMAIN}/curve", vol.Required("room_id"): str}
 )
 @callback
 def websocket_curve(
@@ -912,11 +912,11 @@ def websocket_curve(
     shape you asked for. Sampling it and drawing it turns "the evening feels
     too bright" into something you can point at.
 
-    Computed with the room's own resolved config -- hub defaults, zone
+    Computed with the room's own resolved config -- hub defaults, room
     overrides, the lot -- so what is drawn is what the renderer will use.
     """
     entry = _entry(hass)
-    controller = entry.runtime_data.controllers.get(msg["zone_id"]) if entry else None
+    controller = entry.runtime_data.controllers.get(msg["room_id"]) if entry else None
     if controller is None:
         connection.send_error(msg["id"], "not_found", "No such room")
         return

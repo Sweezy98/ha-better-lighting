@@ -10,33 +10,33 @@ from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.better_lighting.const import DOMAIN, SubentryType
-from custom_components.better_lighting.render import ZoneMode
+from custom_components.better_lighting.render import RoomMode
 from tests.conftest import (
     MemberLight,
-    add_zone_switch,
+    add_room_switch,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
     subentry_ids,
-    zone_subentry,
 )
 from tests.ha.test_scenes import scene_subentry
 
-ZONE = "light.kitchen"
+ROOM = "light.kitchen"
 SELECT = "select.kitchen_scenes"
 
 
 def controller_subentry(
     name: str = "Oven switch",
     *,
-    zone_id: str,
+    room_id: str,
     scene_order: list[str],
     binding_entity: str | None = None,
     **overrides,
 ) -> ConfigSubentryData:
     data = {
         "name": name,
-        "zone_id": zone_id,
+        "zone_id": room_id,
         "binding_type": "entity_state" if binding_entity else "service_only",
         "binding_entity": binding_entity,
         "is_default": False,
@@ -61,10 +61,10 @@ def controller_subentry(
     )
 
 
-async def press_zone(hass: HomeAssistant) -> None:
-    """A bare turn_on on the zone light: the plain-wall-switch path."""
+async def press_room(hass: HomeAssistant) -> None:
+    """A bare turn_on on the room light: the plain-wall-switch path."""
     await hass.services.async_call(
-        "light", "turn_on", {"entity_id": ZONE}, blocking=True
+        "light", "turn_on", {"entity_id": ROOM}, blocking=True
     )
     await hass.async_block_till_done()
 
@@ -75,10 +75,10 @@ class TestPlainSwitchCycling:
     async def test_first_press_turns_on_adaptive(self, hass: HomeAssistant) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+            hass, hub_entry(subentries_data=[room_subentry(), scene_subentry("Cosy")])
         )
 
-        await press_zone(hass)
+        await press_room(hass)
 
         assert hass.states.get(SELECT).state == "Adaptive"
         assert hass.states.get("light.one").state == "on"
@@ -89,28 +89,28 @@ class TestPlainSwitchCycling:
             hass,
             hub_entry(
                 subentries_data=[
-                    zone_subentry(),
+                    room_subentry(),
                     scene_subentry("Cosy"),
                     scene_subentry("Bright", brightness=100),
                 ]
             ),
         )
 
-        await press_zone(hass)
+        await press_room(hass)
         assert hass.states.get(SELECT).state == "Adaptive"
-        await press_zone(hass)
+        await press_room(hass)
         assert hass.states.get(SELECT).state == "Cosy"
-        await press_zone(hass)
+        await press_room(hass)
         assert hass.states.get(SELECT).state == "Bright"
 
     async def test_the_cycle_wraps_back_to_adaptive(self, hass: HomeAssistant) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+            hass, hub_entry(subentries_data=[room_subentry(), scene_subentry("Cosy")])
         )
 
         for _ in range(3):
-            await press_zone(hass)
+            await press_room(hass)
         assert hass.states.get(SELECT).state == "Adaptive"
 
 
@@ -119,10 +119,10 @@ class TestPerSwitchOrders:
 
     async def _setup(self, hass: HomeAssistant):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        zone = zone_subentry()
+        room = room_subentry()
         entry = hub_entry(
             subentries_data=[
-                zone,
+                room,
                 scene_subentry("Cooking", brightness=100),
                 scene_subentry("Dining", brightness=30),
             ]
@@ -130,21 +130,37 @@ class TestPerSwitchOrders:
         await setup_hub(hass, entry)
 
         ids = subentry_ids(entry)
-        zone_id = ids["Kitchen"]
-        add_zone_switch(
+        room_id = ids["Kitchen"]
+        add_room_switch(
             hass,
             entry,
-            controller_subentry("Oven", zone_id=zone_id, scene_order=[ids["Cooking"]]),
-            zone_id,
+            controller_subentry("Oven", room_id=room_id, scene_order=[ids["Cooking"]]),
+            room_id,
         )
-        add_zone_switch(
+        add_room_switch(
             hass,
             entry,
-            controller_subentry("Door", zone_id=zone_id, scene_order=[ids["Dining"]]),
-            zone_id,
+            controller_subentry("Door", room_id=room_id, scene_order=[ids["Dining"]]),
+            room_id,
         )
         await hass.async_block_till_done()
         return entry
+
+    async def test_the_old_zone_field_still_targets_a_room(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Automations written before rooms were called rooms pass ``zone``.
+
+        Both spellings are accepted and merged; only ``room`` is documented.
+        """
+        await self._setup(hass)
+
+        await hass.services.async_call(
+            DOMAIN, "press", {"zone": "kitchen", "controller": "Oven"}, blocking=True
+        )
+        await hass.async_block_till_done()
+
+        assert hass.states.get(SELECT).state == "Adaptive"
 
     async def test_each_switch_reaches_its_own_scene_first(
         self, hass: HomeAssistant
@@ -152,13 +168,13 @@ class TestPerSwitchOrders:
         await self._setup(hass)
 
         await hass.services.async_call(
-            DOMAIN, "press", {"zone": "kitchen", "controller": "Oven"}, blocking=True
+            DOMAIN, "press", {"room": "kitchen", "controller": "Oven"}, blocking=True
         )
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Adaptive"
 
         await hass.services.async_call(
-            DOMAIN, "press", {"zone": "kitchen", "controller": "Oven"}, blocking=True
+            DOMAIN, "press", {"room": "kitchen", "controller": "Oven"}, blocking=True
         )
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Cooking"
@@ -172,7 +188,7 @@ class TestPerSwitchOrders:
             await hass.services.async_call(
                 DOMAIN,
                 "press",
-                {"zone": "kitchen", "controller": "Oven"},
+                {"room": "kitchen", "controller": "Oven"},
                 blocking=True,
             )
             await hass.async_block_till_done()
@@ -180,13 +196,13 @@ class TestPerSwitchOrders:
 
         # Cooking is not on the door switch's list, so it starts from the top.
         await hass.services.async_call(
-            DOMAIN, "press", {"zone": "kitchen", "controller": "Door"}, blocking=True
+            DOMAIN, "press", {"room": "kitchen", "controller": "Door"}, blocking=True
         )
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Adaptive"
 
         await hass.services.async_call(
-            DOMAIN, "press", {"zone": "kitchen", "controller": "Door"}, blocking=True
+            DOMAIN, "press", {"room": "kitchen", "controller": "Door"}, blocking=True
         )
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Dining"
@@ -216,18 +232,18 @@ class TestEntityBinding:
             {"event_type": "single"},
         )
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        zone = zone_subentry()
+        room = room_subentry()
         entry = hub_entry(
-            subentries_data=[zone, *(scene_subentry(name) for name in scenes)]
+            subentries_data=[room, *(scene_subentry(name) for name in scenes)]
         )
         await setup_hub(hass, entry)
         ids = subentry_ids(entry)
-        add_zone_switch(
+        add_room_switch(
             hass,
             entry,
             controller_subentry(
                 "Wall",
-                zone_id=ids["Kitchen"],
+                room_id=ids["Kitchen"],
                 scene_order=[ids[name] for name in scenes],
                 binding_entity="event.button",
                 **overrides,
@@ -244,7 +260,7 @@ class TestEntityBinding:
             {"event_type": event_type},
         )
 
-    async def test_a_press_cycles_the_zone(self, hass: HomeAssistant) -> None:
+    async def test_a_press_cycles_the_room(self, hass: HomeAssistant) -> None:
         await self._setup(hass)
         # The room is dark, so the first press lights it in adaptive rather
         # than jumping straight into a scene.
@@ -524,19 +540,19 @@ class TestAnUnconfiguredList:
         hass.states.async_set("sensor.plate", "idle")
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(),
+                room_subentry(),
                 scene_subentry("Cosy"),
                 scene_subentry("Bright", brightness=100),
             ]
         )
         await setup_hub(hass, entry)
         ids = subentry_ids(entry)
-        add_zone_switch(
+        add_room_switch(
             hass,
             entry,
             controller_subentry(
                 "Plate",
-                zone_id=ids["Kitchen"],
+                room_id=ids["Kitchen"],
                 scene_order=[],
                 binding_entity="sensor.plate",
                 press_attribute="",
@@ -562,12 +578,12 @@ class TestAnUnconfiguredList:
         entry, ids = await self._setup(hass)
         # Written the way the panel writes it: the list this switch keeps, and
         # the scenes it was told to drop.
-        zone = entry.subentries[ids["Kitchen"]]
-        switches = [dict(s) for s in zone.data["switches"]]
+        room = entry.subentries[ids["Kitchen"]]
+        switches = [dict(s) for s in room.data["switches"]]
         switches[0]["scene_order"] = [ids["Bright"]]
         switches[0]["scene_order_excluded"] = [ids["Cosy"]]
         hass.config_entries.async_update_subentry(
-            entry, zone, data={**zone.data, "switches": switches}
+            entry, room, data={**room.data, "switches": switches}
         )
         await hass.async_block_till_done()
 
@@ -577,7 +593,7 @@ class TestAnUnconfiguredList:
 
 
 class TestToggleSwitches:
-    """A switch wired straight to the zone's light entity that toggles.
+    """A switch wired straight to the room's light entity that toggles.
 
     Its second press arrives as a turn-off, which read literally means the
     room can only alternate on and off -- never cycle.
@@ -587,19 +603,19 @@ class TestToggleSwitches:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(),
+                room_subentry(),
                 scene_subentry("Cosy"),
                 scene_subentry("Bright", brightness=100),
             ]
         )
         await setup_hub(hass, entry)
         ids = subentry_ids(entry)
-        add_zone_switch(
+        add_room_switch(
             hass,
             entry,
             controller_subentry(
                 "Wall plate",
-                zone_id=ids["Kitchen"],
+                room_id=ids["Kitchen"],
                 scene_order=[ids["Cosy"], ids["Bright"]],
                 is_default=True,
                 binding_type="zone_light",
@@ -612,7 +628,7 @@ class TestToggleSwitches:
 
     async def _toggle_off(self, hass: HomeAssistant) -> None:
         await hass.services.async_call(
-            "light", "turn_off", {"entity_id": ZONE}, blocking=True
+            "light", "turn_off", {"entity_id": ROOM}, blocking=True
         )
         await hass.async_block_till_done()
 
@@ -620,7 +636,7 @@ class TestToggleSwitches:
         self, hass: HomeAssistant
     ) -> None:
         await self._setup(hass)
-        await press_zone(hass)
+        await press_room(hass)
         assert hass.states.get(SELECT).state == "Adaptive"
 
         await self._toggle_off(hass)
@@ -630,7 +646,7 @@ class TestToggleSwitches:
         self, hass: HomeAssistant
     ) -> None:
         await self._setup(hass, any_change_is_a_press=True)
-        await press_zone(hass)
+        await press_room(hass)
         assert hass.states.get(SELECT).state == "Adaptive"
 
         await self._toggle_off(hass)
@@ -649,16 +665,16 @@ class TestServices:
     async def _setup(self, hass: HomeAssistant):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+            hass, hub_entry(subentries_data=[room_subentry(), scene_subentry("Cosy")])
         )
-        await press_zone(hass)
+        await press_room(hass)
 
     async def test_activate_scene_by_name(self, hass: HomeAssistant) -> None:
         await self._setup(hass)
         await hass.services.async_call(
             DOMAIN,
             "activate_scene",
-            {"zone": "kitchen", "scene": "Cosy"},
+            {"room": "kitchen", "scene": "Cosy"},
             blocking=True,
         )
         await hass.async_block_till_done()
@@ -669,13 +685,13 @@ class TestServices:
         await hass.services.async_call(
             DOMAIN,
             "activate_scene",
-            {"zone": "kitchen", "scene": "Cosy"},
+            {"room": "kitchen", "scene": "Cosy"},
             blocking=True,
         )
         await hass.async_block_till_done()
 
         await hass.services.async_call(
-            DOMAIN, "set_adaptive", {"zone": "kitchen"}, blocking=True
+            DOMAIN, "set_adaptive", {"room": "kitchen"}, blocking=True
         )
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Adaptive"
@@ -683,7 +699,7 @@ class TestServices:
     async def test_cycle_service(self, hass: HomeAssistant) -> None:
         await self._setup(hass)
         await hass.services.async_call(
-            DOMAIN, "cycle", {"zone": "kitchen"}, blocking=True
+            DOMAIN, "cycle", {"room": "kitchen"}, blocking=True
         )
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Cosy"
@@ -691,18 +707,18 @@ class TestServices:
     async def test_targeting_by_entity(self, hass: HomeAssistant) -> None:
         await self._setup(hass)
         await hass.services.async_call(
-            DOMAIN, "cycle", {"entity_id": ZONE}, blocking=True
+            DOMAIN, "cycle", {"entity_id": ROOM}, blocking=True
         )
         await hass.async_block_till_done()
         assert hass.states.get(SELECT).state == "Cosy"
 
-    async def test_an_unknown_zone_is_rejected(self, hass: HomeAssistant) -> None:
+    async def test_an_unknown_room_is_rejected(self, hass: HomeAssistant) -> None:
         await self._setup(hass)
         from homeassistant.exceptions import ServiceValidationError
 
         try:
             await hass.services.async_call(
-                DOMAIN, "cycle", {"zone": "nowhere"}, blocking=True
+                DOMAIN, "cycle", {"room": "nowhere"}, blocking=True
             )
         except ServiceValidationError:
             return
@@ -713,9 +729,9 @@ class TestButtons:
     async def test_cycle_and_reset_buttons(self, hass: HomeAssistant) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry(), scene_subentry("Cosy")])
+            hass, hub_entry(subentries_data=[room_subentry(), scene_subentry("Cosy")])
         )
-        await press_zone(hass)
+        await press_room(hass)
 
         await hass.services.async_call(
             "button", "press", {"entity_id": "button.kitchen_next_scene"}, blocking=True
@@ -736,9 +752,9 @@ class TestButtons:
 class TestManualOverride:
     async def _setup(self, hass: HomeAssistant):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        entry = await setup_hub(hass, hub_entry(subentries_data=[zone_subentry()]))
-        await press_zone(hass)
-        return entry.runtime_data.controllers[next(iter(entry.runtime_data.zones))]
+        entry = await setup_hub(hass, hub_entry(subentries_data=[room_subentry()]))
+        await press_room(hass)
+        return entry.runtime_data.controllers[next(iter(entry.runtime_data.rooms))]
 
     async def test_a_foreign_change_marks_the_light_manual(
         self, hass: HomeAssistant
@@ -820,7 +836,7 @@ class TestManualOverride:
         await hass.async_block_till_done()
         assert controller.manual
 
-        await press_zone(hass)
+        await press_room(hass)
 
         assert not controller.manual
         assert hass.states.get(SELECT).state == "Adaptive"
@@ -831,9 +847,9 @@ class TestFollowingTheRoom:
 
     async def _setup(self, hass: HomeAssistant):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-        entry = await setup_hub(hass, hub_entry(subentries_data=[zone_subentry()]))
-        await press_zone(hass)
-        return entry.runtime_data.controllers[next(iter(entry.runtime_data.zones))]
+        entry = await setup_hub(hass, hub_entry(subentries_data=[room_subentry()]))
+        await press_room(hass)
+        return entry.runtime_data.controllers[next(iter(entry.runtime_data.rooms))]
 
     async def _switch_off(self, hass: HomeAssistant, *entity_ids: str) -> None:
         for entity_id in entity_ids:
@@ -850,12 +866,12 @@ class TestFollowingTheRoom:
         self, hass: HomeAssistant
     ) -> None:
         controller = await self._setup(hass)
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
         await self._switch_off(hass, "light.one", "light.two")
 
-        assert hass.states.get(ZONE).state == "off"
-        assert controller.mode is ZoneMode.OFF
+        assert hass.states.get(ROOM).state == "off"
+        assert controller.mode is RoomMode.OFF
 
     async def test_one_light_left_on_is_not_the_room_going_off(
         self, hass: HomeAssistant
@@ -864,7 +880,7 @@ class TestFollowingTheRoom:
 
         await self._switch_off(hass, "light.one")
 
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
     async def test_the_next_press_starts_the_cycle_again(
         self, hass: HomeAssistant
@@ -873,9 +889,9 @@ class TestFollowingTheRoom:
         controller = await self._setup(hass)
         await self._switch_off(hass, "light.one", "light.two")
 
-        await press_zone(hass)
+        await press_room(hass)
 
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
         assert controller.active_scene_id is None
 
     async def test_lighting_one_by_hand_marks_the_room_on(
@@ -883,7 +899,7 @@ class TestFollowingTheRoom:
     ) -> None:
         controller = await self._setup(hass)
         await self._switch_off(hass, "light.one", "light.two")
-        assert controller.mode is ZoneMode.OFF
+        assert controller.mode is RoomMode.OFF
 
         await hass.services.async_call(
             "light",
@@ -894,7 +910,7 @@ class TestFollowingTheRoom:
         )
         await hass.async_block_till_done()
 
-        assert controller.mode is not ZoneMode.OFF
+        assert controller.mode is not RoomMode.OFF
 
 
 class TestTwoButtonSwitches:
@@ -903,15 +919,15 @@ class TestTwoButtonSwitches:
     async def _setup(self, hass: HomeAssistant, **overrides):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         hass.states.async_set("sensor.rocker", "idle")
-        entry = hub_entry(subentries_data=[zone_subentry()])
+        entry = hub_entry(subentries_data=[room_subentry()])
         await setup_hub(hass, entry)
         ids = subentry_ids(entry)
-        add_zone_switch(
+        add_room_switch(
             hass,
             entry,
             controller_subentry(
                 "Rocker",
-                zone_id=ids["Kitchen"],
+                room_id=ids["Kitchen"],
                 scene_order=[],
                 binding_entity="sensor.rocker",
                 press_attribute="",
@@ -939,11 +955,11 @@ class TestTwoButtonSwitches:
     ) -> None:
         controller = await self._setup(hass)
         await self._push(hass, "up")
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
         await self._push(hass, "down")
 
-        assert controller.mode is ZoneMode.OFF
+        assert controller.mode is RoomMode.OFF
 
     async def test_each_half_pairs_its_own_taps(
         self, hass: HomeAssistant, freezer
@@ -957,7 +973,7 @@ class TestTwoButtonSwitches:
             down_double_press_action="reset_adaptive",
         )
         await self._push(hass, "up")
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
         # Two taps of the lower half, whose single press switches the room off.
         for _ in range(2):
@@ -967,7 +983,7 @@ class TestTwoButtonSwitches:
         await hass.async_block_till_done()
 
         # Read as its double press instead, which is not "off".
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
         # And the upper half, which said nothing about pairing, is unchanged.
         await self._push(hass, "idle")
@@ -975,7 +991,7 @@ class TestTwoButtonSwitches:
         freezer.tick(dt.timedelta(seconds=1))
         async_fire_time_changed(hass)
         await hass.async_block_till_done()
-        assert controller.mode is ZoneMode.OFF
+        assert controller.mode is RoomMode.OFF
 
     async def test_holding_down_dims_without_leaving_the_curve(
         self, hass: HomeAssistant
@@ -988,7 +1004,7 @@ class TestTwoButtonSwitches:
 
         assert controller.bias_pct == -10
         # Still adaptive: the room keeps tracking the sun, ten points below.
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
     async def test_holding_keeps_dimming_until_released(
         self, hass: HomeAssistant, freezer
@@ -1070,18 +1086,18 @@ class TestTwoButtonSwitches:
             hass, down_long_press_action="zone_off", hold_interval_ms=200
         )
         await self._push(hass, "up")
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
         await self._push(hass, "down_hold")
-        assert controller.mode is ZoneMode.OFF
+        assert controller.mode is RoomMode.OFF
 
         await self._push(hass, "up")
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
         freezer.tick(dt.timedelta(seconds=1))
         async_fire_time_changed(hass)
         await hass.async_block_till_done()
-        assert controller.mode is ZoneMode.ADAPTIVE
+        assert controller.mode is RoomMode.ADAPTIVE
 
     async def test_holding_up_brightens(self, hass: HomeAssistant) -> None:
         controller = await self._setup(hass)
@@ -1100,10 +1116,10 @@ class TestTwoButtonSwitches:
 
         await self._push(hass, "off")
 
-        assert controller.mode is ZoneMode.OFF
+        assert controller.mode is RoomMode.OFF
 
 
-async def test_every_zone_button_is_available_without_hunting(
+async def test_every_room_button_is_available_without_hunting(
     hass: HomeAssistant,
 ) -> None:
     """Cycle back and clear-manual used to be off until you went looking."""

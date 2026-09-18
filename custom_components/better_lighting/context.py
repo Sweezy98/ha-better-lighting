@@ -38,7 +38,7 @@ ECHO_WINDOW = 0.6
 class ContextOrigin:
     """Why we issued a command, for diagnostics and log tracing."""
 
-    zone_id: str
+    room_id: str
     reason: str
     created_at: float
 
@@ -56,16 +56,16 @@ class ContextRegistry:
         self._last_command: dict[str, float] = {}
 
     def new_context(
-        self, zone_id: str, reason: str, parent: Context | None = None
+        self, room_id: str, reason: str, parent: Context | None = None
     ) -> Context:
         """Mint a context for an outgoing command and remember it."""
         context = Context(parent_id=parent.id if parent else None)
-        self.register(context, zone_id, reason)
+        self.register(context, room_id, reason)
         return context
 
-    def register(self, context: Context, zone_id: str, reason: str) -> None:
+    def register(self, context: Context, room_id: str, reason: str) -> None:
         now = time.monotonic()
-        self._contexts[context.id] = ContextOrigin(zone_id, reason, now)
+        self._contexts[context.id] = ContextOrigin(room_id, reason, now)
         self._contexts.move_to_end(context.id)
         self._prune(now)
 

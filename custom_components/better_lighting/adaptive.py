@@ -80,7 +80,7 @@ class SunEventOrderError(ValueError):
     """The configured offsets or fixed times produced an impossible day.
 
     Raised rather than silently producing nonsense, but the caller is expected
-    to log this once per configuration change and freeze the zone at its last
+    to log this once per configuration change and freeze the room at its last
     good settings -- not to log it on every interval tick.
     """
 
@@ -312,7 +312,7 @@ class SunEvents:
 
 @dataclass(frozen=True)
 class AdaptiveConfig:
-    """The resolved curve for one zone: hub defaults with zone overrides applied."""
+    """The resolved curve for one room: hub defaults with room overrides applied."""
 
     observer: astral.Observer
     timezone: datetime.tzinfo = UTC

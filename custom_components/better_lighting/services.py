@@ -1,8 +1,8 @@
-"""Services, so automations can drive a zone directly.
+"""Services, so automations can drive a room directly.
 
-Zones are addressable two ways, and both work everywhere: by Home Assistant
-``target`` (any of the zone's own entities, which is what the UI service picker
-produces), or by ``zone`` naming the zone's slug or subentry id (stable across
+Rooms are addressable two ways, and both work everywhere: by Home Assistant
+``target`` (any of the room's own entities, which is what the UI service picker
+produces), or by ``room`` naming the room's slug or subentry id (stable across
 renaming an entity, which is what a documented automation should use).
 """
 
@@ -21,8 +21,8 @@ from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN
 from .effects import EffectRequest
 from .effects import resolve as resolve_effect
-from .render import ZoneMode
-from .zone import Trigger, ZoneController
+from .render import RoomMode
+from .room import RoomController, Trigger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +48,11 @@ SERVICES: tuple[str, ...] = tuple(
     if name.startswith("SERVICE_") and isinstance(value, str)
 )
 
-ATTR_ZONE = "zone"
+ATTR_ROOM = "room"
+# What the field was called before rooms were called rooms. Automations in
+# the wild still pass it, so both are accepted and merged; only ``room`` is
+# documented.
+ATTR_ROOM_LEGACY = "zone"
 ATTR_CONTROLLER = "controller"
 ATTR_KIND = "kind"
 ATTR_DIRECTION = "direction"
@@ -64,7 +68,8 @@ ATTR_COLOR_TEMP = "color_temp_kelvin"
 ATTR_LIGHTS = "lights"
 
 _TARGET = {
-    vol.Optional(ATTR_ZONE): vol.All(cv.ensure_list, [cv.string]),
+    vol.Optional(ATTR_ROOM): vol.All(cv.ensure_list, [cv.string]),
+    vol.Optional(ATTR_ROOM_LEGACY): vol.All(cv.ensure_list, [cv.string]),
     vol.Optional(ATTR_ENTITY_ID): cv.comp_entity_ids,
 }
 
@@ -149,19 +154,19 @@ def _runtimes(hass: HomeAssistant) -> list[Any]:
     ]
 
 
-def _zone_ids_from_entities(hass: HomeAssistant, entity_ids: list[str]) -> set[str]:
-    """Map any of our entities back to the zone subentry that owns it."""
+def _room_ids_from_entities(hass: HomeAssistant, entity_ids: list[str]) -> set[str]:
+    """Map any of our entities back to the room subentry that owns it."""
     registry = er.async_get(hass)
-    zone_ids: set[str] = set()
+    room_ids: set[str] = set()
     for entity_id in entity_ids:
         entry = registry.async_get(entity_id)
         if entry is not None and entry.platform == DOMAIN and entry.config_subentry_id:
-            zone_ids.add(entry.config_subentry_id)
-    return zone_ids
+            room_ids.add(entry.config_subentry_id)
+    return room_ids
 
 
-def all_controllers(hass: HomeAssistant) -> list[ZoneController]:
-    """Every zone of every loaded entry."""
+def all_controllers(hass: HomeAssistant) -> list[RoomController]:
+    """Every room of every loaded entry."""
     return [
         controller
         for runtime in _runtimes(hass)
@@ -169,42 +174,43 @@ def all_controllers(hass: HomeAssistant) -> list[ZoneController]:
     ]
 
 
-def resolve_controllers(hass: HomeAssistant, call: ServiceCall) -> list[ZoneController]:
-    """The zone controllers a call is aimed at."""
-    wanted_ids = set(call.data.get(ATTR_ZONE) or ())
+def resolve_controllers(hass: HomeAssistant, call: ServiceCall) -> list[RoomController]:
+    """The room controllers a call is aimed at."""
+    wanted_ids = set(call.data.get(ATTR_ROOM) or ())
+    wanted_ids |= set(call.data.get(ATTR_ROOM_LEGACY) or ())
     entity_ids = call.data.get(ATTR_ENTITY_ID) or []
     if isinstance(entity_ids, str):
         entity_ids = [entity_ids]
-    wanted_ids |= _zone_ids_from_entities(hass, entity_ids)
+    wanted_ids |= _room_ids_from_entities(hass, entity_ids)
 
     if not wanted_ids:
         raise ServiceValidationError(
-            "No zone was targeted. Pass a zone entity as the target, or name one "
-            "with the 'zone' field."
+            "No room was targeted. Pass a room entity as the target, or name one "
+            "with the 'room' field."
         )
 
-    found: list[ZoneController] = []
+    found: list[RoomController] = []
     for runtime in _runtimes(hass):
         for subentry_id, controller in runtime.controllers.items():
-            zone = runtime.zones[subentry_id]
-            if subentry_id in wanted_ids or zone.slug in wanted_ids:
+            room = runtime.rooms[subentry_id]
+            if subentry_id in wanted_ids or room.slug in wanted_ids:
                 found.append(controller)
 
     if not found:
         raise ServiceValidationError(
-            f"No Better Lighting zone matches {sorted(wanted_ids)}."
+            f"No Better Lighting room matches {sorted(wanted_ids)}."
         )
     return found
 
 
-def _switch_for(hass: HomeAssistant, controller: ZoneController, named: str | None):
-    """Which controller's list to use: the named one, or the zone's default."""
+def _switch_for(hass: HomeAssistant, controller: RoomController, named: str | None):
+    """Which controller's list to use: the named one, or the room's default."""
     for runtime in _runtimes(hass):
         if named:
             for switch in runtime.switches.values():
                 if named in (switch.subentry_id, switch.slug, switch.name):
                     return switch
-        default = runtime.default_switch.get(controller.zone.subentry_id)
+        default = runtime.default_switch.get(controller.room.subentry_id)
         if default is not None:
             return default
     return None
@@ -237,7 +243,11 @@ def async_register_services(hass: HomeAssistant) -> None:
         # No target means the whole house, which is the point of it: the
         # room that needs switching off is by definition not the one being
         # stood in.
-        targeted = call.data.get(ATTR_ZONE) or call.data.get(ATTR_ENTITY_ID)
+        targeted = (
+            call.data.get(ATTR_ROOM)
+            or call.data.get(ATTR_ROOM_LEGACY)
+            or call.data.get(ATTR_ENTITY_ID)
+        )
         controllers = (
             resolve_controllers(hass, call) if targeted else all_controllers(hass)
         )
@@ -275,7 +285,7 @@ def async_register_services(hass: HomeAssistant) -> None:
 
     async def _set_adaptive(call: ServiceCall) -> None:
         for controller in resolve_controllers(hass, call):
-            # Requirement 1: force a zone back to adaptive from a script,
+            # Requirement 1: force a room back to adaptive from a script,
             # whatever it happened to be doing.
             controller.clear_manual()
             await controller.async_set_adaptive()
@@ -293,9 +303,9 @@ def async_register_services(hass: HomeAssistant) -> None:
             )
             if scene_id is None:
                 raise ServiceValidationError(
-                    f"{controller.zone.name} has no scene called {wanted!r}."
+                    f"{controller.room.name} has no scene called {wanted!r}."
                 )
-            await controller.async_set_mode(ZoneMode.SCENE, scene_id)
+            await controller.async_set_mode(RoomMode.SCENE, scene_id)
 
     async def _clear_manual(call: ServiceCall) -> None:
         lights = call.data.get("lights")
@@ -326,13 +336,13 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def _rejoin_mode(call: ServiceCall) -> None:
         mode_runtime = _find_mode(call.data[ATTR_MODE])
         for controller in resolve_controllers(hass, call):
-            zone_id = controller.zone.subentry_id
-            mode_runtime.opted_out.discard(zone_id)
-            if mode_runtime.snapshot and zone_id in mode_runtime.snapshot.zones:
-                mode_runtime.snapshot.zones[zone_id].restore_on_exit = True
-            rule = mode_runtime.config.rule_for(mode_runtime.state, zone_id)
+            room_id = controller.room.subentry_id
+            mode_runtime.opted_out.discard(room_id)
+            if mode_runtime.snapshot and room_id in mode_runtime.snapshot.rooms:
+                mode_runtime.snapshot.rooms[room_id].restore_on_exit = True
+            rule = mode_runtime.config.rule_for(mode_runtime.state, room_id)
             if mode_runtime.active and rule is not None:
-                await mode_runtime._async_apply_rule(zone_id, controller, rule)
+                await mode_runtime._async_apply_rule(room_id, controller, rule)
         mode_runtime.async_notify()
 
     hass.services.async_register(DOMAIN, SERVICE_SET_MODE, _set_mode, SET_MODE_SCHEMA)

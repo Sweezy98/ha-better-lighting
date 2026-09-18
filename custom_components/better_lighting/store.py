@@ -1,7 +1,7 @@
 """Persisting what a restart must not lose.
 
 Almost all of this integration's state is safely rebuilt from live entity
-states after a restart. One thing is not: a cross-zone mode's snapshot. It
+states after a restart. One thing is not: a cross-room mode's snapshot. It
 records what the rooms looked like *before* the film started, and there is no
 way to recover that once the film is playing -- re-deriving it from live state
 would capture the film-watching state and the eventual restore would relight

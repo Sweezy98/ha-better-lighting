@@ -9,23 +9,23 @@ from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from tests.conftest import (
     MemberLight,
-    add_zone_scene,
+    add_room_scene,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
     subentry_ids,
-    zone_subentry,
 )
 from tests.ha.test_scenes import scene_subentry
 
-ZONE = "light.kitchen"
+ROOM = "light.kitchen"
 SELECT = "select.kitchen_scenes"
 SENSOR = "binary_sensor.kitchen_presence"
 BLIND = "cover.kitchen_blind"
 WINDOW = "binary_sensor.kitchen_window"
 
 
-async def build(hass: HomeAssistant, *, on: bool = False, scenes=(), **zone_kwargs):
+async def build(hass: HomeAssistant, *, on: bool = False, scenes=(), **room_kwargs):
     hass.states.async_set(SENSOR, "off")
     await setup_members(
         hass,
@@ -36,10 +36,10 @@ async def build(hass: HomeAssistant, *, on: bool = False, scenes=(), **zone_kwar
     )
     entry = hub_entry(
         subentries_data=[
-            zone_subentry(
+            room_subentry(
                 presence_entity=SENSOR,
                 presence_clear_delay=0,
-                **zone_kwargs,
+                **room_kwargs,
             ),
             *(scene_subentry(name) for name in scenes),
         ]
@@ -85,11 +85,11 @@ class TestPresenceTurnsLightsOn:
     async def test_presence_can_apply_a_named_scene(self, hass: HomeAssistant) -> None:
         entry = await build(hass, scenes=("Path",), presence_on_action="scene")
         # Point the room at the scene now that it has an id.
-        zone = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
+        room = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
         hass.config_entries.async_update_subentry(
             entry,
-            zone,
-            data={**zone.data, "presence_on_scene_id": scene_id(entry, "Path")},
+            room,
+            data={**room.data, "presence_on_scene_id": scene_id(entry, "Path")},
         )
         await hass.async_block_till_done()
 
@@ -241,7 +241,7 @@ class TestSceneIgnoresPresence:
         entry = await build(hass, on=True)
         # A scene that says presence has no business here.
 
-        add_zone_scene(
+        add_room_scene(
             hass, entry, scene_subentry("Movie", brightness=5, ignore_presence=True)
         )
         await hass.async_block_till_done()
@@ -269,12 +269,12 @@ class TestInsectMode:
     async def _build(self, hass: HomeAssistant, *, on: bool = True, **kwargs):
         hass.states.async_set(WINDOW, "off")
         entry = await build(hass, on=on, scenes=("Amber",), **kwargs)
-        zone = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
+        room = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
         hass.config_entries.async_update_subentry(
             entry,
-            zone,
+            room,
             data={
-                **zone.data,
+                **room.data,
                 "window_entities": [WINDOW],
                 "insect_scene_id": scene_id(entry, "Amber"),
                 "insect_open_delay": 0,
@@ -306,7 +306,7 @@ class TestInsectMode:
     ) -> None:
         entry = await self._build(hass)
 
-        add_zone_scene(hass, entry, scene_subentry("Cosy", brightness=20))
+        add_room_scene(hass, entry, scene_subentry("Cosy", brightness=20))
         await hass.async_block_till_done()
         await hass.services.async_call(
             "select",
@@ -336,7 +336,7 @@ class TestInsectMode:
         assert hass.states.get(SELECT).attributes["bl_effective_mode"] == "insect"
 
         await hass.services.async_call(
-            "light", "turn_on", {"entity_id": ZONE}, blocking=True
+            "light", "turn_on", {"entity_id": ROOM}, blocking=True
         )
         await hass.async_block_till_done()
 
@@ -349,7 +349,7 @@ class TestInsectMode:
         await self._build(hass)
         await self._open(hass)
         await hass.services.async_call(
-            "light", "turn_on", {"entity_id": ZONE}, blocking=True
+            "light", "turn_on", {"entity_id": ROOM}, blocking=True
         )
         await hass.async_block_till_done()
 
@@ -363,9 +363,9 @@ class TestInsectMode:
         self, hass: HomeAssistant, freezer
     ) -> None:
         entry = await self._build(hass)
-        zone = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
+        room = next(sub for sub in entry.subentries.values() if sub.title == "Kitchen")
         hass.config_entries.async_update_subentry(
-            entry, zone, data={**zone.data, "insect_close_delay": 30}
+            entry, room, data={**room.data, "insect_close_delay": 30}
         )
         await hass.async_block_till_done()
 

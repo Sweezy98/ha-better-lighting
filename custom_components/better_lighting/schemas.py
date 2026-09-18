@@ -2,7 +2,7 @@
 
 One function builds every form in the integration, and one flattens the result
 back into a flat dict.  Non-basic sections render as collapsed groups, which
-keeps the common case (name the zone, pick the lights) to a short form while
+keeps the common case (name the room, pick the lights) to a short form while
 still exposing every knob.
 """
 

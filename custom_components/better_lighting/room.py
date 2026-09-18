@@ -1,11 +1,11 @@
-"""The per-zone runtime: mode, the adaptive tick, and dispatch.
+"""The per-room runtime: mode, the adaptive tick, and dispatch.
 
-One :class:`ZoneController` per zone subentry. It owns that zone's mode and is
-the only thing that commands the zone's member lights. There is deliberately no
+One :class:`RoomController` per room subentry. It owns that room's mode and is
+the only thing that commands the room's member lights. There is deliberately no
 shared manager: Adaptive Lighting keeps manual-control state, timers and
 last-sent data in one global object keyed by light entity alone, and its own
 source comments record the cross-talk that causes when two profiles share a
-light. Here every fact is per-zone by construction.
+light. Here every fact is per-room by construction.
 
 The controller decides *when* and *to whom*; :mod:`.render` decides *what*.
 Keeping those apart is what makes the whole behaviour matrix testable without
@@ -68,8 +68,8 @@ from .context import ContextRegistry
 from .cycle import (
     ADAPTIVE,
     OFF,
+    RoomCycleState,
     StepKind,
-    ZoneCycleState,
     scene_step,
 )
 from .cycle import (
@@ -85,30 +85,30 @@ from .effects import EffectRequest
 from .effects import frames as effect_frames
 from .effects import resolve as resolve_effect
 from .openings import WindowWatcher
-from .presence import ZonePresence
+from .presence import RoomPresence
 from .profiles import Axis, LightCapabilities, LightProfile, Saturation
 from .render import (
     LightCommand,
     LightSnapshot,
     RenderRequest,
+    RoomMode,
     Trigger,
-    ZoneMode,
     batch,
-    render_zone,
+    render_room,
 )
 from .scenes import Scene
 from .scripts import async_run_scripts
 from .util import clamp
 
 if TYPE_CHECKING:
-    from .light import ZoneLight
-    from .models import ControllerConfig, HubConfig, ZoneConfig
+    from .light import RoomLight
+    from .models import ControllerConfig, HubConfig, RoomConfig
 
 _LOGGER = logging.getLogger(__name__)
 
-EVENT_ZONE_MODE_CHANGED = f"{DOMAIN}_zone_mode_changed"
+EVENT_ROOM_MODE_CHANGED = f"{DOMAIN}_zone_mode_changed"
 
-__all__ = ["EVENT_ZONE_MODE_CHANGED", "Trigger", "ZoneController", "ZoneMode"]
+__all__ = ["EVENT_ROOM_MODE_CHANGED", "RoomController", "RoomMode", "Trigger"]
 
 # Tolerances for "the light is already where we want it". Below these a command
 # would be pure event-bus noise: many devices quantise brightness differently
@@ -130,20 +130,20 @@ MANUAL_MIRED_DELTA = 20
 _VALID_MEMBER_STATES = (STATE_ON, "off")
 
 
-class ZoneController:
-    """Owns one zone's mode and drives its lights."""
+class RoomController:
+    """Owns one room's mode and drives its lights."""
 
     def __init__(
         self,
         hass: HomeAssistant,
-        zone: ZoneConfig,
+        room: RoomConfig,
         hub: HubConfig,
         contexts: ContextRegistry,
         profiles: dict[str, LightProfile] | None = None,
         scenes: dict[str, Scene] | None = None,
     ) -> None:
         self.hass = hass
-        self.zone = zone
+        self.room = room
         self.hub = hub
         self.contexts = contexts
         self.profiles = profiles or {}
@@ -151,8 +151,8 @@ class ZoneController:
 
         # Tracked per axis: a room can follow the sun's colour while its
         # brightness stays put, or the other way round.
-        self.adapt_brightness = zone.adaptive_brightness_on
-        self.adapt_color = zone.adaptive_color_on
+        self.adapt_brightness = room.adaptive_brightness_on
+        self.adapt_color = room.adaptive_color_on
         self.night_active = False
         # A running effect: the timer for its next frame, which lights it is
         # playing on, and which of those were off when it started.
@@ -163,23 +163,23 @@ class ZoneController:
         self._effect_was_on: dict[str, bool] = {}
         # Night mode wants this room dark, but somebody is still in it.
         self._night_turn_off_pending = False
-        self.mode: ZoneMode = ZoneMode.ADAPTIVE
+        self.mode: RoomMode = RoomMode.ADAPTIVE
         self.active_scene_id: str | None = None
         # A signed relative dim, in percentage points, applied on top of
         # whatever brightness source is active. Milestone 4 drives this.
         self.bias_pct = 0.0
-        # Axes a human has taken over, per light. Per (zone, light) by
-        # construction, because this dict belongs to one zone.
+        # Axes a human has taken over, per light. Per (room, light) by
+        # construction, because this dict belongs to one room.
         self.manual: dict[str, Axis] = {}
 
-        # Set while a cross-zone mode is driving this room. A press clears it,
+        # Set while a cross-room mode is driving this room. A press clears it,
         # which is how requirement 2's "press a switch during the film and that
         # room goes back to normal" is expressed -- and it is scoped to the
         # session, so nothing needs a timeout to expire.
         self.session_owner: tuple[str, str] | None = None
         self._opt_out_callback: Callable[[str], None] | None = None
         # Presence, for modes that gate on whether a room is occupied.
-        self.presence: ZonePresence | None = None
+        self.presence: RoomPresence | None = None
         self.windows: WindowWatcher | None = None
         # A window is open in this room.
         self.insect_active = False
@@ -188,10 +188,10 @@ class ZoneController:
         self.insect_dismissed = False
         self._pre_insect: CycleStep | None = None
 
-        # The zone's own light entity, attached once its platform is up. It
+        # The room's own light entity, attached once its platform is up. It
         # owns the on-state memory, so turning the room off or back on has to
         # go through it rather than commanding members directly.
-        self.light: ZoneLight | None = None
+        self.light: RoomLight | None = None
 
         self._unsubscribers: list[CALLBACK_TYPE] = []
         self._listeners: list[CALLBACK_TYPE] = []
@@ -224,21 +224,21 @@ class ZoneController:
                 )
             )
 
-        if self.zone.lights:
+        if self.room.lights:
             self._unsubscribers.append(
                 async_track_state_change_event(
-                    self.hass, list(self.zone.lights), self._handle_member_change
+                    self.hass, list(self.room.lights), self._handle_member_change
                 )
             )
 
         interval = (
-            datetime.timedelta(seconds=self.zone.effective_interval(self.hub))
+            datetime.timedelta(seconds=self.room.effective_interval(self.hub))
             + _TICK_PADDING
         )
 
-        # Stagger zones deterministically so twenty rooms do not all render in
+        # Stagger rooms deterministically so twenty rooms do not all render in
         # the same event-loop slot every interval.
-        digest = hashlib.sha256(self.zone.subentry_id.encode()).digest()
+        digest = hashlib.sha256(self.room.subentry_id.encode()).digest()
         fraction = int.from_bytes(digest[:8], "big") / 2**64
 
         @callback
@@ -275,7 +275,7 @@ class ZoneController:
         session_id: str,
         on_opt_out: Callable[[str], None] | None = None,
     ) -> None:
-        """Hand this room to a cross-zone mode for the length of its session."""
+        """Hand this room to a cross-room mode for the length of its session."""
         self.session_owner = (mode_id, session_id)
         self._opt_out_callback = on_opt_out
 
@@ -285,13 +285,13 @@ class ZoneController:
         self._opt_out_callback = None
 
     @callback
-    def attach_light(self, light: ZoneLight) -> None:
-        """Register the zone's light entity once its platform has come up."""
+    def attach_light(self, light: RoomLight) -> None:
+        """Register the room's light entity once its platform has come up."""
         self.light = light
 
     @callback
     def async_add_listener(self, listener: CALLBACK_TYPE) -> CALLBACK_TYPE:
-        """Subscribe an entity to this zone's state, returning an unsubscribe."""
+        """Subscribe an entity to this room's state, returning an unsubscribe."""
         self._listeners.append(listener)
 
         @callback
@@ -309,7 +309,7 @@ class ZoneController:
 
     @contextlib.asynccontextmanager
     async def _serialised(self):
-        """Hold this zone's lock, re-entrantly.
+        """Hold this room's lock, re-entrantly.
 
         Re-entrant because the public entry points call each other -- a press
         resolves to a mode change which renders -- and a plain lock would
@@ -330,13 +330,13 @@ class ZoneController:
 
     @property
     def night_source(self) -> str | None:
-        """The helper this zone follows for night mode.
+        """The helper this room follows for night mode.
 
         House-wide, because "everyone is asleep" is a fact about the household.
-        A zone configured before the helper moved to the hub keeps its own
+        A room configured before the helper moved to the hub keeps its own
         until the global one is set, so an upgrade changes nothing on its own.
         """
-        return self.hub.night_source_entity or self.zone.night_source_entity
+        return self.hub.night_source_entity or self.room.night_source_entity
 
     def _read_night_source(self, entity_id: str) -> bool:
         state = self.hass.states.get(entity_id)
@@ -351,10 +351,10 @@ class ZoneController:
         if active == self.night_active:
             return
         self.night_active = active
-        _LOGGER.debug("%s night mode -> %s", self.zone.name, active)
+        _LOGGER.debug("%s night mode -> %s", self.room.name, active)
         self.async_notify()
         # From the source entity, so the whole house is going to bed. That is
-        # what may darken a room, unlike the zone's own night switch.
+        # what may darken a room, unlike the room's own night switch.
         self.hass.async_create_task(self._async_night_changed(from_source=True))
 
     @callback
@@ -377,7 +377,7 @@ class ZoneController:
         return self.adaptive_axes is not Axis.NONE
 
     async def async_set_adaptive_axis(self, axis: Axis, enabled: bool) -> None:
-        """Turn one axis of this zone's adaptive engine on or off."""
+        """Turn one axis of this room's adaptive engine on or off."""
         if axis is Axis.BRIGHTNESS:
             if enabled == self.adapt_brightness:
                 return
@@ -391,9 +391,9 @@ class ZoneController:
             await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
     async def async_set_night(self, active: bool) -> None:
-        """Set night mode from the zone's own switch.
+        """Set night mode from the room's own switch.
 
-        Deliberately never darkens the room, even when the zone is configured
+        Deliberately never darkens the room, even when the room is configured
         to switch off at night. Reaching for this switch is someone asking for
         night light *now*; the whole-house helper going on is the house going
         to bed, which is a different thing.
@@ -432,7 +432,7 @@ class ZoneController:
 
         if (
             from_source
-            and self.zone.night_behavior is NightBehavior.TURN_OFF
+            and self.room.night_behavior is NightBehavior.TURN_OFF
             and self._any_member_on()
         ):
             presence = self.presence
@@ -443,26 +443,26 @@ class ZoneController:
                 self._night_turn_off_pending = True
                 _LOGGER.debug(
                     "%s: night turn-off waiting for the room to empty",
-                    self.zone.name,
+                    self.room.name,
                 )
                 return
-            await self.async_set_mode(ZoneMode.OFF)
+            await self.async_set_mode(RoomMode.OFF)
             return
 
         await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
-    async def async_set_mode(self, mode: ZoneMode, scene_id: str | None = None) -> None:
-        """Change what this zone is doing, and re-render once."""
+    async def async_set_mode(self, mode: RoomMode, scene_id: str | None = None) -> None:
+        """Change what this room is doing, and re-render once."""
         async with self._serialised():
             await self._async_set_mode(mode, scene_id)
 
     async def _async_set_mode(
-        self, mode: ZoneMode, scene_id: str | None = None
+        self, mode: RoomMode, scene_id: str | None = None
     ) -> None:
-        if mode is ZoneMode.SCENE and scene_id not in self.scenes:
+        if mode is RoomMode.SCENE and scene_id not in self.scenes:
             _LOGGER.warning(
                 "%s: scene %r is not defined; staying in %s",
-                self.zone.name,
+                self.room.name,
                 scene_id,
                 self.mode,
             )
@@ -470,7 +470,7 @@ class ZoneController:
         previous_mode = self.mode
         previous_scene_id = self.active_scene_id
         self.mode = mode
-        self.active_scene_id = scene_id if mode is ZoneMode.SCENE else None
+        self.active_scene_id = scene_id if mode is RoomMode.SCENE else None
         # A scene is not only its lights. Leaving one and entering another is
         # both things, in that order, and re-applying the same scene is
         # neither.
@@ -485,7 +485,7 @@ class ZoneController:
         # it -- and anything else the room does stops it too.
         if self.effect_playing:
             await self.async_stop_effect(restore=False)
-        if mode is ZoneMode.SCENE and scene_id:
+        if mode is RoomMode.SCENE and scene_id:
             self._last_scene_id = scene_id
             self._last_scene_at = dt_util.utcnow()
         # A deliberate mode change is a fresh start: any relative dim the user
@@ -493,10 +493,14 @@ class ZoneController:
         self.bias_pct = 0.0
         self.async_notify()
         self.hass.bus.async_fire(
-            EVENT_ZONE_MODE_CHANGED,
+            EVENT_ROOM_MODE_CHANGED,
             {
-                "zone_id": self.zone.subentry_id,
-                "zone": self.zone.name,
+                # Both spellings: automations written against the old
+                # word keep working, new ones read "room_id".
+                "room_id": self.room.subentry_id,
+                "room": self.room.name,
+                "zone_id": self.room.subentry_id,
+                "zone": self.room.name,
                 "from_mode": previous_mode.value,
                 "to_mode": mode.value,
                 "effective_mode": self.effective_mode.value,
@@ -504,7 +508,7 @@ class ZoneController:
             },
         )
 
-        if mode is ZoneMode.OFF:
+        if mode is RoomMode.OFF:
             # Through the light entity, so it captures which members were on
             # before the room went dark.
             if self.light is not None:
@@ -519,7 +523,7 @@ class ZoneController:
             targets = (
                 self.light.restore_targets()
                 if self.light is not None
-                else list(self.zone.lights)
+                else list(self.room.lights)
             )
             if not await self.async_render(Trigger.TURN_ON, entity_ids=targets):
                 # The engine had nothing to say -- adaptive is switched off, or
@@ -546,7 +550,7 @@ class ZoneController:
         effect = resolve_effect(scene.effect_id if scene else None, self.hub.effects)
         if scene is None or effect is None:
             return
-        named = [light for light in scene.lights if light in self.zone.lights]
+        named = [light for light in scene.lights if light in self.room.lights]
         await self.async_play_effect(
             EffectRequest(effect=effect, brightness_pct=100.0),
             named or None,
@@ -556,7 +560,7 @@ class ZoneController:
         )
 
     async def async_activate_scene(self, scene_id: str) -> None:
-        await self.async_set_mode(ZoneMode.SCENE, scene_id)
+        await self.async_set_mode(RoomMode.SCENE, scene_id)
 
     # -- effects -----------------------------------------------------------
 
@@ -581,8 +585,8 @@ class ZoneController:
         await self.async_stop_effect(restore=False)
         targets = [
             entity_id
-            for entity_id in (entity_ids or self.zone.lights)
-            if entity_id in self.zone.lights
+            for entity_id in (entity_ids or self.room.lights)
+            if entity_id in self.room.lights
         ]
         if not targets:
             return
@@ -655,18 +659,18 @@ class ZoneController:
 
     async def async_set_adaptive(self) -> None:
         """Return to plain adaptive lighting."""
-        await self.async_set_mode(ZoneMode.ADAPTIVE)
+        await self.async_set_mode(RoomMode.ADAPTIVE)
 
     # -- presses -----------------------------------------------------------
 
     def _current_step(self) -> CycleStep | None:
-        """The zone's current mode expressed as a cycle position."""
+        """The room's current mode expressed as a cycle position."""
         mode = self.mode
-        if mode is ZoneMode.OFF:
+        if mode is RoomMode.OFF:
             return OFF
-        if mode is ZoneMode.ADAPTIVE:
+        if mode is RoomMode.ADAPTIVE:
             return ADAPTIVE
-        if mode is ZoneMode.SCENE and self.active_scene_id:
+        if mode is RoomMode.SCENE and self.active_scene_id:
             return scene_step(self.active_scene_id)
         # Insect, cinema and anything else are not cycle positions. Returning
         # None makes them "foreign", which is exactly right: the next press
@@ -675,11 +679,11 @@ class ZoneController:
 
     def _resume_step(self) -> CycleStep | None:
         """What the first press after a power cycle should resume, if anything."""
-        if self.zone.restore_on_power_cycle is not RestoreOnPowerCycle.LAST_SCENE:
+        if self.room.restore_on_power_cycle is not RestoreOnPowerCycle.LAST_SCENE:
             return None
         if not self._last_scene_id or self._last_scene_id not in self.scenes:
             return None
-        max_age = self.zone.resume_max_age_minutes
+        max_age = self.room.resume_max_age_minutes
         if max_age and self._last_scene_at is not None:
             age = dt_util.utcnow() - self._last_scene_at
             if age > datetime.timedelta(minutes=max_age):
@@ -700,7 +704,7 @@ class ZoneController:
         return any(
             (state := self.hass.states.get(entity_id)) is not None
             and state.state == STATE_ON
-            for entity_id in self.zone.lights
+            for entity_id in self.room.lights
         )
 
     def _dismiss(self) -> bool:
@@ -726,7 +730,7 @@ class ZoneController:
             if callback_fn is not None:
                 callback_fn(mode_id)
             dismissed = True
-        if self.insect_showing and self.zone.insect_overridable_by_press:
+        if self.insect_showing and self.room.insect_overridable_by_press:
             # Waved away until the window is closed and opened again.
             self.insect_dismissed = True
             dismissed = True
@@ -752,7 +756,7 @@ class ZoneController:
         }.get(kind, PressAction.CYCLE_NEXT)
 
         _LOGGER.debug(
-            "%s: %s from %s -> %s", self.zone.name, kind, controller.name, action
+            "%s: %s from %s -> %s", self.room.name, kind, controller.name, action
         )
 
         match action:
@@ -764,9 +768,9 @@ class ZoneController:
                 await self.async_cycle(controller, direction=-1, steps=steps)
             case PressAction.RESET_ADAPTIVE:
                 self._dismiss()
-                await self.async_set_mode(ZoneMode.ADAPTIVE)
-            case PressAction.ZONE_OFF:
-                await self.async_set_mode(ZoneMode.OFF)
+                await self.async_set_mode(RoomMode.ADAPTIVE)
+            case PressAction.ROOM_OFF:
+                await self.async_set_mode(RoomMode.OFF)
             case PressAction.TOGGLE_NIGHT:
                 await self.async_set_night(not self.night_active)
             case PressAction.BRIGHTEN:
@@ -783,8 +787,8 @@ class ZoneController:
         happened to land on.
         """
         self.bias_pct = clamp(self.bias_pct + delta, -100.0, 100.0)
-        _LOGGER.debug("%s: brightness bias now %+.0f%%", self.zone.name, self.bias_pct)
-        if self.mode is ZoneMode.OFF:
+        _LOGGER.debug("%s: brightness bias now %+.0f%%", self.room.name, self.bias_pct)
+        if self.mode is RoomMode.OFF:
             # Holding the dimmer in a dark room sets where it will come back
             # on, rather than lighting it.
             self.async_notify()
@@ -795,7 +799,7 @@ class ZoneController:
     async def async_cycle(
         self, controller: ControllerConfig, *, direction: int = 1, steps: int = 1
     ) -> None:
-        """Advance (or retreat) this zone along ``controller``'s list.
+        """Advance (or retreat) this room along ``controller``'s list.
 
         ``steps`` greater than one comes from a burst of quick taps. They are
         resolved entirely in the pure layer and rendered **once**, so tapping
@@ -803,7 +807,7 @@ class ZoneController:
         two in between.
         """
         cycle = controller.cycle(frozenset(self.scenes))
-        state = ZoneCycleState(
+        state = RoomCycleState(
             current=self._current_step(),
             is_off=not self._any_member_on(),
             last_index=self._last_index.get(controller.subentry_id),
@@ -821,7 +825,7 @@ class ZoneController:
                 result = cycle_press(
                     cycle, state, dismissed=dismissed and step_number == 0
                 )
-            state = ZoneCycleState(
+            state = RoomCycleState(
                 current=result.step,
                 is_off=result.step.kind is StepKind.OFF,
                 last_index=result.index,
@@ -832,7 +836,7 @@ class ZoneController:
         self._last_index[controller.subentry_id] = result.index
         _LOGGER.debug(
             "%s: %s x%d -> %s (%s)",
-            self.zone.name,
+            self.room.name,
             controller.name,
             steps,
             result.step,
@@ -841,14 +845,14 @@ class ZoneController:
         await self.async_apply_step(result.step)
 
     async def async_apply_step(self, step: CycleStep) -> None:
-        """Put the zone into the state a cycle position describes."""
+        """Put the room into the state a cycle position describes."""
         match step.kind:
             case StepKind.OFF:
-                await self.async_set_mode(ZoneMode.OFF)
+                await self.async_set_mode(RoomMode.OFF)
             case StepKind.SCENE if step.scene_id:
-                await self.async_set_mode(ZoneMode.SCENE, step.scene_id)
+                await self.async_set_mode(RoomMode.SCENE, step.scene_id)
             case _:
-                await self.async_set_mode(ZoneMode.ADAPTIVE)
+                await self.async_set_mode(RoomMode.ADAPTIVE)
 
     # -- presence and windows ---------------------------------------------
 
@@ -857,21 +861,21 @@ class ZoneController:
 
         Three separate ways to silence it, all meaning the same thing, so the
         check is an OR rather than a precedence chain: a bedroom at night, a
-        scene that says so, and a room a cross-zone mode is driving.
+        scene that says so, and a room a cross-room mode is driving.
         """
         if self.session_owner is not None:
             # A mode is driving this room; its own presence rules apply there.
             return False
-        if self.is_night and self.zone.night_ignore_presence:
+        if self.is_night and self.room.night_ignore_presence:
             return False
         scene = self.active_scene()
         return not (scene is not None and scene.ignore_presence)
 
     def _presence_target(self) -> CycleStep:
         """Where presence should put the room when somebody walks in."""
-        match self.zone.presence_on_action:
-            case PresenceOnAction.SCENE if self.zone.presence_on_scene_id:
-                return scene_step(self.zone.presence_on_scene_id)
+        match self.room.presence_on_action:
+            case PresenceOnAction.SCENE if self.room.presence_on_scene_id:
+                return scene_step(self.room.presence_on_scene_id)
             case PresenceOnAction.RESTORE:
                 # Honour the room's own power-cycle setting, so presence and
                 # the light switch agree about what "on" means here.
@@ -881,15 +885,15 @@ class ZoneController:
 
     async def async_presence_detected(self) -> None:
         """Somebody has walked in."""
-        if self.zone.presence_on_action is PresenceOnAction.NONE:
+        if self.room.presence_on_action is PresenceOnAction.NONE:
             return
         if not self._presence_allowed():
             return
         if self.presence is not None and not self.presence.covers_ok:
             # Requirement 3: only when the blinds are down.
-            _LOGGER.debug("%s: presence blocked by the cover gate", self.zone.name)
+            _LOGGER.debug("%s: presence blocked by the cover gate", self.room.name)
             return
-        if self.zone.presence_on_only_when_off and self._any_member_on():
+        if self.room.presence_on_only_when_off and self._any_member_on():
             return
         await self.async_apply_step(self._presence_target())
 
@@ -898,21 +902,21 @@ class ZoneController:
         if self._night_turn_off_pending:
             self._night_turn_off_pending = False
             if self.night_active and self._any_member_on():
-                _LOGGER.debug("%s: night turn-off released", self.zone.name)
-                await self.async_set_mode(ZoneMode.OFF)
+                _LOGGER.debug("%s: night turn-off released", self.room.name)
+                await self.async_set_mode(RoomMode.OFF)
             return
-        if self.zone.presence_off_action is PresenceOffAction.NONE:
+        if self.room.presence_off_action is PresenceOffAction.NONE:
             return
         if not self._presence_allowed():
             return
-        if self.zone.presence_respects_manual and self.manual:
+        if self.room.presence_respects_manual and self.manual:
             # Somebody set this room by hand. Switching it off behind them
             # would be the rudest possible reading of an empty room.
             return
-        if self.zone.presence_off_action is PresenceOffAction.ADAPTIVE:
+        if self.room.presence_off_action is PresenceOffAction.ADAPTIVE:
             await self.async_set_adaptive()
             return
-        await self.async_set_mode(ZoneMode.OFF)
+        await self.async_set_mode(RoomMode.OFF)
 
     async def async_cover_gate_opened(self) -> None:
         """The blinds came down while somebody was already in the room."""
@@ -920,9 +924,9 @@ class ZoneController:
 
     async def async_window_opened(self) -> None:
         """Requirement 4: a window is open, so switch to the insect scene."""
-        if self.zone.insect_scene(self.scenes) is None:
+        if self.room.insect_scene(self.scenes) is None:
             return
-        if self.zone.insect_only_when_on and not self._any_member_on():
+        if self.room.insect_only_when_on and not self._any_member_on():
             # An open window is no reason to light a dark room.
             return
         self.insect_active = True
@@ -1022,16 +1026,16 @@ class ZoneController:
         the room itself in step.
         """
         if on:
-            if self.mode is ZoneMode.OFF:
+            if self.mode is RoomMode.OFF:
                 # Somebody lit one by hand. Recorded, but not re-rendered:
                 # touching the room now would undo what they just set. The
                 # next tick adapts it, as it would any light we own.
-                self.mode = ZoneMode.ADAPTIVE
+                self.mode = RoomMode.ADAPTIVE
                 self.async_notify()
             return
-        if self.mode is ZoneMode.OFF or self._any_member_on():
+        if self.mode is RoomMode.OFF or self._any_member_on():
             return
-        self.hass.async_create_task(self.async_set_mode(ZoneMode.OFF))
+        self.hass.async_create_task(self.async_set_mode(RoomMode.OFF))
 
     @callback
     def note_manual(self, entity_id: str, axes: Axis) -> None:
@@ -1041,7 +1045,7 @@ class ZoneController:
             return
         self.manual[entity_id] = current | axes
         _LOGGER.debug(
-            "%s: %s taken over manually (%s)", self.zone.name, entity_id, axes
+            "%s: %s taken over manually (%s)", self.room.name, entity_id, axes
         )
         self._arm_manual_reset(entity_id)
         self.async_notify()
@@ -1059,7 +1063,7 @@ class ZoneController:
             self._manual_timers.pop(entity_id, None)
             if self.manual.pop(entity_id, None) is not None:
                 _LOGGER.debug(
-                    "%s: %s handed back to the engine", self.zone.name, entity_id
+                    "%s: %s handed back to the engine", self.room.name, entity_id
                 )
                 self.async_notify()
                 self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
@@ -1081,27 +1085,27 @@ class ZoneController:
 
     @property
     def is_night(self) -> bool:
-        """Whether night settings apply, honouring the zone's night behaviour."""
-        if self.zone.night_behavior is NightBehavior.OFF:
+        """Whether night settings apply, honouring the room's night behaviour."""
+        if self.room.night_behavior is NightBehavior.OFF:
             return False
         return self.night_active
 
     @property
-    def effective_mode(self) -> ZoneMode:
+    def effective_mode(self) -> RoomMode:
         """The mode as rendered, with night folded in.
 
         Night is a modifier rather than a mode of its own: it either warms and
         dims the curve, or swaps in a designated scene. Either way the render
         pipeline sees one mode and one optional scene.
         """
-        if self.mode is ZoneMode.OFF:
-            return ZoneMode.OFF
+        if self.mode is RoomMode.OFF:
+            return RoomMode.OFF
         if self.insect_showing:
             # An open window is a physical fact about *this* room, while a
-            # cross-zone mode is a house-wide preference, so the window wins.
-            return ZoneMode.INSECT
-        if self.is_night and self.mode is ZoneMode.ADAPTIVE:
-            return ZoneMode.NIGHT
+            # cross-room mode is a house-wide preference, so the window wins.
+            return RoomMode.INSECT
+        if self.is_night and self.mode is RoomMode.ADAPTIVE:
+            return RoomMode.NIGHT
         return self.mode
 
     @property
@@ -1110,40 +1114,40 @@ class ZoneController:
         return (
             self.insect_active
             and not self.insect_dismissed
-            and self.zone.insect_scene(self.scenes) is not None
+            and self.room.insect_scene(self.scenes) is not None
         )
 
     def active_scene(self) -> Scene | None:
         """The scene the current mode resolves to, if any."""
         mode = self.effective_mode
-        if mode is ZoneMode.INSECT:
-            return self.zone.insect_scene(self.scenes)
-        if mode is ZoneMode.SCENE:
+        if mode is RoomMode.INSECT:
+            return self.room.insect_scene(self.scenes)
+        if mode is RoomMode.SCENE:
             return self.scenes.get(self.active_scene_id or "")
-        if mode is ZoneMode.NIGHT:
+        if mode is RoomMode.NIGHT:
             # Only the "apply a scene" behaviour resolves to one. "Minimum
             # settings" is handled inside the curve, and "switch off" leaves
             # the room dark, so neither has a scene.
-            if self.zone.night_behavior is NightBehavior.SCENE:
-                return self.scenes.get(self.zone.night_scene_id or "")
+            if self.room.night_behavior is NightBehavior.SCENE:
+                return self.scenes.get(self.room.night_scene_id or "")
             return None
         return None
 
     def adaptive_config(self) -> AdaptiveConfig:
         location: astral.Location = get_astral_location(self.hass)[0]
         timezone = zoneinfo.ZoneInfo(self.hass.config.time_zone)
-        return self.zone.adaptive_config(self.hub, location.observer, timezone)
+        return self.room.adaptive_config(self.hub, location.observer, timezone)
 
     def _transition_for(self, trigger: Trigger) -> float:
         if trigger is Trigger.TURN_ON:
             return self.hub.initial_transition
         if trigger is Trigger.ACTIVATE:
             return (
-                self.zone.night_transition
+                self.room.night_transition
                 if self.is_night
                 else self.hub.scene_transition
             )
-        return self.zone.effective_transition(self.hub)
+        return self.room.effective_transition(self.hub)
 
     def _snapshot(self, entity_id: str) -> LightSnapshot | None:
         state = self.hass.states.get(entity_id)
@@ -1172,8 +1176,8 @@ class ZoneController:
         *,
         only_lit: bool = False,
     ) -> list[LightCommand]:
-        """Decide what this zone's lights should do, without sending anything."""
-        if not self.adaptive_enabled and self.effective_mode is not ZoneMode.SCENE:
+        """Decide what this room's lights should do, without sending anything."""
+        if not self.adaptive_enabled and self.effective_mode is not RoomMode.SCENE:
             # Adaptive is off and nothing else is driving: leave the lights be.
             return []
         if trigger is Trigger.TICK and self._effect_cancel is not None:
@@ -1181,13 +1185,13 @@ class ZoneController:
             # it every ninety seconds, which looks like the effect stuttering.
             return []
 
-        candidates = entity_ids if entity_ids is not None else list(self.zone.lights)
-        if self.effective_mode is ZoneMode.ADAPTIVE:
+        candidates = entity_ids if entity_ids is not None else list(self.room.lights)
+        if self.effective_mode is RoomMode.ADAPTIVE:
             # A room's default is "the lights, adaptively" -- and which lights
             # that means is the room's to say. Everything else it holds is
             # left for a scene to ask for by name.
             candidates = [
-                entity_id for entity_id in candidates if self.zone.adapts(entity_id)
+                entity_id for entity_id in candidates if self.room.adapts(entity_id)
             ]
         members = [
             snapshot
@@ -1207,12 +1211,12 @@ class ZoneController:
             # Once per configuration, not once per tick: Adaptive Lighting logs
             # this every interval when a user's offset is bad.
             if not self._sun_error_logged:
-                _LOGGER.error("%s: %s", self.zone.name, err)
+                _LOGGER.error("%s: %s", self.room.name, err)
                 self._sun_error_logged = True
             return []
         self._sun_error_logged = False
 
-        result = render_zone(
+        result = render_room(
             RenderRequest(
                 mode=self.effective_mode,
                 trigger=trigger,
@@ -1287,7 +1291,7 @@ class ZoneController:
         self, action: str, data: dict[str, Any], trigger: Trigger
     ) -> None:
         entity_ids = data[ATTR_ENTITY_ID]
-        context = self.contexts.new_context(self.zone.subentry_id, str(trigger))
+        context = self.contexts.new_context(self.room.subentry_id, str(trigger))
         for entity_id in entity_ids:
             self.contexts.note_command(entity_id)
         if action == "turn_on":
@@ -1296,7 +1300,7 @@ class ZoneController:
             }
             for entity_id in entity_ids:
                 self._last_commanded[entity_id] = payload
-        _LOGGER.debug("%s %s %s -> %s", self.zone.name, trigger, action, data)
+        _LOGGER.debug("%s %s %s -> %s", self.room.name, trigger, action, data)
         await self.hass.services.async_call(
             LIGHT_DOMAIN,
             SERVICE_TURN_ON if action == "turn_on" else SERVICE_TURN_OFF,

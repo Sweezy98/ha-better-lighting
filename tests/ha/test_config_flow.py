@@ -1,4 +1,4 @@
-"""Hub flow, options flow, and the zone subentry flow."""
+"""Hub flow, options flow, and the room subentry flow."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from custom_components.better_lighting.const import (
     DOMAIN,
     HUB_SPECS,
-    ZONE_SPECS,
+    ROOM_SPECS,
     SubentryType,
 )
 from tests.conftest import (
@@ -21,13 +21,13 @@ from tests.conftest import (
 )
 
 HUB_INPUT = form_input(HUB_SPECS, sections=False)
-ZONE_INPUT = form_input(
-    ZONE_SPECS, sections=False, name="Living Room", lights=["light.three"]
+ROOM_INPUT = form_input(
+    ROOM_SPECS, sections=False, name="Living Room", lights=["light.three"]
 )
 
 
-async def finish_zone(hass: HomeAssistant, result):
-    """Walk a zone flow from its menu to the end, changing nothing else."""
+async def finish_room(hass: HomeAssistant, result):
+    """Walk a room flow from its menu to the end, changing nothing else."""
     assert result["step_id"] == "menu"
     return await hass.config_entries.subentries.async_configure(
         result["flow_id"], {"next_step_id": "finish"}
@@ -113,21 +113,21 @@ async def test_colour_presets_are_named_once_and_reused(
     ]
 
 
-async def test_adds_a_zone_subentry(hass: HomeAssistant) -> None:
+async def test_adds_a_room_subentry(hass: HomeAssistant) -> None:
     await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
     entry = await setup_hub(hass, hub_entry())
 
     result = await hass.config_entries.subentries.async_init(
-        (entry.entry_id, SubentryType.ZONE.value),
+        (entry.entry_id, SubentryType.ROOM.value),
         context={"source": config_entries.SOURCE_USER},
     )
     assert result["type"] is FlowResultType.FORM
 
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], ZONE_INPUT
+        result["flow_id"], ROOM_INPUT
     )
     # The room's settings are followed by its own menu, where its scenes live.
-    result = await finish_zone(hass, result)
+    result = await finish_room(hass, result)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Living Room"
 
@@ -135,32 +135,32 @@ async def test_adds_a_zone_subentry(hass: HomeAssistant) -> None:
     assert titles == {"Kitchen", "Living Room"}
 
 
-async def test_rejects_a_light_already_in_another_zone(hass: HomeAssistant) -> None:
-    """The one-light-one-zone invariant the whole architecture rests on."""
+async def test_rejects_a_light_already_in_another_room(hass: HomeAssistant) -> None:
+    """The one-light-one-room invariant the whole architecture rests on."""
     entry = await setup_hub(hass, hub_entry())
 
     result = await hass.config_entries.subentries.async_init(
-        (entry.entry_id, SubentryType.ZONE.value),
+        (entry.entry_id, SubentryType.ROOM.value),
         context={"source": config_entries.SOURCE_USER},
     )
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
-        {**ZONE_INPUT, "lights": ["light.one"]},  # already in Kitchen
+        {**ROOM_INPUT, "lights": ["light.one"]},  # already in Kitchen
     )
 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"lights": "light_in_other_zone"}
 
 
-async def test_rejects_a_zone_with_no_lights(hass: HomeAssistant) -> None:
+async def test_rejects_a_room_with_no_lights(hass: HomeAssistant) -> None:
     entry = await setup_hub(hass, hub_entry())
 
     result = await hass.config_entries.subentries.async_init(
-        (entry.entry_id, SubentryType.ZONE.value),
+        (entry.entry_id, SubentryType.ROOM.value),
         context={"source": config_entries.SOURCE_USER},
     )
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {**ZONE_INPUT, "lights": []}
+        result["flow_id"], {**ROOM_INPUT, "lights": []}
     )
 
     assert result["type"] is FlowResultType.FORM
@@ -168,12 +168,12 @@ async def test_rejects_a_zone_with_no_lights(hass: HomeAssistant) -> None:
 
 
 async def test_reconfigure_keeps_its_own_lights(hass: HomeAssistant) -> None:
-    """A zone must not be told its own lights belong to another zone."""
+    """A room must not be told its own lights belong to another room."""
     entry = await setup_hub(hass, hub_entry())
     subentry_id = next(iter(entry.subentries))
 
     result = await hass.config_entries.subentries.async_init(
-        (entry.entry_id, SubentryType.ZONE.value),
+        (entry.entry_id, SubentryType.ROOM.value),
         context={"source": "reconfigure", "subentry_id": subentry_id},
     )
     # Reconfiguring opens the room's menu rather than a wall of fields.
@@ -185,13 +185,13 @@ async def test_reconfigure_keeps_its_own_lights(hass: HomeAssistant) -> None:
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         {
-            **ZONE_INPUT,
+            **ROOM_INPUT,
             "name": "Kitchen",
             "lights": ["light.one", "light.two"],
             "icon": "mdi:stove",
         },
     )
-    result = await finish_zone(hass, result)
+    result = await finish_room(hass, result)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert entry.subentries[subentry_id].data["icon"] == "mdi:stove"

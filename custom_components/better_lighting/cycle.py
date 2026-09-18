@@ -4,7 +4,7 @@ This is requirements 1 and 8: a press turns the room on in adaptive mode, each
 further press advances through *that switch's* ordered list, and two switches in
 the same room can carry different lists.
 
-The whole thing is a pure function of the controller's list and the zone's
+The whole thing is a pure function of the controller's list and the room's
 current step, which makes the awkward cases -- pressing the door switch while
 the kitchen switch's scene is showing, pressing during a mode nobody's list
 contains, the first press after the room was switched off -- table-driven tests
@@ -68,7 +68,7 @@ class AdaptivePosition(StrEnum):
 
 
 class ForeignPolicy(StrEnum):
-    """What to do when the zone's current step is not in *this* controller's list.
+    """What to do when the room's current step is not in *this* controller's list.
 
     The common case is two switches in one room with different lists: you set
     Cooking from the switch by the oven, then press the one by the door.
@@ -127,14 +127,14 @@ def build_cycle(
 
 
 @dataclass(frozen=True, slots=True)
-class ZoneCycleState:
-    """What the zone is doing, as far as cycling is concerned."""
+class RoomCycleState:
+    """What the room is doing, as far as cycling is concerned."""
 
     current: Step | None = None
     is_off: bool = False
     # Where this particular controller last left off, for REMEMBER.
     last_index: int | None = None
-    # What a power cycle should resume to, when the zone is configured to
+    # What a power cycle should resume to, when the room is configured to
     # resume its last scene rather than returning to adaptive.
     resume: Step | None = None
 
@@ -149,9 +149,9 @@ class PressResult:
 
 
 def press(
-    config: CycleConfig, state: ZoneCycleState, *, dismissed: bool = False
+    config: CycleConfig, state: RoomCycleState, *, dismissed: bool = False
 ) -> PressResult:
-    """Where a single press should take the zone.
+    """Where a single press should take the room.
 
     ``dismissed`` means this press has just interrupted something automatic.
     """
@@ -160,7 +160,7 @@ def press(
         return PressResult(ADAPTIVE, None, "empty_cycle")
 
     if dismissed:
-        # Requirement 2's "a press during movie mode switches that zone to
+        # Requirement 2's "a press during movie mode switches that room to
         # adaptive, then cycles normally": land, do not advance.
         return PressResult(ADAPTIVE, config.index_of(ADAPTIVE), "dismissed")
 
@@ -170,8 +170,8 @@ def press(
                 state.resume, config.index_of(state.resume), "resume_last"
             )
         if state.resume is not None:
-            # The zone resumes a scene this controller does not carry. Honour
-            # the zone's wish rather than this switch's list.
+            # The room resumes a scene this controller does not carry. Honour
+            # the room's wish rather than this switch's list.
             return PressResult(state.resume, None, "resume_foreign")
         return PressResult(config.steps[0], 0, "turn_on")
 
@@ -189,7 +189,7 @@ def press(
     return _advance(config, index, +1)
 
 
-def press_previous(config: CycleConfig, state: ZoneCycleState) -> PressResult:
+def press_previous(config: CycleConfig, state: RoomCycleState) -> PressResult:
     """The mirror of :func:`press`, for a double-press or an explicit service."""
     if not config.steps:
         return PressResult(ADAPTIVE, None, "empty_cycle")

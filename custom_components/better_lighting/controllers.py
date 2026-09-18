@@ -6,10 +6,10 @@ Three bindings, all of which coexist:
   that can tell *which* switch was pressed, so it is what makes requirement 8
   (per-switch cycle orders) possible at all.
 * **service_only** -- driven by ``better_lighting.press`` from an automation.
-* **zone_light** -- a bare ``light.turn_on`` on the zone's own light entity.
+* **room_light** -- a bare ``light.turn_on`` on the room's own light entity.
   Works with a plain wall switch and no configuration, but Home Assistant only
   sees a service call, so it cannot identify the switch; it is attributed to
-  the zone's default controller.
+  the room's default controller.
 
 The awkward part is not detecting a press. It is *not* detecting one when
 Home Assistant restarts, when an entity recovers from unavailable, or when our
@@ -47,7 +47,7 @@ from .const import DOMAIN, BindingType, PressAction
 if TYPE_CHECKING:
     from .context import ContextRegistry
     from .models import ControllerConfig
-    from .zone import ZoneController
+    from .room import RoomController
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class ControllerRuntime:
 
     hass: HomeAssistant
     config: ControllerConfig
-    zone: ZoneController
+    room: RoomController
     contexts: ContextRegistry
 
     _unsubscribers: list[CALLBACK_TYPE] = field(default_factory=list)
@@ -471,7 +471,8 @@ class ControllerRuntime:
             {
                 "controller_id": self.config.subentry_id,
                 "controller": self.config.name,
-                "zone_id": self.config.zone_id,
+                "room_id": self.config.room_id,
+                "zone_id": self.config.room_id,  # the old spelling
                 "kind": kind,
             },
         )
@@ -479,7 +480,7 @@ class ControllerRuntime:
     @callback
     def _flush_now(self, kind: str, steps: int) -> None:
         self.hass.async_create_task(
-            self.zone.async_press(self.config, kind, steps=max(steps, 1))
+            self.room.async_press(self.config, kind, steps=max(steps, 1))
         )
 
 

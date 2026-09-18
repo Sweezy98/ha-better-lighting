@@ -1,4 +1,4 @@
-"""The zone light entity: a light group with relative dimming and on-state memory."""
+"""The room light entity: a light group with relative dimming and on-state memory."""
 
 from __future__ import annotations
 
@@ -60,9 +60,9 @@ from .brightness import (
 from .const import DOMAIN, BindingType
 from .context import ContextRegistry
 from .group_entity import GroupEntity
-from .models import ControllerConfig, HubConfig, ZoneConfig
+from .models import ControllerConfig, HubConfig, RoomConfig
 from .profiles import Axis
-from .zone import Trigger, ZoneController
+from .room import RoomController, Trigger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -93,20 +93,20 @@ async def async_setup_entry(
     entry: BetterLightingConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Create one light entity per zone subentry."""
+    """Create one light entity per room subentry."""
     runtime = entry.runtime_data
-    for subentry_id, zone in runtime.zones.items():
+    for subentry_id, room in runtime.rooms.items():
         controller = runtime.controllers[subentry_id]
-        entity = ZoneLight(
-            zone,
+        entity = RoomLight(
+            room,
             runtime.hub,
             controller,
             runtime.contexts,
             runtime.default_switch.get(subentry_id),
         )
         controller.attach_light(entity)
-        runtime.zone_lights[subentry_id] = entity
-        # Binding to the subentry gives the zone its own device, and lets HA
+        runtime.room_lights[subentry_id] = entity
+        # Binding to the subentry gives the room its own device, and lets HA
         # clean both up automatically when the subentry is deleted.
         async_add_entities([entity], config_subentry_id=subentry_id)
 
@@ -148,7 +148,7 @@ def _reduce_attribute(
     return reducer(values)
 
 
-class ZoneLightExtraData(ExtraStoredData):
+class RoomLightExtraData(ExtraStoredData):
     """The on-state memory, persisted so a restart does not lose it."""
 
     def __init__(
@@ -161,7 +161,7 @@ class ZoneLightExtraData(ExtraStoredData):
         return {"remembered": self.remembered, "brightness": self.brightness}
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> ZoneLightExtraData:
+    def from_dict(cls, data: Mapping[str, Any]) -> RoomLightExtraData:
         remembered = data.get("remembered")
         brightness = data.get("brightness") or {}
         return cls(
@@ -170,8 +170,8 @@ class ZoneLightExtraData(ExtraStoredData):
         )
 
 
-class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
-    """A zone's lights, presented as one light.
+class RoomLight(GroupEntity, LightEntity, RestoreEntity):
+    """A room's lights, presented as one light.
 
     Invariant that the rest of the integration depends on: **the render engine
     never calls a service on this entity**, only on its members. Every call that
@@ -186,13 +186,13 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
 
     def __init__(
         self,
-        zone: ZoneConfig,
+        room: RoomConfig,
         hub: HubConfig,
-        controller: ZoneController,
+        controller: RoomController,
         contexts: ContextRegistry,
         default_switch: ControllerConfig | None = None,
     ) -> None:
-        self.zone = zone
+        self.room = room
         self.hub = hub
         self.controller = controller
         self.contexts = contexts
@@ -200,15 +200,15 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         # sees a service call here, so it cannot say which physical switch was
         # pressed -- that is what a bound controller is for.
         self.default_switch = default_switch
-        self._entity_ids = list(zone.lights)
+        self._entity_ids = list(room.lights)
 
-        self._attr_unique_id = f"{zone.subentry_id}_light"
-        self._attr_icon = zone.icon
+        self._attr_unique_id = f"{room.subentry_id}_light"
+        self._attr_icon = room.icon
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, zone.subentry_id)},
-            name=zone.name,
+            identifiers={(DOMAIN, room.subentry_id)},
+            name=room.name,
             manufacturer="Better Lighting",
-            model="Zone",
+            model="Room",
             entry_type=DeviceEntryType.SERVICE,
         )
         self._attr_available = False
@@ -222,7 +222,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         self._attr_min_color_temp_kelvin = DEFAULT_MIN_KELVIN
         self._attr_max_color_temp_kelvin = DEFAULT_MAX_KELVIN
 
-        # Which members were on when this zone was last turned off, so that
+        # Which members were on when this room was last turned off, so that
         # turning it back on restores the same set rather than lighting the
         # whole room. `None` means "no trustworthy memory, use all members".
         self._remembered: list[str] | None = None
@@ -233,7 +233,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Restore the on-state memory, then start tracking members."""
         if (stored := await self.async_get_last_extra_data()) is not None:
-            data = ZoneLightExtraData.from_dict(stored.as_dict())
+            data = RoomLightExtraData.from_dict(stored.as_dict())
             self._remembered = data.remembered
             self._remembered_brightness = data.brightness
             _LOGGER.debug(
@@ -243,13 +243,14 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData:
-        return ZoneLightExtraData(self._remembered, self._remembered_brightness)
+        return RoomLightExtraData(self._remembered, self._remembered_brightness)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
             ATTR_ENTITY_ID: self._entity_ids,
-            "bl_zone_id": self.zone.subentry_id,
+            "bl_room_id": self.room.subentry_id,
+            "bl_zone_id": self.room.subentry_id,  # the old spelling
             "bl_remembered_members": self._remembered,
         }
 
@@ -275,7 +276,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
     def is_our_context(self, context: Context | None) -> bool:
         """Did we cause this?
 
-        Shared with the zone controller, so a command issued by either is
+        Shared with the room controller, so a command issued by either is
         recognised by both. Keeping two separate registries would mean the
         group treating the controller's renders as external user activity.
         """
@@ -292,13 +293,13 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
 
     @callback
     def async_update_group_state(self) -> bool:
-        """Recompute this zone's state from its members."""
+        """Recompute this room's state from its members."""
         states = self._member_states()
         valid = self._valid(states)
         on_states = self._on(valid)
 
         if not valid:
-            # Every member missing or unavailable: so is the zone.
+            # Every member missing or unavailable: so is the room.
             self._attr_available = any(
                 s.state != STATE_UNAVAILABLE for s in states
             ) and bool(states)
@@ -306,14 +307,14 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
             return True
 
         self._attr_available = True
-        mode = all if self.zone.all_members_on else any
+        mode = all if self.room.all_members_on else any
         self._attr_is_on = mode(s.state == STATE_ON for s in valid)
 
         # Brightness comes from the members that are actually on; including an
         # off member would drag the reported value toward zero.
         self._attr_brightness = representative_brightness(
             {s.entity_id: s.attributes.get(ATTR_BRIGHTNESS) for s in on_states},
-            self.zone.brightness_strategy,
+            self.room.brightness_strategy,
         )
 
         self._attr_color_temp_kelvin = _reduce_attribute(
@@ -359,7 +360,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         ]
         if current:
             # Prefer the richest mode in use: a single ONOFF member must not
-            # make a colour-capable zone report as a plain switch.
+            # make a colour-capable room report as a plain switch.
             def rank(mode: str) -> tuple[int, int]:
                 weight = {ColorMode.ONOFF: -1, ColorMode.BRIGHTNESS: 0}.get(mode, 1)
                 return (weight, current.count(mode))
@@ -406,7 +407,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         if not entity_ids:
             return
         context = self.contexts.new_context(
-            self.zone.subentry_id, f"group_{service}", parent=self._context
+            self.room.subentry_id, f"group_{service}", parent=self._context
         )
         for entity_id in entity_ids:
             self.contexts.note_command(entity_id)
@@ -420,10 +421,10 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
 
     def restore_targets(self) -> list[str]:
         """Which members a bare turn-on should light."""
-        if not self.zone.remember_on_state or self._remembered is None:
+        if not self.room.remember_on_state or self._remembered is None:
             return list(self._entity_ids)
         # Membership may have changed since the memory was taken; if it no
-        # longer lines up, fall back to the whole zone rather than guessing.
+        # longer lines up, fall back to the whole room rather than guessing.
         allowed = set(self._entity_ids)
         remembered = [e for e in self._remembered if e in allowed]
         return remembered or list(self._entity_ids)
@@ -439,8 +440,8 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
 
         Three shapes, three meanings:
 
-        * bare -- a press. Cycle this zone.
-        * brightness on an already-lit zone -- a relative dim.
+        * bare -- a press. Cycle this room.
+        * brightness on an already-lit room -- a relative dim.
         * a colour or an effect -- the caller has said exactly what they want,
           so that is a manual override of those axes.
         """
@@ -448,7 +449,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
             _LOGGER.warning(
                 "%s received a turn_on in our own context; ignoring to avoid a "
                 "feedback loop. This usually means an automation or an area "
-                "target includes both this zone and its members.",
+                "target includes both this room and its members.",
                 self.entity_id,
             )
             return
@@ -482,7 +483,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         # light that is there rather than a request to light the room -- and
         # a room that lights itself up because you touched the colour wheel is
         # a worse surprise than one lamp staying dark.
-        if self.is_on and not self.zone.color_lights_dark_members:
+        if self.is_on and not self.room.color_lights_dark_members:
             targets = [
                 state.entity_id
                 for state in self._on(self._valid(self._member_states()))
@@ -502,7 +503,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         await self._async_call_members(SERVICE_TURN_ON, data, targets)
 
     async def _async_handle_press(self) -> None:
-        """A bare turn-on is a press on this zone's default controller."""
+        """A bare turn-on is a press on this room's default controller."""
         if self.default_switch is None:
             # No controller at all: fall back to simply lighting the room.
             targets = self.restore_targets()
@@ -543,11 +544,11 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
             )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Remember which members were on, then turn the whole zone off."""
+        """Remember which members were on, then turn the whole room off."""
         if (
             self.is_on
             and (switch := self.default_switch) is not None
-            and switch.binding_type is BindingType.ZONE_LIGHT
+            and switch.binding_type is BindingType.ROOM_LIGHT
             and switch.any_change_is_a_press
         ):
             # A toggle wired straight to this entity: its second press arrives
@@ -562,7 +563,7 @@ class ZoneLight(GroupEntity, LightEntity, RestoreEntity):
         valid = self._valid(states)
         on_states = self._on(valid)
 
-        if self.zone.remember_on_state:
+        if self.room.remember_on_state:
             # Snapshot before issuing anything: once the members start turning
             # off, the information is gone.
             self._remembered = [s.entity_id for s in on_states] if valid else None

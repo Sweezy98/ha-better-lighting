@@ -1,4 +1,4 @@
-"""The per-zone mode select: what this room is currently doing."""
+"""The per-room mode select: what this room is currently doing."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import BetterLightingConfigEntry
 from .const import DOMAIN, IDLE_STATE
-from .models import ZoneConfig
+from .models import RoomConfig
 from .modes import ModeGroupRuntime
-from .render import ZoneMode
-from .zone import ZoneController
+from .render import RoomMode
+from .room import RoomController
 
 PARALLEL_UPDATES = 0
 
@@ -28,11 +28,11 @@ async def async_setup_entry(
     entry: BetterLightingConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Create the mode select for every zone."""
+    """Create the mode select for every room."""
     runtime = entry.runtime_data
-    for subentry_id, zone in runtime.zones.items():
+    for subentry_id, room in runtime.rooms.items():
         async_add_entities(
-            [ZoneModeSelect(zone, runtime.controllers[subentry_id])],
+            [RoomModeSelect(room, runtime.controllers[subentry_id])],
             config_subentry_id=subentry_id,
         )
     for subentry_id, mode_runtime in runtime.mode_runtimes.items():
@@ -41,8 +41,8 @@ async def async_setup_entry(
         )
 
 
-class ZoneModeSelect(SelectEntity, RestoreEntity):
-    """Shows and sets the zone's mode.
+class RoomModeSelect(SelectEntity, RestoreEntity):
+    """Shows and sets the room's mode.
 
     ``current_option`` is derived from the controller's own state, not by
     matching live light attributes against scene definitions. Scenery has to
@@ -57,15 +57,15 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
     _attr_translation_key = "zone_mode"
     _attr_icon = "mdi:palette-outline"
 
-    def __init__(self, zone: ZoneConfig, controller: ZoneController) -> None:
-        self.zone = zone
+    def __init__(self, room: RoomConfig, controller: RoomController) -> None:
+        self.room = room
         self.controller = controller
-        self._attr_unique_id = f"{zone.subentry_id}_mode"
+        self._attr_unique_id = f"{room.subentry_id}_mode"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, zone.subentry_id)},
-            name=zone.name,
+            identifiers={(DOMAIN, room.subentry_id)},
+            name=room.name,
             manufacturer="Better Lighting",
-            model="Zone",
+            model="Room",
             entry_type=DeviceEntryType.SERVICE,
         )
 
@@ -81,9 +81,9 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
         report what the room is doing.
         """
         names: dict[str, str] = {}
-        zone_id = self.zone.subentry_id
+        room_id = self.room.subentry_id
         for scene_id, scene in self.controller.scenes.items():
-            if not scene.offered_in(zone_id) and (
+            if not scene.offered_in(room_id) and (
                 scene_id != self.controller.active_scene_id
             ):
                 continue
@@ -109,7 +109,7 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
     @property
     def current_option(self) -> str | None:
         mode = self.controller.mode
-        if mode is ZoneMode.OFF:
+        if mode is RoomMode.OFF:
             # Report what the room would come back as, so the select stays
             # readable while it is dark rather than reading as unknown.
             pending = self.controller.pending_scene_id
@@ -117,7 +117,7 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
                 if scene_id == pending:
                     return name
             return OPTION_ADAPTIVE
-        if mode is ZoneMode.SCENE:
+        if mode is RoomMode.SCENE:
             for name, scene_id in self._scene_names.items():
                 if scene_id == self.controller.active_scene_id:
                     return name
@@ -165,11 +165,11 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
         if option == OPTION_OFF:
             # No longer offered, but a state restored from an older version
             # can still name it.
-            target, scene_id = ZoneMode.OFF, None
+            target, scene_id = RoomMode.OFF, None
         elif option == OPTION_ADAPTIVE:
-            target, scene_id = ZoneMode.ADAPTIVE, None
+            target, scene_id = RoomMode.ADAPTIVE, None
         elif (scene_id := self._scene_names.get(option)) is not None:
-            target = ZoneMode.SCENE
+            target = RoomMode.SCENE
         else:
             # A restored option naming a scene that has since been deleted.
             return
@@ -183,7 +183,7 @@ class ZoneModeSelect(SelectEntity, RestoreEntity):
 
 
 class ModeStateSelect(SelectEntity, RestoreEntity):
-    """The state of a cross-zone mode.
+    """The state of a cross-room mode.
 
     This is the integration point for an external automation: a media player
     template calls ``select.select_option`` with playing, paused or credits,
@@ -220,10 +220,11 @@ class ModeStateSelect(SelectEntity, RestoreEntity):
         runtime = self.runtime
         return {
             "bl_session_id": runtime.session_id,
-            "bl_zones": sorted(runtime.config.zone_ids),
+            "bl_rooms": sorted(runtime.config.room_ids),
+            "bl_zones": sorted(runtime.config.room_ids),  # the old spelling
             "bl_opted_out": sorted(runtime.opted_out),
             "bl_deferred": sorted(
-                action.zone_id
+                action.room_id
                 for action in runtime.deferred
                 if action.session_id == runtime.session_id
             ),

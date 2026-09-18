@@ -48,7 +48,7 @@ FIXED_NOW = "2026-06-15 20:00:00+00:00"
 async def unload_entries(hass):
     """Unload our config entries when a test ends.
 
-    A zone schedules a staggered tick, cancelled by the controller's shutdown
+    A room schedules a staggered tick, cancelled by the controller's shutdown
     on unload. A test that creates a room through the flow and then simply
     ends never unloads, so the timer outlives it and the harness rightly
     complains. Nothing to do with the code under test; everything to do with
@@ -78,8 +78,8 @@ def fixed_clock(freezer):
 class MemberLight(LightEntity):
     """A real light entity, so tests exercise the actual service path.
 
-    Mocking ``light.turn_on`` wholesale would replace the service our own zone
-    entity is registered against, so the zone would never run at all. Using real
+    Mocking ``light.turn_on`` wholesale would replace the service our own room
+    entity is registered against, so the room would never run at all. Using real
     member entities instead means a test asserts on what the bulbs actually did.
     """
 
@@ -119,10 +119,10 @@ class MemberLight(LightEntity):
         self.async_write_ha_state()
 
 
-def zone_subentry(
+def room_subentry(
     name: str = "Kitchen", lights: list[str] | None = None, **overrides
 ) -> ConfigSubentryData:
-    """A zone subentry payload, with sensible defaults for tests."""
+    """A room subentry payload, with sensible defaults for tests."""
     data = {
         "name": name,
         "lights": lights if lights is not None else ["light.one", "light.two"],
@@ -136,17 +136,17 @@ def zone_subentry(
     }
     return ConfigSubentryData(
         data=data,
-        subentry_type=SubentryType.ZONE.value,
+        subentry_type=SubentryType.ROOM.value,
         title=name,
         unique_id=f"zone:{name.lower()}",
     )
 
 
 def hub_entry(**kwargs) -> MockConfigEntry:
-    """A hub entry with one two-light zone unless told otherwise."""
-    kwargs.setdefault("subentries_data", [zone_subentry()])
+    """A hub entry with one two-light room unless told otherwise."""
+    kwargs.setdefault("subentries_data", [room_subentry()])
     kwargs.setdefault("options", {})
-    kwargs["subentries_data"] = _fold_into_zones(kwargs["subentries_data"])
+    kwargs["subentries_data"] = _fold_into_rooms(kwargs["subentries_data"])
     return MockConfigEntry(
         domain=DOMAIN,
         title="Better Lighting",
@@ -198,7 +198,7 @@ def form_input(
     return {**data, **overrides}
 
 
-def scene_to_zone_scene(data: ConfigSubentryData) -> dict[str, Any]:
+def scene_to_room_scene(data: ConfigSubentryData) -> dict[str, Any]:
     """Turn a scene-subentry payload into one of a room's own scenes.
 
     Scenes used to be house-wide recipes with one brightness and one colour.
@@ -235,8 +235,8 @@ def scene_to_zone_scene(data: ConfigSubentryData) -> dict[str, Any]:
     }
 
 
-def _fold_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
-    """Attach scene and calibration payloads to the zones that own them."""
+def _fold_into_rooms(subentries: list[ConfigSubentryData]) -> list[Any]:
+    """Attach scene and calibration payloads to the rooms that own them."""
     moved = (
         SubentryType.SCENE.value,
         SubentryType.LIGHT_PROFILE.value,
@@ -257,10 +257,10 @@ def _fold_into_zones(subentries: list[ConfigSubentryData]) -> list[Any]:
         if s["subentry_type"] == SubentryType.CONTROLLER.value
     ]
     rest = [s for s in subentries if s["subentry_type"] not in moved]
-    converted = [scene_to_zone_scene(s) for s in scenes]
+    converted = [scene_to_room_scene(s) for s in scenes]
     out = []
     for sub in rest:
-        if sub["subentry_type"] != SubentryType.ZONE.value:
+        if sub["subentry_type"] != SubentryType.ROOM.value:
             out.append(sub)
             continue
         data = dict(sub["data"])
@@ -308,19 +308,19 @@ def subentry_ids(entry: MockConfigEntry) -> dict[str, str]:
     return ids
 
 
-def add_zone_scene(
+def add_room_scene(
     hass: HomeAssistant,
     entry: MockConfigEntry,
     scene: ConfigSubentryData,
-    zone_title: str | None = None,
+    room_title: str | None = None,
 ) -> str:
     """Append a scene to a room after the hub is already running."""
-    converted = scene_to_zone_scene(scene)
+    converted = scene_to_room_scene(scene)
     converted.pop("_zones", None)
     for sub in entry.subentries.values():
-        if sub.subentry_type != SubentryType.ZONE.value:
+        if sub.subentry_type != SubentryType.ROOM.value:
             continue
-        if zone_title is not None and sub.title != zone_title:
+        if room_title is not None and sub.title != room_title:
             continue
         hass.config_entries.async_update_subentry(
             entry,
@@ -330,7 +330,7 @@ def add_zone_scene(
     return converted["scene_id"]
 
 
-def remove_zone_scene(
+def remove_room_scene(
     hass: HomeAssistant, entry: MockConfigEntry, scene_id: str
 ) -> None:
     """Delete a scene from whichever room holds it."""
@@ -343,18 +343,18 @@ def remove_zone_scene(
             )
 
 
-def add_zone_switch(
+def add_room_switch(
     hass: HomeAssistant,
     entry: MockConfigEntry,
     switch: ConfigSubentryData,
-    zone_id: str,
+    room_id: str,
 ) -> str:
     """Attach a switch to a room after the hub is already running."""
     data = dict(switch["data"])
     switch_id = f"switch_{slugify(switch['title'])}"
     data["switch_id"] = switch_id
     for sub in entry.subentries.values():
-        if sub.subentry_id != zone_id:
+        if sub.subentry_id != room_id:
             continue
         hass.config_entries.async_update_subentry(
             entry,

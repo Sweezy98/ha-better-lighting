@@ -10,10 +10,10 @@ from custom_components.better_lighting.const import DOMAIN
 from tests.conftest import (
     MemberLight,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
     subentry_ids,
-    zone_subentry,
 )
 
 pytestmark = pytest.mark.usefixtures("socket_enabled")
@@ -47,8 +47,8 @@ async def _setup(hass: HomeAssistant, ws_client, scene_entities):
 
     entry = hub_entry(
         subentries_data=[
-            zone_subentry("Lounge", ["light.lounge"]),
-            zone_subentry("Kitchen", ["light.kitchen"]),
+            room_subentry("Lounge", ["light.lounge"]),
+            room_subentry("Kitchen", ["light.kitchen"]),
         ]
     )
     await setup_hub(hass, entry)
@@ -141,7 +141,7 @@ class TestImporting:
                 "id": 1,
                 "type": f"{DOMAIN}/import_scene",
                 "entity_id": "scene.movie",
-                "zone_ids": [ids["Lounge"], ids["Kitchen"]],
+                "room_ids": [ids["Lounge"], ids["Kitchen"]],
             }
         )
         assert (await client.receive_json())["success"]
@@ -176,7 +176,7 @@ class TestImporting:
                 "id": 1,
                 "type": f"{DOMAIN}/import_scene",
                 "entity_id": "scene.movie",
-                "zone_ids": [ids["Lounge"]],
+                "room_ids": [ids["Lounge"]],
             }
         )
         await client.receive_json()
@@ -198,7 +198,7 @@ class TestImporting:
                 "id": 1,
                 "type": f"{DOMAIN}/import_scene",
                 "entity_id": "scene.movie",
-                "zone_ids": [ids["Lounge"]],
+                "room_ids": [ids["Lounge"]],
             }
         )
         await client.receive_json()
@@ -231,7 +231,7 @@ class TestImporting:
                 "id": 1,
                 "type": f"{DOMAIN}/import_scene",
                 "entity_id": "scene.movie",
-                "zone_ids": [ids["Lounge"]],
+                "room_ids": [ids["Lounge"]],
             }
         )
         await client.receive_json()
@@ -258,7 +258,7 @@ class TestImporting:
                 "id": 1,
                 "type": f"{DOMAIN}/import_scene",
                 "entity_id": "scene.movie",
-                "zone_ids": [ids["Lounge"]],
+                "room_ids": [ids["Lounge"]],
             }
         )
         await client.receive_json()

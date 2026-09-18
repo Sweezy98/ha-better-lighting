@@ -14,12 +14,12 @@ from custom_components.better_lighting.const import SubentryType
 from tests.conftest import (
     MemberLight,
     hub_entry,
+    room_subentry,
     setup_hub,
     setup_members,
-    zone_subentry,
 )
 
-ZONE = "light.kitchen"
+ROOM = "light.kitchen"
 SELECT = "select.kitchen_scenes"
 
 
@@ -64,9 +64,9 @@ async def _select(hass: HomeAssistant, option: str) -> None:
 
 async def _setup(hass: HomeAssistant, *scenes) -> None:
     await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
-    await setup_hub(hass, hub_entry(subentries_data=[zone_subentry(), *scenes]))
+    await setup_hub(hass, hub_entry(subentries_data=[room_subentry(), *scenes]))
     await hass.services.async_call(
-        "light", "turn_on", {"entity_id": ZONE}, blocking=True
+        "light", "turn_on", {"entity_id": ROOM}, blocking=True
     )
     await hass.async_block_till_done()
 
@@ -113,7 +113,7 @@ class TestModeSelect:
         """The select answers "what should this look like", not "is it on"."""
         await _setup(hass, scene_subentry())
         await hass.services.async_call(
-            "light", "turn_off", {"entity_id": ZONE}, blocking=True
+            "light", "turn_off", {"entity_id": ROOM}, blocking=True
         )
         await hass.async_block_till_done()
 
@@ -193,7 +193,7 @@ class TestOnLightsOnly:
             hass,
             hub_entry(
                 subentries_data=[
-                    zone_subentry(),
+                    room_subentry(),
                     scene_subentry("Dim", brightness=10, on_lights_only=True),
                 ]
             ),
@@ -205,8 +205,8 @@ class TestOnLightsOnly:
         assert hass.states.get("light.two").state == "off"
 
 
-def zone_scene(name: str = "Movie", lights=None, **overrides) -> dict:
-    """One of a room's own scenes, as stored inside the zone."""
+def room_scene(name: str = "Movie", lights=None, **overrides) -> dict:
+    """One of a room's own scenes, as stored inside the room."""
     return {
         "scene_id": f"scene_{name.lower().replace(' ', '_')}",
         "name": name,
@@ -227,10 +227,10 @@ def light_spec(**fields) -> dict:
     return spec
 
 
-class TestTheZoneFlowOwnsScenes:
+class TestTheRoomFlowOwnsScenes:
     """Scenes are built inside the room they belong to."""
 
-    ZONE_INPUT: ClassVar = {
+    ROOM_INPUT: ClassVar = {
         "name": "Living Room",
         "lights": ["light.one"],
         "icon": "mdi:sofa",
@@ -239,14 +239,14 @@ class TestTheZoneFlowOwnsScenes:
     async def _open(self, hass: HomeAssistant):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+            hass, hub_entry(subentries_data=[room_subentry("Kitchen", ["light.two"])])
         )
         result = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, SubentryType.ZONE.value),
+            (entry.entry_id, SubentryType.ROOM.value),
             context={"source": config_entries.SOURCE_USER},
         )
         result = await hass.config_entries.subentries.async_configure(
-            result["flow_id"], self.ZONE_INPUT
+            result["flow_id"], self.ROOM_INPUT
         )
         assert result["step_id"] == "menu"
         return entry, result
@@ -362,21 +362,21 @@ class TestScenesBelongToOneRoom:
         )
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(
+                room_subentry(
                     "Living Room",
                     ["light.lr"],
                     scenes=[
-                        zone_scene(
+                        room_scene(
                             "Reading",
                             {"*": light_spec(brightness_pct=35, color_format="none")},
                         )
                     ],
                 ),
-                zone_subentry(
+                room_subentry(
                     "Kitchen",
                     ["light.kt"],
                     scenes=[
-                        zone_scene(
+                        room_scene(
                             "Cooking",
                             {"*": light_spec(brightness_pct=90, color_format="none")},
                         )
@@ -425,21 +425,21 @@ class TestScenesBelongToOneRoom:
         )
         entry = hub_entry(
             subentries_data=[
-                zone_subentry(
+                room_subentry(
                     "Living Room",
                     ["light.lr"],
                     scenes=[
-                        zone_scene(
+                        room_scene(
                             "Reading",
                             {"*": light_spec(brightness_pct=35, color_format="none")},
                         )
                     ],
                 ),
-                zone_subentry(
+                room_subentry(
                     "Bedroom",
                     ["light.bd"],
                     scenes=[
-                        zone_scene(
+                        room_scene(
                             "Reading",
                             {"*": light_spec(brightness_pct=80, color_format="none")},
                             scene_id="scene_reading_bedroom",
@@ -475,9 +475,9 @@ class TestNightScene:
         entry = hub_entry(
             options={"night_source_entity": "input_boolean.asleep"},
             subentries_data=[
-                zone_subentry(
+                room_subentry(
                     scenes=[
-                        zone_scene(
+                        room_scene(
                             "Nightlight",
                             {
                                 "*": light_spec(
@@ -496,7 +496,7 @@ class TestNightScene:
         await setup_hub(hass, entry)
 
         await hass.services.async_call(
-            "light", "turn_on", {"entity_id": ZONE}, blocking=True
+            "light", "turn_on", {"entity_id": ROOM}, blocking=True
         )
         await hass.async_block_till_done()
 
@@ -512,14 +512,14 @@ class TestCalibrationsBelongToTheRoom:
     ) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+            hass, hub_entry(subentries_data=[room_subentry("Kitchen", ["light.two"])])
         )
         result = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, SubentryType.ZONE.value),
+            (entry.entry_id, SubentryType.ROOM.value),
             context={"source": config_entries.SOURCE_USER},
         )
         result = await hass.config_entries.subentries.async_configure(
-            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+            result["flow_id"], TestTheRoomFlowOwnsScenes.ROOM_INPUT
         )
         result = await hass.config_entries.subentries.async_configure(
             result["flow_id"], {"next_step_id": "calibrations"}
@@ -556,14 +556,14 @@ class TestCalibrationsBelongToTheRoom:
         """Calibration is about one bulb in one room."""
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+            hass, hub_entry(subentries_data=[room_subentry("Kitchen", ["light.two"])])
         )
         result = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, SubentryType.ZONE.value),
+            (entry.entry_id, SubentryType.ROOM.value),
             context={"source": config_entries.SOURCE_USER},
         )
         result = await hass.config_entries.subentries.async_configure(
-            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+            result["flow_id"], TestTheRoomFlowOwnsScenes.ROOM_INPUT
         )
         result = await hass.config_entries.subentries.async_configure(
             result["flow_id"], {"next_step_id": "calibrations"}
@@ -585,14 +585,14 @@ class TestSwitchesBelongToTheRoom:
     ) -> None:
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+            hass, hub_entry(subentries_data=[room_subentry("Kitchen", ["light.two"])])
         )
         result = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, SubentryType.ZONE.value),
+            (entry.entry_id, SubentryType.ROOM.value),
             context={"source": config_entries.SOURCE_USER},
         )
         result = await hass.config_entries.subentries.async_configure(
-            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+            result["flow_id"], TestTheRoomFlowOwnsScenes.ROOM_INPUT
         )
 
         async def menu(step: str):
@@ -647,16 +647,16 @@ class TestTheMenuIsTheHub:
     async def _menu(self, hass: HomeAssistant):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+            hass, hub_entry(subentries_data=[room_subentry("Kitchen", ["light.two"])])
         )
         result = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, SubentryType.ZONE.value),
+            (entry.entry_id, SubentryType.ROOM.value),
             context={"source": config_entries.SOURCE_USER},
         )
         # Adding a room asks two questions, not nine sections' worth.
         assert set(result["data_schema"].schema) >= {"name", "lights"}
         return await hass.config_entries.subentries.async_configure(
-            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+            result["flow_id"], TestTheRoomFlowOwnsScenes.ROOM_INPUT
         )
 
     async def test_adding_a_room_lands_on_its_menu(self, hass: HomeAssistant) -> None:
@@ -698,14 +698,14 @@ class TestConditionalAndDescribedFields:
     async def _open(self, hass: HomeAssistant, step: str):
         await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
         entry = await setup_hub(
-            hass, hub_entry(subentries_data=[zone_subentry("Kitchen", ["light.two"])])
+            hass, hub_entry(subentries_data=[room_subentry("Kitchen", ["light.two"])])
         )
         result = await hass.config_entries.subentries.async_init(
-            (entry.entry_id, SubentryType.ZONE.value),
+            (entry.entry_id, SubentryType.ROOM.value),
             context={"source": config_entries.SOURCE_USER},
         )
         result = await hass.config_entries.subentries.async_configure(
-            result["flow_id"], TestTheZoneFlowOwnsScenes.ZONE_INPUT
+            result["flow_id"], TestTheRoomFlowOwnsScenes.ROOM_INPUT
         )
         return await hass.config_entries.subentries.async_configure(
             result["flow_id"], {"next_step_id": step}

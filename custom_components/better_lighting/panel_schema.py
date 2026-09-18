@@ -23,17 +23,17 @@ from typing import Any
 
 from .const import (
     COLOR_PRESET_SPECS,
+    CONF_ROOM_ID,
     CONF_RULE_STATES,
     CONF_SCENE_ORDER,
-    CONF_ZONE_ID,
     CONTROLLER_SPECS,
     EFFECT_SPECS,
     EFFECT_STEP_SPECS,
     HUB_SPECS,
     LIGHT_PROFILE_SPECS,
     MODE_SPECS,
-    ZONE_SCENE_SPECS,
-    ZONE_SPECS,
+    ROOM_SCENE_SPECS,
+    ROOM_SPECS,
     FieldSpec,
     Section,
     mode_rule_specs,
@@ -48,7 +48,7 @@ _LEADING_SYMBOLS = re.compile(r"^[^\w]+", re.UNICODE)
 # The order the panel shows a room's sections in: what it is, what it does by
 # itself, then what it does about people and windows. Same grouping as the
 # menu, because somebody who learned one should not have to learn the other.
-ZONE_SECTIONS: tuple[Section, ...] = (
+ROOM_SECTIONS: tuple[Section, ...] = (
     Section.BASIC,
     Section.GROUP,
     Section.ADAPTIVE,
@@ -295,7 +295,7 @@ def schema(language: str = "en") -> dict[str, Any]:
     words = labels(language)
     forms = {
         "hub": _table(HUB_SPECS, HUB_SECTIONS),
-        "zone": _table(ZONE_SPECS, ZONE_SECTIONS),
+        "zone": _table(ROOM_SPECS, ROOM_SECTIONS),
         "mode": _table(MODE_SPECS),
         # The room a switch is in is implicit now that it lives inside one,
         # and its running order is edited as a list rather than a field --
@@ -304,12 +304,12 @@ def schema(language: str = "en") -> dict[str, Any]:
             tuple(
                 spec
                 for spec in CONTROLLER_SPECS
-                if spec.key not in (CONF_ZONE_ID, CONF_SCENE_ORDER)
+                if spec.key not in (CONF_ROOM_ID, CONF_SCENE_ORDER)
             ),
             SWITCH_SECTIONS,
         ),
         "calibration": _table(LIGHT_PROFILE_SPECS),
-        "scene": _table(ZONE_SCENE_SPECS),
+        "scene": _table(ROOM_SCENE_SPECS),
         "preset": _table(COLOR_PRESET_SPECS),
         "effect": _table(EFFECT_SPECS),
         "effect_step": _table(EFFECT_STEP_SPECS),

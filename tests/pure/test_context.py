@@ -38,7 +38,7 @@ class TestOwnership:
         context = registry.new_context("kitchen", "activate")
         origin = registry.origin(context)
         assert origin is not None
-        assert origin.zone_id == "kitchen"
+        assert origin.room_id == "kitchen"
         assert origin.reason == "activate"
 
 

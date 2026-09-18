@@ -30,7 +30,7 @@ from homeassistant.core import (
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 if TYPE_CHECKING:
-    from .models import ZoneConfig
+    from .models import RoomConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,13 +46,13 @@ class WindowWatcher:
     def __init__(
         self,
         hass: HomeAssistant,
-        zone: ZoneConfig,
+        room: RoomConfig,
         *,
         on_open: Callable[[], None] | None = None,
         on_closed: Callable[[], None] | None = None,
     ) -> None:
         self.hass = hass
-        self.zone = zone
+        self.room = room
         self._on_open = on_open
         self._on_closed = on_closed
 
@@ -63,12 +63,12 @@ class WindowWatcher:
     # -- lifecycle ---------------------------------------------------------
 
     async def async_setup(self) -> None:
-        if not self.zone.window_entities:
+        if not self.room.window_entities:
             return
         self._open = self._any_open()
         self._unsubscribers.append(
             async_track_state_change_event(
-                self.hass, list(self.zone.window_entities), self._handle_change
+                self.hass, list(self.room.window_entities), self._handle_change
             )
         )
 
@@ -83,14 +83,14 @@ class WindowWatcher:
 
     @property
     def watching(self) -> bool:
-        return bool(self.zone.window_entities)
+        return bool(self.room.window_entities)
 
     @property
     def is_open(self) -> bool:
         return self._open
 
     def _any_open(self) -> bool:
-        for entity_id in self.zone.window_entities:
+        for entity_id in self.room.window_entities:
             state = self.hass.states.get(entity_id)
             if state is None or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 # An unreadable sensor is not evidence of an open window.
@@ -114,7 +114,7 @@ class WindowWatcher:
             return
 
         delay = (
-            self.zone.insect_open_delay if now_open else self.zone.insect_close_delay
+            self.room.insect_open_delay if now_open else self.room.insect_close_delay
         )
         self._arm(now_open, delay)
 
@@ -133,7 +133,7 @@ class WindowWatcher:
                 return
             self._open = actual
             _LOGGER.debug(
-                "%s: window %s", self.zone.name, "open" if actual else "closed"
+                "%s: window %s", self.room.name, "open" if actual else "closed"
             )
             callback_fn = self._on_open if actual else self._on_closed
             if callback_fn is not None:

@@ -29,13 +29,13 @@ async def async_setup_entry(
     """Create one event entity per configured controller."""
     runtime = entry.runtime_data
     for controller in runtime.switches.values():
-        if controller.zone_id not in runtime.zones:
+        if controller.room_id not in runtime.rooms:
             continue
         # Registered against the *room's* subentry, so the switch appears
         # inside that room's group rather than as a card of its own.
         async_add_entities(
-            [ControllerPressEvent(controller, runtime.zones[controller.zone_id].name)],
-            config_subentry_id=controller.zone_id,
+            [ControllerPressEvent(controller, runtime.rooms[controller.room_id].name)],
+            config_subentry_id=controller.room_id,
         )
 
 
@@ -47,13 +47,13 @@ class ControllerPressEvent(EventEntity):
     _attr_icon = "mdi:gesture-tap-button"
     _attr_event_types = PRESS_KINDS
 
-    def __init__(self, controller: ControllerConfig, zone_name: str) -> None:
+    def __init__(self, controller: ControllerConfig, room_name: str) -> None:
         self.controller = controller
         self._attr_unique_id = f"{controller.subentry_id}_press"
         # The room's own device, not one of the switch's own. A switch has no
         # hardware of ours behind it, and giving it a device of its own meant
         # deleting the switch left an empty device and a dead entity behind.
-        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, controller.zone_id)})
+        self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, controller.room_id)})
         self._attr_name = controller.name
 
     async def async_added_to_hass(self) -> None:

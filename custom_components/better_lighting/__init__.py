@@ -1,7 +1,7 @@
 """The Better Lighting integration.
 
 A single hub config entry owns every configuration object as a subentry, so
-scenes are reusable across zones and a cross-zone mode has one place to live.
+scenes are reusable across rooms and a cross-room mode has one place to live.
 All runtime state hangs off ``entry.runtime_data`` -- there is deliberately no
 module-level singleton, because Adaptive Lighting's shared manager is the root
 cause of its per-light cross-talk between profiles.
@@ -22,11 +22,11 @@ from homeassistant.helpers import issue_registry as ir
 
 from .activity import ActivityLog
 from .const import (
+    CONF_ROOM_SCENES,
+    CONF_ROOM_SWITCHES,
     CONF_SCENE_ID,
     CONF_SCENE_ORDER,
     CONF_SCENE_ORDER_EXCLUDED,
-    CONF_ZONE_SCENES,
-    CONF_ZONE_SWITCHES,
     DOMAIN,
     PLATFORMS,
     BindingType,
@@ -39,13 +39,13 @@ from .models import (
     ControllerConfig,
     HubConfig,
     ModeConfig,
-    ZoneConfig,
+    RoomConfig,
     synthetic_controller,
 )
 from .modes import (
     EVENT_DEFERRED,
     EVENT_MODE_CHANGED,
-    EVENT_ZONE_OPTED_OUT,
+    EVENT_ROOM_OPTED_OUT,
     ModeGroupRuntime,
 )
 from .openings import WindowWatcher
@@ -54,26 +54,26 @@ from .panel import (
     async_remove_panel,
     async_setup_panel,
 )
-from .presence import ZonePresence
+from .presence import RoomPresence
 from .profiles import LightProfile
 from .repairs import async_check_legacy, async_check_references
+from .room import EVENT_ROOM_MODE_CHANGED, RoomController
 from .scenes import Scene
 from .services import async_register_services, async_remove_services
 from .session import DeferredRegistry
 from .store import SessionStore
-from .zone import EVENT_ZONE_MODE_CHANGED, ZoneController
 
 # Everything worth remembering, which is the same set the panel watches.
 ACTIVITY_EVENTS = (
     EVENT_PRESS,
-    EVENT_ZONE_MODE_CHANGED,
+    EVENT_ROOM_MODE_CHANGED,
     EVENT_MODE_CHANGED,
     EVENT_DEFERRED,
-    EVENT_ZONE_OPTED_OUT,
+    EVENT_ROOM_OPTED_OUT,
 )
 
 if TYPE_CHECKING:
-    from .light import ZoneLight
+    from .light import RoomLight
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,30 +85,30 @@ class BetterLightingRuntime:
     """Everything the integration knows, for the lifetime of one entry load."""
 
     hub: HubConfig
-    zones: dict[str, ZoneConfig]
+    rooms: dict[str, RoomConfig]
     # Per-light calibration, keyed by light entity_id. A light belongs to one
-    # zone, so one profile per light is unambiguous.
+    # room, so one profile per light is unambiguous.
     profiles: dict[str, LightProfile] = field(default_factory=dict)
-    # Scenes are zone-agnostic recipes, keyed by subentry_id so a rename
+    # Scenes are room-agnostic recipes, keyed by subentry_id so a rename
     # cannot break a reference.
     scenes: dict[str, Scene] = field(default_factory=dict)
-    # One controller per zone; the only thing that commands member lights.
-    controllers: dict[str, ZoneController] = field(default_factory=dict)
+    # One controller per room; the only thing that commands member lights.
+    controllers: dict[str, RoomController] = field(default_factory=dict)
     # Configured switches, keyed by subentry_id.
     switches: dict[str, ControllerConfig] = field(default_factory=dict)
     switch_runtimes: dict[str, ControllerRuntime] = field(default_factory=dict)
     activity: ActivityLog | None = None
-    # The controller a bare turn-on on a zone's light entity is attributed to,
-    # keyed by zone subentry_id.
+    # The controller a bare turn-on on a room's light entity is attributed to,
+    # keyed by room subentry_id.
     default_switch: dict[str, ControllerConfig] = field(default_factory=dict)
-    # Cross-zone modes, and the deferred actions their sessions are waiting on.
+    # Cross-room modes, and the deferred actions their sessions are waiting on.
     modes: dict[str, ModeConfig] = field(default_factory=dict)
     mode_runtimes: dict[str, ModeGroupRuntime] = field(default_factory=dict)
     deferred: DeferredRegistry = field(default_factory=DeferredRegistry)
     sessions: SessionStore | None = None
     # Live entity objects, registered as their platforms come up. Keyed by
-    # zone subentry_id so any subsystem can reach a zone without a global.
-    zone_lights: dict[str, ZoneLight] = field(default_factory=dict)
+    # room subentry_id so any subsystem can reach a room without a global.
+    room_lights: dict[str, RoomLight] = field(default_factory=dict)
     contexts: ContextRegistry = field(default_factory=ContextRegistry)
     # Fingerprint of the config this runtime was built from, so an update
     # callback that changes nothing does not trigger a reload storm.
@@ -118,7 +118,7 @@ class BetterLightingRuntime:
 def _fingerprint(entry: ConfigEntry) -> int:
     """A cheap hash of everything a reload would rebuild.
 
-    Config values contain lists (a zone's lights), so this serialises to sorted
+    Config values contain lists (a room's lights), so this serialises to sorted
     JSON rather than hashing the structure directly.
     """
     payload = {
@@ -141,22 +141,22 @@ def _fingerprint(entry: ConfigEntry) -> int:
 
 def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
     """Parse the entry and its subentries into typed config objects."""
-    zones = {
-        subentry.subentry_id: ZoneConfig.from_subentry(subentry)
+    rooms = {
+        subentry.subentry_id: RoomConfig.from_subentry(subentry)
         for subentry in entry.subentries.values()
-        if subentry.subentry_type == SubentryType.ZONE.value
+        if subentry.subentry_type == SubentryType.ROOM.value
     }
     # Calibration belongs to the room whose lights it calibrates, so the flat
-    # registry is assembled from the zones -- as the scene registry is.
+    # registry is assembled from the rooms -- as the scene registry is.
     profiles = {
         entity_id: profile
-        for zone in zones.values()
-        for entity_id, profile in zone.light_profiles.items()
+        for room in rooms.values()
+        for entity_id, profile in room.light_profiles.items()
     }
     # Scenes belong to rooms now, so the flat registry is assembled from the
-    # zones rather than from subentries of its own. Keeping it flat means
+    # rooms rather than from subentries of its own. Keeping it flat means
     # repairs, diagnostics and the services still have one place to look.
-    scenes = {scene.scene_id: scene for zone in zones.values() for scene in zone.scenes}
+    scenes = {scene.scene_id: scene for room in rooms.values() for scene in room.scenes}
     for kind, label in (
         (SubentryType.SCENE.value, "scene"),
         (SubentryType.LIGHT_PROFILE.value, "light calibration"),
@@ -178,24 +178,24 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
     # Switches belong to the room they drive, as scenes and calibration do.
     switches = {
         switch.subentry_id: switch
-        for zone in zones.values()
-        for switch in zone.switches
+        for room in rooms.values()
+        for switch in room.switches
     }
 
-    # One controller per zone owns bare turn-ons. An explicitly flagged one
-    # wins; otherwise any controller bound to the zone light; otherwise a
+    # One controller per room owns bare turn-ons. An explicitly flagged one
+    # wins; otherwise any controller bound to the room light; otherwise a
     # synthetic one, so a plain switch cycles without configuration.
     scene_ids = tuple(scenes)
     default_switch: dict[str, ControllerConfig] = {}
-    for zone_id, zone in zones.items():
-        candidates = [c for c in switches.values() if c.zone_id == zone_id]
+    for room_id, room in rooms.items():
+        candidates = [c for c in switches.values() if c.room_id == room_id]
         chosen = next((c for c in candidates if c.is_default), None)
         if chosen is None:
             chosen = next(
-                (c for c in candidates if c.binding_type is BindingType.ZONE_LIGHT),
+                (c for c in candidates if c.binding_type is BindingType.ROOM_LIGHT),
                 None,
             )
-        default_switch[zone_id] = chosen or synthetic_controller(zone, scene_ids)
+        default_switch[room_id] = chosen or synthetic_controller(room, scene_ids)
 
     modes = {
         mode.subentry_id: mode
@@ -206,7 +206,7 @@ def build_runtime(entry: ConfigEntry) -> BetterLightingRuntime:
 
     return BetterLightingRuntime(
         hub=HubConfig.from_options(dict(entry.options)),
-        zones=zones,
+        rooms=rooms,
         profiles=profiles,
         scenes=scenes,
         switches=switches,
@@ -231,15 +231,15 @@ def _async_tidy_switch_orders(hass: HomeAssistant, entry: ConfigEntry) -> None:
     it settles after a single pass.
     """
     for subentry in list(entry.subentries.values()):
-        if subentry.subentry_type != SubentryType.ZONE.value:
+        if subentry.subentry_type != SubentryType.ROOM.value:
             continue
         scenes = {
             scene.get(CONF_SCENE_ID)
-            for scene in (subentry.data.get(CONF_ZONE_SCENES) or ())
+            for scene in (subentry.data.get(CONF_ROOM_SCENES) or ())
         }
         known = {*scenes, ADAPTIVE_STEP}
         switches = [
-            dict(item) for item in (subentry.data.get(CONF_ZONE_SWITCHES) or ())
+            dict(item) for item in (subentry.data.get(CONF_ROOM_SWITCHES) or ())
         ]
         changed = False
         for switch in switches:
@@ -255,7 +255,7 @@ def _async_tidy_switch_orders(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 subentry.title,
             )
             hass.config_entries.async_update_subentry(
-                entry, subentry, data={**subentry.data, CONF_ZONE_SWITCHES: switches}
+                entry, subentry, data={**subentry.data, CONF_ROOM_SWITCHES: switches}
             )
 
 
@@ -274,7 +274,7 @@ def _async_prune_entities(
     # The house-wide button is named after the entry rather than after any
     # room, mode or switch -- without this it is swept away and recreated on
     # every reload, losing whatever the user renamed or hid.
-    known = {*runtime.zones, *runtime.modes, *runtime.switches, entry.entry_id}
+    known = {*runtime.rooms, *runtime.modes, *runtime.switches, entry.entry_id}
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
         unique_id = entity.unique_id or ""
@@ -295,7 +295,7 @@ def _async_prune_devices(
     """
     # The hub's own device carries the house-wide button, and belongs to no
     # room or mode -- so it has to be named here or the sweep takes it.
-    known = {*runtime.zones, *runtime.modes, entry.entry_id}
+    known = {*runtime.rooms, *runtime.modes, entry.entry_id}
     registry = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
         ours = {
@@ -317,32 +317,32 @@ async def async_setup_entry(
     runtime = build_runtime(entry)
     entry.runtime_data = runtime
     _LOGGER.debug(
-        "Setting up with %d zone(s), %d scene(s), %d controller(s), "
+        "Setting up with %d room(s), %d scene(s), %d controller(s), "
         "%d light profile(s)",
-        len(runtime.zones),
+        len(runtime.rooms),
         len(runtime.scenes),
         len(runtime.switches),
         len(runtime.profiles),
     )
 
-    for subentry_id, zone in runtime.zones.items():
-        controller = ZoneController(
+    for subentry_id, room in runtime.rooms.items():
+        controller = RoomController(
             hass,
-            zone,
+            room,
             runtime.hub,
             runtime.contexts,
             runtime.profiles,
-            {scene.scene_id: scene for scene in zone.scenes},
+            {scene.scene_id: scene for scene in room.scenes},
         )
         runtime.controllers[subentry_id] = controller
         await controller.async_setup()
         entry.async_on_unload(controller.async_shutdown)
 
-        presence = ZonePresence(
+        presence = RoomPresence(
             hass,
-            zone,
-            on_occupied=_zone_occupied(hass, runtime, subentry_id),
-            on_cleared=_zone_cleared(hass, runtime, subentry_id),
+            room,
+            on_occupied=_room_occupied(hass, runtime, subentry_id),
+            on_cleared=_room_cleared(hass, runtime, subentry_id),
             on_gate_opened=_gate_opened(hass, controller),
         )
         controller.presence = presence
@@ -351,7 +351,7 @@ async def async_setup_entry(
 
         windows = WindowWatcher(
             hass,
-            zone,
+            room,
             on_open=_window_opened(hass, controller),
             on_closed=_window_closed(hass, controller),
         )
@@ -360,15 +360,15 @@ async def async_setup_entry(
         entry.async_on_unload(windows.async_shutdown)
 
     for controller in runtime.switches.values():
-        zone_controller = runtime.controllers.get(controller.zone_id)
-        if zone_controller is None:
+        room_controller = runtime.controllers.get(controller.room_id)
+        if room_controller is None:
             _LOGGER.warning(
-                "Controller %r points at a zone that no longer exists; ignoring it",
+                "Controller %r points at a room that no longer exists; ignoring it",
                 controller.name,
             )
             continue
         switch_runtime = ControllerRuntime(
-            hass, controller, zone_controller, runtime.contexts
+            hass, controller, room_controller, runtime.contexts
         )
         runtime.switch_runtimes[controller.subentry_id] = switch_runtime
         await switch_runtime.async_setup()
@@ -444,44 +444,44 @@ async def async_unload_entry(
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-def _zone_occupied(hass: HomeAssistant, runtime: BetterLightingRuntime, zone_id: str):
+def _room_occupied(hass: HomeAssistant, runtime: BetterLightingRuntime, room_id: str):
     """Somebody has walked into this room.
 
     Modes are told first and the room's own presence rules second, because a
     mode driving the room owns its presence behaviour for the session -- the
-    zone checks for that and stands down.
+    room checks for that and stands down.
     """
 
     def _notify() -> None:
-        hass.async_create_task(_async_occupied(runtime, zone_id))
+        hass.async_create_task(_async_occupied(runtime, room_id))
 
     return _notify
 
 
-async def _async_occupied(runtime: BetterLightingRuntime, zone_id: str) -> None:
+async def _async_occupied(runtime: BetterLightingRuntime, room_id: str) -> None:
     for mode_runtime in runtime.mode_runtimes.values():
-        await mode_runtime.async_zone_occupied(zone_id)
-    if (controller := runtime.controllers.get(zone_id)) is not None:
+        await mode_runtime.async_room_occupied(room_id)
+    if (controller := runtime.controllers.get(room_id)) is not None:
         await controller.async_presence_detected()
 
 
-def _zone_cleared(hass: HomeAssistant, runtime: BetterLightingRuntime, zone_id: str):
+def _room_cleared(hass: HomeAssistant, runtime: BetterLightingRuntime, room_id: str):
     """This room has emptied."""
 
     def _notify() -> None:
-        hass.async_create_task(_async_cleared(runtime, zone_id))
+        hass.async_create_task(_async_cleared(runtime, room_id))
 
     return _notify
 
 
-async def _async_cleared(runtime: BetterLightingRuntime, zone_id: str) -> None:
+async def _async_cleared(runtime: BetterLightingRuntime, room_id: str) -> None:
     for mode_runtime in runtime.mode_runtimes.values():
-        await mode_runtime.async_zone_cleared(zone_id)
-    if (controller := runtime.controllers.get(zone_id)) is not None:
+        await mode_runtime.async_room_cleared(room_id)
+    if (controller := runtime.controllers.get(room_id)) is not None:
         await controller.async_presence_cleared()
 
 
-def _gate_opened(hass: HomeAssistant, controller: ZoneController):
+def _gate_opened(hass: HomeAssistant, controller: RoomController):
     """The blinds came down while somebody was already in the room."""
 
     def _notify() -> None:
@@ -490,14 +490,14 @@ def _gate_opened(hass: HomeAssistant, controller: ZoneController):
     return _notify
 
 
-def _window_opened(hass: HomeAssistant, controller: ZoneController):
+def _window_opened(hass: HomeAssistant, controller: RoomController):
     def _notify() -> None:
         hass.async_create_task(controller.async_window_opened())
 
     return _notify
 
 
-def _window_closed(hass: HomeAssistant, controller: ZoneController):
+def _window_closed(hass: HomeAssistant, controller: RoomController):
     def _notify() -> None:
         hass.async_create_task(controller.async_window_closed())
 

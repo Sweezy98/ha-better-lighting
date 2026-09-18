@@ -1,4 +1,4 @@
-"""Cross-zone modes: the home-cinema case.
+"""Cross-room modes: the home-cinema case.
 
 An external automation moves the mode between its states -- playing, paused,
 credits -- and each (state, room) pair has a rule. The hard parts are not the
@@ -28,7 +28,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util import ulid as ulid_util
 
 from .const import DOMAIN, IDLE_STATE
-from .render import Trigger, ZoneMode
+from .render import RoomMode, Trigger
 from .scripts import async_run_scripts
 from .session import (
     DeferredAction,
@@ -37,20 +37,20 @@ from .session import (
     ModeSnapshot,
     OptedOutOnExit,
     RestoreMode,
-    ZoneAction,
-    ZoneSnapshot,
+    RoomAction,
+    RoomSnapshot,
     is_still_wanted,
 )
 from .store import PersistedSession, SessionStore
 
 if TYPE_CHECKING:
     from .models import ModeConfig, ModeRule
-    from .zone import ZoneController
+    from .room import RoomController
 
 _LOGGER = logging.getLogger(__name__)
 
 EVENT_MODE_CHANGED = f"{DOMAIN}_mode_changed"
-EVENT_ZONE_OPTED_OUT = f"{DOMAIN}_zone_opted_out"
+EVENT_ROOM_OPTED_OUT = f"{DOMAIN}_zone_opted_out"
 EVENT_DEFERRED = f"{DOMAIN}_deferred_action"
 
 # One shared sweeper rather than a timer per action: fewer handles, no
@@ -60,13 +60,13 @@ SWEEP_INTERVAL = 60
 
 
 class ModeGroupRuntime:
-    """One cross-zone mode, and the session it is currently running."""
+    """One cross-room mode, and the session it is currently running."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         config: ModeConfig,
-        controllers: dict[str, ZoneController],
+        controllers: dict[str, RoomController],
         deferred: DeferredRegistry,
         store: SessionStore | None = None,
     ) -> None:
@@ -276,18 +276,18 @@ class ModeGroupRuntime:
         for rule in self.config.house_rules(IDLE_STATE):
             ran.add(rule)
             await self._async_run_scripts(rule)
-        for zone_id in sorted(self.config.zone_ids):
-            controller = self.controllers.get(zone_id)
+        for room_id in sorted(self.config.room_ids):
+            controller = self.controllers.get(room_id)
             if controller is None:
                 continue
             controller.release_session_owner()
             if restore:
-                await self._async_restore_zone(zone_id, controller, snapshot)
+                await self._async_restore_room(room_id, controller, snapshot)
             # The rooms go back to how they were; a rule for the idle state is
             # how everything else does. Run even when the mode was switched
             # off part-way through rather than the film ending, since the
             # house is being put back to rights either way.
-            rule = self.config.rule_for(IDLE_STATE, zone_id)
+            rule = self.config.rule_for(IDLE_STATE, room_id)
             if rule is not None and rule not in ran:
                 ran.add(rule)
                 await self._async_run_scripts(rule)
@@ -317,13 +317,13 @@ class ModeGroupRuntime:
             ran.add(rule)
             await self._async_run_scripts(rule)
 
-        for zone_id in sorted(self.config.zone_ids):
-            if zone_id in self.opted_out:
+        for room_id in sorted(self.config.room_ids):
+            if room_id in self.opted_out:
                 continue
-            controller = self.controllers.get(zone_id)
+            controller = self.controllers.get(room_id)
             if controller is None:
                 continue
-            rule = self.config.rule_for(self.state, zone_id)
+            rule = self.config.rule_for(self.state, room_id)
             if rule is None:
                 continue
             # One rule can govern several rooms, and its scripts are the
@@ -332,35 +332,35 @@ class ModeGroupRuntime:
             if rule not in ran:
                 ran.add(rule)
                 await self._async_run_scripts(rule)
-            await self._async_apply_rule(zone_id, controller, rule)
+            await self._async_apply_rule(room_id, controller, rule)
 
     async def _async_apply_rule(
-        self, zone_id: str, controller: ZoneController, rule: ModeRule
+        self, room_id: str, controller: RoomController, rule: ModeRule
     ) -> None:
         # Claim the room for this session, so a press on its switch takes it
         # back rather than being overwritten by the next state change.
         controller.set_session_owner(
             self.config.subentry_id,
             self.session_id or "",
-            self._handle_opt_out(zone_id),
+            self._handle_opt_out(room_id),
         )
 
         match rule.action:
-            case ZoneAction.KEEP:
+            case RoomAction.KEEP:
                 return
-            case ZoneAction.ADAPTIVE:
+            case RoomAction.ADAPTIVE:
                 await controller.async_set_adaptive()
-            case ZoneAction.APPLY_SCENE if rule.scene_id:
-                await controller.async_set_mode(ZoneMode.SCENE, rule.scene_id)
-            case ZoneAction.TURN_OFF:
-                await self._async_turn_off(zone_id, controller, rule)
+            case RoomAction.APPLY_SCENE if rule.scene_id:
+                await controller.async_set_mode(RoomMode.SCENE, rule.scene_id)
+            case RoomAction.TURN_OFF:
+                await self._async_turn_off(room_id, controller, rule)
 
     async def _async_run_scripts(self, rule: ModeRule) -> None:
         """Whatever else this rule does to the house."""
         async_run_scripts(self.hass, rule.scripts, self.config.name)
 
     async def _async_turn_off(
-        self, zone_id: str, controller: ZoneController, rule: ModeRule
+        self, room_id: str, controller: RoomController, rule: ModeRule
     ) -> None:
         """Darken a room -- unless somebody is in it."""
         presence = controller.presence
@@ -369,11 +369,11 @@ class ModeGroupRuntime:
         if rule.respect_presence and occupied and rule.defer_if_occupied:
             ttl = self.config.deferred_ttl_minutes
             action = DeferredAction(
-                zone_id=zone_id,
+                room_id=room_id,
                 session_id=self.session_id or "",
                 mode_id=self.config.subentry_id,
                 mode_state=self.state,
-                action=ZoneAction.TURN_OFF,
+                action=RoomAction.TURN_OFF,
                 created_at=time.monotonic(),
                 expires_at=(time.monotonic() + ttl * 60) if ttl else None,
             )
@@ -384,7 +384,7 @@ class ModeGroupRuntime:
             # as it was.
             return
 
-        await controller.async_set_mode(ZoneMode.OFF)
+        await controller.async_set_mode(RoomMode.OFF)
 
     # -- switched on or off ------------------------------------------------
 
@@ -415,12 +415,12 @@ class ModeGroupRuntime:
 
     # -- presence ----------------------------------------------------------
 
-    async def async_zone_cleared(self, zone_id: str) -> None:
+    async def async_room_cleared(self, room_id: str) -> None:
         """The room has emptied. Anything waiting on that can happen now."""
         if not self.active:
             return
-        action = self.deferred.get(self.session_id or "", zone_id)
-        controller = self.controllers.get(zone_id)
+        action = self.deferred.get(self.session_id or "", room_id)
+        controller = self.controllers.get(room_id)
         if controller is None:
             return
 
@@ -430,81 +430,82 @@ class ModeGroupRuntime:
                 active_session_id=self.session_id,
                 active_state=self.state,
                 opted_out=self.opted_out,
-                zone_is_off=not controller._any_member_on(),
-                zone_is_manual=bool(controller.manual),
+                room_is_off=not controller._any_member_on(),
+                room_is_manual=bool(controller.manual),
                 now=time.monotonic(),
             )
-            self.deferred.pop(action.session_id, action.zone_id)
+            self.deferred.pop(action.session_id, action.room_id)
             if not wanted:
                 self._fire_deferred(action, "dropped", reason)
                 return
             self._fire_deferred(action, "fired", "cleared")
-            await controller.async_set_mode(ZoneMode.OFF)
+            await controller.async_set_mode(RoomMode.OFF)
             return
 
         # No deferred action: this is somebody who walked in mid-session and
         # has now left again.
-        rule = self.config.rule_for(self.state, zone_id)
-        if rule is None or zone_id in self.opted_out:
+        rule = self.config.rule_for(self.state, room_id)
+        if rule is None or room_id in self.opted_out:
             return
         if rule.on_free_action == "turn_off":
-            await controller.async_set_mode(ZoneMode.OFF)
+            await controller.async_set_mode(RoomMode.OFF)
         elif rule.on_free_action == "reapply_mode_action":
-            await self._async_apply_rule(zone_id, controller, rule)
+            await self._async_apply_rule(room_id, controller, rule)
 
-    async def async_zone_occupied(self, zone_id: str) -> None:
+    async def async_room_occupied(self, room_id: str) -> None:
         """Somebody has walked into a room during the session."""
-        if not self.active or zone_id in self.opted_out:
+        if not self.active or room_id in self.opted_out:
             return
-        rule = self.config.rule_for(self.state, zone_id)
+        rule = self.config.rule_for(self.state, room_id)
         if rule is None:
             return
-        controller = self.controllers.get(zone_id)
+        controller = self.controllers.get(room_id)
         if controller is None:
             return
 
         match rule.presence_entry_action:
-            case ZoneAction.KEEP:
+            case RoomAction.KEEP:
                 return
-            case ZoneAction.ADAPTIVE:
+            case RoomAction.ADAPTIVE:
                 await controller.async_set_adaptive()
-            case ZoneAction.APPLY_SCENE if rule.presence_entry_scene:
+            case RoomAction.APPLY_SCENE if rule.presence_entry_scene:
                 await controller.async_set_mode(
-                    ZoneMode.SCENE, rule.presence_entry_scene
+                    RoomMode.SCENE, rule.presence_entry_scene
                 )
-            case ZoneAction.TURN_OFF:
+            case RoomAction.TURN_OFF:
                 # No deferral here: they are demonstrably in the room, so
                 # waiting for it to empty would mean waiting forever.
-                await controller.async_set_mode(ZoneMode.OFF)
+                await controller.async_set_mode(RoomMode.OFF)
 
     # -- opting out --------------------------------------------------------
 
-    def _handle_opt_out(self, zone_id: str):
+    def _handle_opt_out(self, room_id: str):
         @callback
         def _opted_out(_mode_id: str) -> None:
-            self.async_opt_out(zone_id, "press")
+            self.async_opt_out(room_id, "press")
 
         return _opted_out
 
     @callback
-    def async_opt_out(self, zone_id: str, cause: str) -> None:
+    def async_opt_out(self, room_id: str, cause: str) -> None:
         """This room leaves the mode's control for the rest of the session."""
-        if not self.active or zone_id in self.opted_out:
+        if not self.active or room_id in self.opted_out:
             return
-        self.opted_out.add(zone_id)
-        for action in self.deferred.drop_zone(zone_id):
+        self.opted_out.add(room_id)
+        for action in self.deferred.drop_room(room_id):
             self._fire_deferred(action, "dropped", "opted_out")
-        if self.snapshot is not None and zone_id in self.snapshot.zones:
+        if self.snapshot is not None and room_id in self.snapshot.rooms:
             # The user has already chosen what this room should look like;
             # putting it back at the end would undo that choice.
-            self.snapshot.zones[zone_id].restore_on_exit = False
+            self.snapshot.rooms[room_id].restore_on_exit = False
         self._persist()
         self.async_notify()
         self.hass.bus.async_fire(
-            EVENT_ZONE_OPTED_OUT,
+            EVENT_ROOM_OPTED_OUT,
             {
                 "mode_id": self.config.subentry_id,
-                "zone_id": zone_id,
+                "room_id": room_id,
+                "zone_id": room_id,  # the old spelling
                 "session_id": self.session_id,
                 "cause": cause,
             },
@@ -518,12 +519,12 @@ class ModeGroupRuntime:
             mode_id=self.config.subentry_id,
             taken_at=dt_util.utcnow().isoformat(),
         )
-        for zone_id in self.config.zone_ids:
-            controller = self.controllers.get(zone_id)
+        for room_id in self.config.room_ids:
+            controller = self.controllers.get(room_id)
             if controller is None:
                 continue
             lights = []
-            for entity_id in controller.zone.lights:
+            for entity_id in controller.room.lights:
                 state = self.hass.states.get(entity_id)
                 if state is None:
                     continue
@@ -535,24 +536,24 @@ class ModeGroupRuntime:
                         color=_colour_of(state.attributes),
                     )
                 )
-            snapshot.zones[zone_id] = ZoneSnapshot(
-                zone_id=zone_id,
+            snapshot.rooms[room_id] = RoomSnapshot(
+                room_id=room_id,
                 mode=controller.mode.value,
                 scene_id=controller.active_scene_id,
                 lights=tuple(lights),
             )
         return snapshot
 
-    async def _async_restore_zone(
+    async def _async_restore_room(
         self,
-        zone_id: str,
-        controller: ZoneController,
+        room_id: str,
+        controller: RoomController,
         snapshot: ModeSnapshot | None,
     ) -> None:
-        zone_snapshot = snapshot.zones.get(zone_id) if snapshot else None
+        room_snapshot = snapshot.rooms.get(room_id) if snapshot else None
 
-        if zone_id in self.opted_out or (
-            zone_snapshot is not None and not zone_snapshot.restore_on_exit
+        if room_id in self.opted_out or (
+            room_snapshot is not None and not room_snapshot.restore_on_exit
         ):
             match self.config.opted_out_on_exit:
                 case OptedOutOnExit.KEEP:
@@ -563,15 +564,15 @@ class ModeGroupRuntime:
                 case OptedOutOnExit.RESTORE:
                     pass
 
-        if self.config.restore_mode is RestoreMode.NONE or zone_snapshot is None:
+        if self.config.restore_mode is RestoreMode.NONE or room_snapshot is None:
             return
 
-        previously_on = zone_snapshot.previously_on
+        previously_on = room_snapshot.previously_on
         if not previously_on:
-            await controller.async_set_mode(ZoneMode.OFF)
+            await controller.async_set_mode(RoomMode.OFF)
             return
 
-        controller.mode = ZoneMode.ADAPTIVE
+        controller.mode = RoomMode.ADAPTIVE
         controller.active_scene_id = None
         controller.async_notify()
         # The snapshot decides *which* lights come back; the curve decides how
@@ -579,7 +580,7 @@ class ModeGroupRuntime:
         await controller.async_render(Trigger.TURN_ON, entity_ids=sorted(previously_on))
         dark = [
             entity_id
-            for entity_id in controller.zone.lights
+            for entity_id in controller.room.lights
             if entity_id not in previously_on
         ]
         if dark:
@@ -599,14 +600,15 @@ class ModeGroupRuntime:
             "%s: deferred %s for %s (%s)",
             self.config.name,
             phase,
-            action.zone_id,
+            action.room_id,
             reason,
         )
         self.hass.bus.async_fire(
             EVENT_DEFERRED,
             {
                 "mode_id": action.mode_id,
-                "zone_id": action.zone_id,
+                "room_id": action.room_id,
+                "zone_id": action.room_id,  # the old spelling
                 "session_id": action.session_id,
                 "phase": phase,
                 "reason": reason,

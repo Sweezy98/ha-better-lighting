@@ -837,3 +837,62 @@ def test_the_sidebar_icon_is_registered_before_it_is_used() -> None:
     setname, _, name = panel.SIDEBAR_ICON.partition(":")
     assert f'window.customIconsets["{setname}"]' in icons
     assert f"{name}:" in icons
+
+
+def test_the_day_strip_agrees_with_the_rule_it_draws() -> None:
+    """A picture that disagrees with the engine is worse than no picture.
+
+    The strip is drawn in the browser and the decision is made in Python, so
+    the two are different implementations of one rule -- including the awkward
+    half, a window whose end is earlier than its start. This runs the panel's
+    own function against the cases ``tests/pure/test_conditions.py`` pins.
+    """
+    import json
+    import shutil
+    import subprocess
+    import tempfile
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run it with")
+
+    panel = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    def lift(start: str, end: str) -> str:
+        """One function out of the panel, verbatim."""
+        at = panel.index(start)
+        return panel[at : panel.index(end, at)]
+
+    minutes = lift("function _minutes(text)", "\nlet chartReady")
+    mask = lift("  _dayMask(rules) {", "\n  /** Runs of the same answer")
+
+    script = f"""
+{minutes}
+const card = {{ {mask} }};
+const cases = [
+  [["18:00", "07:00"], 23 * 60, true],
+  [["18:00", "07:00"], 2 * 60, true],
+  [["18:00", "07:00"], 12 * 60, false],
+  [["18:00", "07:00"], 18 * 60, true],
+  [["18:00", "07:00"], 7 * 60, false],
+  [["10:00", "20:00"], 12 * 60, true],
+  [["10:00", "20:00"], 8 * 60, false],
+  [["10:00", "20:00"], 20 * 60, false],
+  [["00:00", "00:00"], 3 * 60, true],
+];
+const out = cases.map(([[from, to], minute, want]) => {{
+  const rule = {{ check: "time_window", window_start: from, window_end: to }};
+  return card._dayMask([rule])[minute] === want;
+}});
+console.log(JSON.stringify(out));
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False) as handle:
+        handle.write(script)
+        path = handle.name
+    try:
+        done = subprocess.run([node, path], capture_output=True, text=True, check=False)
+    finally:
+        pathlib.Path(path).unlink(missing_ok=True)
+
+    assert done.returncode == 0, done.stderr
+    assert all(json.loads(done.stdout)), done.stdout

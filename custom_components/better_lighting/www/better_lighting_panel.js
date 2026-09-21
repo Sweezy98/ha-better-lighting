@@ -452,6 +452,13 @@ function ensureHaControls() {
  * pay for. The history-graph card is what pulls it in; when that stops working
  * the curve is drawn by hand instead, which is what happened here before.
  */
+/** "HH:MM" or "HH:MM:SS" as minutes past midnight. */
+function _minutes(text) {
+  if (!text) return 0;
+  const [hours, mins] = String(text).split(":");
+  return ((Number(hours) || 0) % 24) * 60 + ((Number(mins) || 0) % 60);
+}
+
 let chartReady;
 function ensureHaChart() {
   if (chartReady) return chartReady;
@@ -2210,6 +2217,11 @@ class BetterLightingPanel extends HTMLElement {
         /* A row's caption belongs above it, not beside it: sharing the line
            with the form squeezed both. */
         .page-body li.step { flex-wrap:wrap; }
+        .day-strip { margin-top:14px; }
+        .day-strip .day-svg { width:100%; height:28px; display:block;
+                              margin-top:6px; border-radius:6px; }
+        .day-strip .day-ticks { display:flex; justify-content:space-between;
+                                font-size:12px; opacity:.6; margin-top:4px; }
         .page-body li.step .nested-caption { flex:1 0 100%; order:-1; }
         li[draggable="true"] { cursor:grab; }
         li.dragging { opacity:.4; }
@@ -4384,8 +4396,139 @@ class BetterLightingPanel extends HTMLElement {
         draw();
       });
       list.appendChild(adder);
+
+      if (formKey === "condition") this._paintDayStrip(fold, items);
     };
     draw();
+  }
+
+  /**
+   * The hours of the day these rules leave open.
+   *
+   * Rules are ANDed, so this is the intersection of every time window in the
+   * list -- and a window whose end is earlier than its start runs through
+   * midnight, which is what almost every outdoor light actually wants. That
+   * is easy to get wrong reading two time fields, and obvious in a strip.
+   *
+   * Only the clock is drawn. A lux threshold or a helper cannot be plotted
+   * against a day, so the strip says when the *clock* allows it and the hint
+   * says the rest.
+   */
+  _dayMask(rules) {
+    const minutes = new Array(1440).fill(true);
+    let any = false;
+    for (const rule of rules) {
+      if (rule?.check !== "time_window") continue;
+      const start = _minutes(rule.window_start);
+      const end = _minutes(rule.window_end);
+      any = true;
+      if (start === end) continue; // The whole day.
+      for (let at = 0; at < 1440; at += 1) {
+        const inside = start < end ? at >= start && at < end : at >= start || at < end;
+        if (!inside) minutes[at] = false;
+      }
+    }
+    return any ? minutes : null;
+  }
+
+  /** Runs of the same answer, as [from, to, active] in minutes. */
+  _daySegments(mask) {
+    const runs = [];
+    let from = 0;
+    for (let at = 1; at <= 1440; at += 1) {
+      if (at === 1440 || mask[at] !== mask[from]) {
+        runs.push([from, at, mask[from]]);
+        from = at;
+      }
+    }
+    return runs;
+  }
+
+  async _paintDayStrip(fold, rules) {
+    const body = fold.querySelector(".fold-body");
+    body.querySelector(".day-strip")?.remove();
+    const mask = this._dayMask(rules);
+    if (!mask) return;
+
+    const holder = document.createElement("div");
+    holder.className = "day-strip";
+    holder.innerHTML = `<div class="muted">${this._t("day_strip_hint")}</div>`;
+    body.appendChild(holder);
+
+    const segments = this._daySegments(mask);
+    if (!(await this._dayChart(holder, segments))) {
+      // Hand-drawn, for a frontend that will not lend us its chart.
+      // The bar stretches to the width it is given; the hours must not, so
+      // they are written beside it rather than inside it. Text in a
+      // non-uniformly scaled viewBox comes out squashed one way and huge the
+      // other, which is what this looked like first.
+      holder.insertAdjacentHTML(
+        "beforeend",
+        `<svg viewBox="0 0 1440 28" preserveAspectRatio="none" class="day-svg">
+          ${segments
+            .map(
+              ([from, to, active]) =>
+                `<rect x="${from}" y="0" width="${to - from}" height="28"
+                       fill="var(${
+                         active ? "--success-color, #4caf50" : "--error-color, #db4437"
+                       })"/>`
+            )
+            .join("")}
+        </svg>
+        <div class="day-ticks">${[0, 6, 12, 18, 24]
+          .map((hour) => `<span>${String(hour).padStart(2, "0")}:00</span>`)
+          .join("")}</div>`
+      );
+    }
+  }
+
+  /** The same strip, in Home Assistant's chart component. */
+  async _dayChart(into, segments) {
+    if (!(await ensureHaChart()) || !customElements.get("ha-chart-base")) {
+      return false;
+    }
+    try {
+      const chart = document.createElement("ha-chart-base");
+      chart.hass = this._hass;
+      chart.height = "96px";
+      // One stacked bar across the day: each run of the same answer is a
+      // segment of it, which is what makes a window through midnight read as
+      // two ends of one night rather than as a gap.
+      chart.data = segments.map(([from, to, active], index) => ({
+        id: `seg${index}`,
+        type: "bar",
+        stack: "day",
+        silent: true,
+        barWidth: 26,
+        itemStyle: {
+          color: `var(${
+            active ? "--success-color, #4caf50" : "--error-color, #db4437"
+          })`,
+        },
+        data: [to - from],
+      }));
+      chart.options = {
+        xAxis: {
+          type: "value",
+          min: 0,
+          max: 1440,
+          interval: 360,
+          axisLabel: {
+            formatter: (value) =>
+              `${String(Math.floor(value / 60)).padStart(2, "0")}:00`,
+          },
+          splitLine: { show: false },
+        },
+        yAxis: { type: "category", data: [""], axisLine: { show: false } },
+        grid: { top: 10, bottom: 0, left: 4, right: 8, containLabel: true },
+        legend: { show: false },
+        tooltip: { show: false },
+      };
+      into.appendChild(chart);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

@@ -190,9 +190,14 @@ motion sensor lights the drive without touching the rest of the outside.
 
 | Rule | Checks |
 |---|---|
-| Between two times | The local clock. An end earlier than the start runs through midnight, so 22:00 until 06:00 is one night. |
+| Between two times | The local clock. An end earlier than the start runs through midnight, so 22:00 until 06:00 is one night, and 10:00 until 20:00 is one afternoon. |
 | A number below / above a threshold | A lux sensor, a temperature, anything numeric. |
 | An entity in a particular state | A helper that arms the automation, a presence toggle that disarms it, or `sun.sun` being `below_horizon` — which is "after dark" without owning a lux sensor. |
+
+Any list of rules is drawn as a **day strip** underneath it — green where the
+clock leaves the automation open, red where it does not — so a window that runs
+through midnight reads as the two ends of one night rather than as a gap. Only
+the clock can be drawn that way; a lux threshold still applies on top of it.
 
 They are **ANDed**: every rule has to hold, so adding one can only ever make an
 automation fire less often, never more — which is the opposite of triggers, where

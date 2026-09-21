@@ -152,7 +152,10 @@ One row of controls each, and nothing that gets used twice a year:
   configured to move: members keep their own headroom. Drag it, click it, or
   use the arrow keys.
 - **Scenes** as previous, a menu, and next — the menu is drawn by the card, so
-  it looks like the rest of the dashboard rather than like the browser.
+  it looks like the rest of the dashboard rather than like the browser. The
+  arrows step through the card's own list, so **scenes you hide in the card's
+  settings are skipped as well as unlisted**, and they are disabled while the
+  room is off.
 - **A countdown** whenever the room is due to switch itself off, so a trigger's
   remaining hold is visible rather than something you wait out.
 
@@ -840,11 +843,20 @@ custom_components/better_lighting/brand/
 └── dark_logo@2x.png  1191×300
 ```
 
-On a core older than 2026.3 that folder means nothing, and HACS falls back to a
-placeholder; the integration's own About box serves the same file itself, so the
-icon is visible there either way. Submitting to [home-assistant/brands] is still
-possible if those older installs matter to you — the same six files go in
-`custom_integrations/better_lighting/`.
+That covers Home Assistant itself: the sidebar, the integrations page and the
+About box.
+
+**The HACS store is separate and still needs the brands repository.** HACS
+bundles its own copy of the frontend and asks
+`brands.home-assistant.io/_/better_lighting/icon.png`, which returns an "icon
+not available" placeholder for any domain that repository has not heard of — it
+does not read the local `brand/` folder. To fix that, copy the same six files
+into a fork of [home-assistant/brands] as
+`custom_integrations/better_lighting/` and open a pull request. Nothing here
+needs changing afterwards.
+
+The same submission also covers cores older than 2026.3, where the local folder
+means nothing. The About box serves its own copy either way.
 
 `images/icon.html` and `images/logo.html` are the sources, rendered to PNG
 rather than retouched.

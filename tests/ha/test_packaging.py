@@ -896,3 +896,26 @@ console.log(JSON.stringify(out));
 
     assert done.returncode == 0, done.stderr
     assert all(json.loads(done.stdout)), done.stdout
+
+
+def test_hidden_scenes_are_hidden_everywhere_at_once() -> None:
+    """A next button that lands on something the menu does not list is a card
+    arguing with itself, so stepping walks the card's list rather than the
+    entity's own."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    assert "hidden_scenes" in card
+    # As a called service, not as the word in the comment explaining why it
+    # is not called.
+    assert '"select_next"' not in card, "stepping must not walk past hidden scenes"
+    assert '"select_previous"' not in card
+    assert "_options(select)" in card
+
+
+def test_changing_the_room_forgets_which_scenes_were_hidden() -> None:
+    """They were chosen by name from another room's list, and a name that
+    happens to exist in both would otherwise hide the wrong thing."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+    editor = card[card.index("class BetterLightingCardEditor") :]
+
+    assert "hidden_scenes: []" in editor

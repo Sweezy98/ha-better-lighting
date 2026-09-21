@@ -76,6 +76,9 @@ const WORDS = {
     automatically: "On automatically",
     switching_off: "Switching off",
     room: "Room",
+    hidden_scenes: "Hidden scenes",
+    hidden_scenes_hint: "Ticked scenes are left out of this card's menu and skipped by the arrows.",
+    no_scenes: "This room has no scenes yet.",
   },
   de: {
     choose_room: "Raum auswählen.",
@@ -92,8 +95,29 @@ const WORDS = {
     automatically: "Automatisch eingeschaltet",
     switching_off: "Schaltet ab",
     room: "Raum",
+    hidden_scenes: "Ausgeblendete Szenen",
+    hidden_scenes_hint: "Angehakte Szenen fehlen im Menü dieser Karte und werden von den Pfeilen übersprungen.",
+    no_scenes: "Dieser Raum hat noch keine Szenen.",
   },
 };
+
+/**
+ * The scene select belonging to a room's light.
+ *
+ * Found through the device rather than configured: a room's select is not
+ * something anybody should have to look up, and the two are on one device by
+ * construction.
+ */
+function sceneSelectFor(hass, entityId) {
+  const mine = hass?.entities?.[entityId];
+  if (!mine?.device_id) return null;
+  return (
+    Object.keys(hass.entities || {}).find(
+      (id) =>
+        id.startsWith("select.") && hass.entities[id].device_id === mine.device_id
+    ) || null
+  );
+}
 
 function words(hass) {
   const language = hass?.locale?.language || hass?.language || "en";
@@ -132,7 +156,7 @@ class BetterLightingCard extends HTMLElement {
     if (entity && !entity.startsWith("light.")) {
       throw new Error("A Better Lighting card needs a room's light entity");
     }
-    this._config = { name: null, ...config, entity };
+    this._config = { name: null, hidden_scenes: [], ...config, entity };
     this._selectId = null;
     this._drawn = false;
   }
@@ -171,23 +195,27 @@ class BetterLightingCard extends HTMLElement {
    * buttons are not things anybody should have to look up, and they are all
    * on one device by construction.
    */
-  _sibling(prefix) {
-    const hass = this._hass;
-    const mine = hass?.entities?.[this._config.entity];
-    if (!mine?.device_id) return null;
-    return (
-      Object.keys(hass.entities || {}).find(
-        (id) =>
-          id.startsWith(prefix) && hass.entities[id].device_id === mine.device_id
-      ) || null
-    );
-  }
-
   get _sceneSelect() {
     // Cached only once it is found. Caching the miss would be permanent, and
     // a card can easily be drawn before the entity registry has loaded.
-    if (!this._selectId) this._selectId = this._sibling("select.");
+    if (!this._selectId) {
+      this._selectId = sceneSelectFor(this._hass, this._config.entity);
+    }
     return this._selectId ? this._hass.states[this._selectId] : null;
+  }
+
+  /**
+   * The scenes this card offers.
+   *
+   * Hidden ones are dropped everywhere at once -- the menu and the two step
+   * buttons -- because a next button that lands on something the menu does
+   * not list is a card arguing with itself.
+   */
+  _options(select) {
+    const hidden = new Set(this._config.hidden_scenes || []);
+    return (select?.attributes?.options || []).filter(
+      (option) => !hidden.has(option)
+    );
   }
 
   // -- drawing -------------------------------------------------------------
@@ -255,9 +283,11 @@ class BetterLightingCard extends HTMLElement {
           color: var(--primary-color);
         }
 
-        /* The brightness bar: one thick rounded track, filled. */
+        /* The brightness bar: one thick track, filled. Fully rounded, like
+           the pills under it -- a softly cornered rectangle among four
+           lozenges was the thing that still looked borrowed. */
         .bar {
-          position: relative; height: 46px; border-radius: 14px;
+          position: relative; height: 46px; border-radius: 999px;
           background: var(--secondary-background-color);
           overflow: hidden; cursor: pointer; touch-action: none;
           outline: none;
@@ -265,7 +295,7 @@ class BetterLightingCard extends HTMLElement {
         .bar:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); }
         .fill {
           position: absolute; inset: 0 auto 0 0;
-          background: var(--bl-warm);
+          background: var(--bl-warm); border-radius: 999px;
           transition: width .18s ease;
         }
         .bar.dragging .fill { transition: none; }
@@ -285,8 +315,12 @@ class BetterLightingCard extends HTMLElement {
         .bar.dragging .pct { opacity: .85; }
 
         .scenes { display: flex; align-items: center; gap: 8px; }
+        /* Wide, not round. Three pills across the row, the middle one
+           widest -- a circle either side made them read as icon buttons
+           rather than as the two ends of one control. */
         .step {
-          flex: 0 0 auto; width: 42px; height: 42px; min-height: 0;
+          flex: 0 0 22%; min-width: 58px; max-width: 110px;
+          height: 42px; min-height: 0;
           border-radius: 999px; border: 1px solid var(--divider-color);
           background: none; color: var(--primary-text-color); cursor: pointer;
           display: inline-flex; align-items: center; justify-content: center;
@@ -384,8 +418,8 @@ class BetterLightingCard extends HTMLElement {
     $("more").addEventListener("click", () => this._openMoreInfo());
     $("power").addEventListener("click", () => this._toggle());
     $("adaptive").addEventListener("click", () => this._backToAdaptive());
-    $("prev").addEventListener("click", () => this._step("select_previous"));
-    $("next").addEventListener("click", () => this._step("select_next"));
+    $("prev").addEventListener("click", () => this._step(-1));
+    $("next").addEventListener("click", () => this._step(1));
     $("picker").addEventListener("click", () => this._toggleMenu());
     $("scrim").addEventListener("click", () => this._closeMenu());
     this._wireBar($("bar"));
@@ -566,7 +600,7 @@ class BetterLightingCard extends HTMLElement {
     row.hidden = !select;
     if (!select) return;
 
-    const options = select.attributes.options || [];
+    const options = this._options(select);
     this.shadowRoot.getElementById("current").textContent = select.state;
     this.shadowRoot.getElementById("chevron").innerHTML =
       this._icon("mdi:chevron-down");
@@ -575,9 +609,14 @@ class BetterLightingCard extends HTMLElement {
     this.shadowRoot.getElementById("next").innerHTML =
       this._icon("mdi:chevron-right");
 
+    // Nothing to step through in a dark room: the buttons would light it at
+    // whatever the next scene happens to be, which is not what an arrow next
+    // to a scene name offers to do. The menu stays live -- picking a scene by
+    // name is an explicit enough answer to turn a room on with.
+    const on = this._light?.state === "on";
     const single = options.length < 2;
-    this.shadowRoot.getElementById("prev").disabled = single;
-    this.shadowRoot.getElementById("next").disabled = single;
+    this.shadowRoot.getElementById("prev").disabled = single || !on;
+    this.shadowRoot.getElementById("next").disabled = single || !on;
     this.shadowRoot.getElementById("picker").disabled = !options.length;
 
     if (this._menuOpen) this._paintMenu(options, select.state);
@@ -682,9 +721,28 @@ class BetterLightingCard extends HTMLElement {
     });
   }
 
-  _step(service) {
-    if (!this._selectId) return;
-    this._call("select", service, { entity_id: this._selectId });
+  /**
+   * One step along the scenes this card shows.
+   *
+   * Not `select_next`: that walks the entity's own list, hidden entries and
+   * all. Stepping from a scene that is itself hidden starts at whichever end
+   * the press was heading towards.
+   */
+  _step(direction) {
+    const select = this._sceneSelect;
+    const options = this._options(select);
+    if (!this._selectId || !options.length) return;
+    const at = options.indexOf(select.state);
+    const next =
+      at === -1
+        ? direction > 0
+          ? 0
+          : options.length - 1
+        : (at + direction + options.length) % options.length;
+    this._call("select", "select_option", {
+      entity_id: this._selectId,
+      option: options[next],
+    });
   }
 
   _toggleMenu() {
@@ -699,7 +757,7 @@ class BetterLightingCard extends HTMLElement {
     const select = this._sceneSelect;
     if (!select) return;
     this._menuOpen = true;
-    const options = select.attributes.options || [];
+    const options = this._options(select);
     this._paintMenu(options, select.state);
 
     const menu = this.shadowRoot.getElementById("menu");
@@ -773,13 +831,15 @@ class BetterLightingCard extends HTMLElement {
 /**
  * The visual editor.
  *
- * One question, and only rooms this integration publishes as answers: a list
- * of every light in the house would be a list of mostly wrong answers, since
- * the card reads attributes only a Better Lighting room has.
+ * Two questions. The room, answered with only the rooms this integration
+ * publishes -- a list of every light in the house would be a list of mostly
+ * wrong answers, since the card reads attributes only a Better Lighting room
+ * has. Then which of that room's scenes to leave out, which cannot be asked
+ * until the first is answered and means nothing once it changes.
  */
 class BetterLightingCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = { ...config };
+    this._config = { hidden_scenes: [], ...config };
     this._render();
   }
 
@@ -788,12 +848,47 @@ class BetterLightingCardEditor extends HTMLElement {
     this._render();
   }
 
+  get _sceneOptions() {
+    const entity = this._config?.entity;
+    if (!entity) return [];
+    const selectId = sceneSelectFor(this._hass, entity);
+    return selectId
+      ? this._hass.states[selectId]?.attributes?.options || []
+      : [];
+  }
+
+  _emit(config) {
+    this._config = config;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
   _render() {
     if (!this._hass) return;
+    const text = words(this._hass);
+
     if (!this._picker) {
-      this.innerHTML = "";
+      this.innerHTML = `<style>
+          .bl-editor { display: flex; flex-direction: column; gap: 12px; }
+          .bl-editor h4 { margin: 4px 0 0; font-size: .95rem; font-weight: 600; }
+          .bl-editor .hint { color: var(--secondary-text-color); font-size: .8rem; }
+          .bl-scenes { display: flex; flex-wrap: wrap; gap: 8px; }
+          .bl-scenes label {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border-radius: 999px;
+            border: 1px solid var(--divider-color); cursor: pointer;
+          }
+        </style>
+        <div class="bl-editor">
+          <div id="bl-room"></div>
+          <div id="bl-hidden"></div>
+        </div>`;
       this._picker = document.createElement("ha-entity-picker");
-      this._picker.label = words(this._hass).room;
       this._picker.allowCustomEntity = false;
       // A room, not a bulb. `includeDomains` narrows it to lights for the
       // frontends that ignore a filter function; the filter does the rest.
@@ -801,20 +896,63 @@ class BetterLightingCardEditor extends HTMLElement {
       this._picker.entityFilter = (state) =>
         state?.attributes?.bl_room_id !== undefined;
       this._picker.addEventListener("value-changed", (event) => {
-        if (event.detail.value === this._config?.entity) return;
-        this._config = { ...this._config, entity: event.detail.value };
-        this.dispatchEvent(
-          new CustomEvent("config-changed", {
-            detail: { config: this._config },
-            bubbles: true,
-            composed: true,
-          })
-        );
+        const entity = event.detail.value;
+        if (entity === this._config?.entity) return;
+        // A different room has different scenes, so the old choice is not a
+        // choice about anything any more. Carrying it over would hide scenes
+        // by name in a room that happens to share one.
+        this._emit({ ...this._config, entity, hidden_scenes: [] });
+        this._render();
       });
-      this.appendChild(this._picker);
+      this.querySelector("#bl-room").appendChild(this._picker);
     }
+
     this._picker.hass = this._hass;
+    this._picker.label = text.room;
     this._picker.value = this._config?.entity || "";
+    this._renderHidden(text);
+  }
+
+  _renderHidden(text) {
+    const into = this.querySelector("#bl-hidden");
+    const options = this._sceneOptions;
+    const signature = `${this._config?.entity || ""}|${options.join("\u0000")}|${(
+      this._config?.hidden_scenes || []
+    ).join("\u0000")}`;
+    if (into.dataset.signature === signature) return;
+    into.dataset.signature = signature;
+
+    if (!this._config?.entity) {
+      into.innerHTML = "";
+      return;
+    }
+    if (!options.length) {
+      // The room is chosen but its select has not arrived yet, or it has no
+      // scenes at all. Either way there is nothing to tick.
+      into.innerHTML = `<div class="hint">${text.no_scenes}</div>`;
+      return;
+    }
+
+    const hidden = new Set(this._config.hidden_scenes || []);
+    into.innerHTML = `<h4>${text.hidden_scenes}</h4>
+      <div class="hint">${text.hidden_scenes_hint}</div>
+      <div class="bl-scenes">${options
+        .map(
+          (option) =>
+            `<label><input type="checkbox" value="${option}"${
+              hidden.has(option) ? " checked" : ""
+            }><span>${option}</span></label>`
+        )
+        .join("")}</div>`;
+
+    into.querySelectorAll("input").forEach((box) =>
+      box.addEventListener("change", () => {
+        const chosen = [...into.querySelectorAll("input")]
+          .filter((one) => one.checked)
+          .map((one) => one.value);
+        this._emit({ ...this._config, hidden_scenes: chosen });
+      })
+    );
   }
 }
 

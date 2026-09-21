@@ -959,3 +959,45 @@ def test_the_control_screen_shows_the_real_card() -> None:
     # And it says so when the card script is missing, rather than leaving a
     # row of empty boxes.
     assert "card_missing" in control
+
+
+def test_one_dropdown_serves_the_card_and_the_panel() -> None:
+    """Two implementations of one control drift within a release.
+
+    The element is defined by the card, because that has to work on a
+    dashboard with nothing else of ours loaded; the panel uses the same one
+    and keeps a plain select only for the case where the card script failed.
+    """
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+    panel = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    assert 'customElements.define("bl-dropdown"' in card
+    assert 'createElement("bl-dropdown")' in panel
+    # And nothing hand-rolls a second one.
+    assert "<select" not in card
+    assert panel.count("<select") == 0
+
+
+def test_the_menu_is_a_whole_number_of_rows() -> None:
+    """A menu two pixels short of its last row is a scrollbar over nothing.
+
+    Both parts matter: the height is rows times a *measured* row, and the
+    padding and border are measured too rather than assumed -- a guessed
+    constant is what left the last item just barely clipped.
+    """
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+    at = card.index("_place(menu) {")
+    place = card[at : card.index("\n  _close()", at)]
+
+    assert "getBoundingClientRect().height" in place, "measure the row"
+    assert "borderTopWidth" in place, "measure the menu's own chrome"
+    assert "rows * rowHeight + chrome" in place
+
+
+def test_the_brightness_bar_works_on_a_dark_room() -> None:
+    """Setting a brightness on a room that is off lights it -- adaptive, with
+    the brightness manually owned. A disabled bar hid the most likely reason
+    somebody reaches for it."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    assert "aria-disabled" not in card

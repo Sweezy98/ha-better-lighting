@@ -2228,6 +2228,7 @@ class BetterLightingPanel extends HTMLElement {
                       border:1px solid var(--divider-color); background:none;
                       color:var(--primary-color); cursor:pointer; font:inherit; }
         button.pill:hover { background:var(--secondary-background-color); }
+        #house .mode { flex:0 0 auto; width:190px; }
         #house select.mode { min-height:36px; border-radius:18px; padding:0 12px;
                              background:var(--card-background-color);
                              color:var(--primary-text-color);
@@ -4643,6 +4644,36 @@ class BetterLightingPanel extends HTMLElement {
     }
   }
 
+  /**
+   * The integration's own dropdown, or the browser's if it is not there.
+   *
+   * The element is defined by the card script, which the frontend loads for
+   * everybody -- but the panel can be open on a session where that failed,
+   * and a missing control is worse than a plain one.
+   */
+  _dropdown(options, value, onChange) {
+    if (customElements.get("bl-dropdown")) {
+      const picker = document.createElement("bl-dropdown");
+      picker.options = options;
+      picker.value = value;
+      picker.addEventListener("value-changed", (event) =>
+        onChange(event.detail.value)
+      );
+      return picker;
+    }
+    const plain = document.createElement("select");
+    plain.innerHTML = options
+      .map(
+        (option) =>
+          `<option value="${option.value}"${
+            option.value === value ? " selected" : ""
+          }>${option.label}</option>`
+      )
+      .join("");
+    plain.addEventListener("change", () => onChange(plain.value));
+    return plain;
+  }
+
   /** The light entity of one room, as the room itself claims it. */
   _roomLight(roomId) {
     const states = this._hass?.states || {};
@@ -4701,14 +4732,7 @@ class BetterLightingPanel extends HTMLElement {
       rows.push(`<li>
         ${this._icon("mdi:auto-mode")}
         <span class="grow">${state.attributes.friendly_name || id}</span>
-        <select class="mode" data-entity="${id}">${(
-          state.attributes.options || []
-        )
-          .map(
-            (option) =>
-              `<option${option === state.state ? " selected" : ""}>${option}</option>`
-          )
-          .join("")}</select>
+        <span class="mode-here" data-entity="${id}"></span>
       </li>`);
     }
     if (!rows.length) return;
@@ -4730,14 +4754,22 @@ class BetterLightingPanel extends HTMLElement {
     into.querySelector("#night")?.addEventListener("click", () =>
       this._hass.callService("button", "press", { entity_id: nightOff })
     );
-    into.querySelectorAll("select.mode").forEach((picker) =>
-      picker.addEventListener("change", (event) =>
+    into.querySelectorAll(".mode-here").forEach((slot) => {
+      const entityId = slot.dataset.entity;
+      const state = states[entityId];
+      const options = (state.attributes.options || []).map((option) => ({
+        value: option,
+        label: option,
+      }));
+      const picker = this._dropdown(options, state.state, (value) =>
         this._hass.callService("select", "select_option", {
-          entity_id: event.target.dataset.entity,
-          option: event.target.value,
+          entity_id: entityId,
+          option: value,
         })
-      )
-    );
+      );
+      picker.classList.add("mode");
+      slot.replaceWith(picker);
+    });
   }
 
   _paintPresets() {

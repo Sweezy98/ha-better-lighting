@@ -164,12 +164,15 @@ One row of controls each, and nothing that gets used twice a year:
   thing as turning adaptive off from a card.
 - **Power** and a **brightness bar**, which moves the room the way the room is
   configured to move: members keep their own headroom. Drag it, click it, or
-  use the arrow keys.
+  use the arrow keys — including on a room that is off, where setting a
+  brightness lights it adaptively with that brightness held and the colour
+  still following the sun.
 - **Scenes** as previous, a menu, and next — the menu is drawn by the card, so
   it looks like the rest of the dashboard rather than like the browser. The
   arrows step through the card's own list, so **scenes you hide in the card's
   settings are skipped as well as unlisted**, and they are disabled while the
-  room is off.
+  room is off. A hidden scene that something else turns on is still named on
+  the dropdown — it just never appears in the list.
 - **A countdown** whenever the room is due to switch itself off, so a trigger's
   remaining hold is visible rather than something you wait out.
 

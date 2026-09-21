@@ -124,6 +124,283 @@ function words(hass) {
   return WORDS[language] || WORDS[language.split("-")[0]] || WORDS.en;
 }
 
+/**
+ * The dropdown this integration uses wherever it needs one.
+ *
+ * Defined here because the card is its first and most demanding consumer and
+ * has to work on a dashboard with nothing else of ours loaded; the panel uses
+ * the same element, so the two cannot drift.
+ *
+ * What it does that a browser's own `select` cannot: carry an icon per
+ * option, centre the current one between equal gutters, drop a popup exactly
+ * as wide as itself, and show a whole number of rows -- never four and a
+ * sliver, which is a scrollbar over two pixels nobody asked for.
+ */
+class BlDropdown extends HTMLElement {
+  // How many rows to show before scrolling, where there is room for them.
+  static ROWS = 5;
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._options = [];
+    this._value = "";
+    this._open = false;
+  }
+
+  connectedCallback() {
+    if (!this._drawn) this._render();
+    this._paint();
+  }
+
+  disconnectedCallback() {
+    this._close();
+  }
+
+  set options(list) {
+    this._options = Array.isArray(list) ? list : [];
+    this._paint();
+  }
+
+  get options() {
+    return this._options;
+  }
+
+  set value(next) {
+    this._value = next ?? "";
+    this._paint();
+  }
+
+  get value() {
+    return this._value;
+  }
+
+  set disabled(off) {
+    this._disabled = Boolean(off);
+    this._paint();
+  }
+
+  /**
+   * How to draw the current value when it is not one of the options.
+   *
+   * Something else can perfectly well set a value this dropdown does not
+   * offer -- a scene hidden from this card, chosen from a dashboard or by an
+   * automation. The trigger has to say what is actually on; the list still
+   * must not offer it, because leaving it out was the point.
+   */
+  set current(option) {
+    this._explicit = option || null;
+    this._paint();
+  }
+
+  _render() {
+    this._drawn = true;
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: block; position: relative;
+          --bl-gutter: 20px;
+          --bl-pad: 18px;
+        }
+        /* Three columns rather than a row: equal gutters either side are the
+           only way the label between them is centred rather than merely
+           looking it. */
+        .trigger {
+          width: 100%; height: 42px; box-sizing: border-box;
+          border-radius: 999px; border: 1px solid var(--divider-color);
+          background: none; color: var(--primary-text-color); cursor: pointer;
+          font: inherit; display: grid;
+          grid-template-columns: var(--bl-gutter) 1fr var(--bl-gutter);
+          align-items: center; padding: 0 var(--bl-pad);
+        }
+        .trigger:hover:not(:disabled) { background: var(--secondary-background-color); }
+        .trigger:disabled { opacity: .4; cursor: default; }
+        .label {
+          min-width: 0; text-align: center; padding: 0 8px;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .lead { display: inline-flex; justify-content: flex-start; }
+        .trail { display: inline-flex; justify-content: flex-end; }
+        ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
+
+        /* As wide as the control it drops from, and no wider: a menu that
+           spans more than that does not look attached to what opened it. */
+        .menu {
+          position: absolute; left: 0; right: 0; box-sizing: border-box;
+          z-index: 9; border-radius: 16px; padding: 6px;
+          background: var(--card-background-color, #1c1c1c);
+          border: 1px solid var(--divider-color);
+          box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
+          overflow-y: auto; overscroll-behavior: contain;
+        }
+        /* The icon column sits on the same line as the trigger's: one border
+           and this padding come off the trigger's own. */
+        .menu button {
+          display: grid; grid-template-columns: var(--bl-gutter) 1fr;
+          align-items: center; width: 100%; box-sizing: border-box;
+          padding: 11px 12px 11px calc(var(--bl-pad) - 6px);
+          border: 0; background: none; cursor: pointer; border-radius: 10px;
+          color: var(--primary-text-color); font: inherit; text-align: left;
+        }
+        .menu button:hover, .menu button:focus-visible {
+          background: var(--secondary-background-color); outline: none;
+        }
+        .menu button[aria-selected="true"] { color: var(--primary-color); }
+        .menu button .text {
+          min-width: 0; padding: 0 8px; text-align: left;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        [hidden] { display: none !important; }
+      </style>
+      <button class="trigger" part="trigger" aria-haspopup="listbox">
+        <span class="lead" id="lead"></span>
+        <span class="label" id="label"></span>
+        <span class="trail" id="trail"></span>
+      </button>
+      <div class="menu" id="menu" role="listbox" hidden></div>`;
+
+    this.shadowRoot
+      .querySelector(".trigger")
+      .addEventListener("click", () => (this._open ? this._close() : this._show()));
+    this.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && this._open) {
+        this._close();
+        this.shadowRoot.querySelector(".trigger").focus();
+      }
+    });
+  }
+
+  _icon(name) {
+    if (!name) return "";
+    if (customElements.get("ha-icon")) {
+      return `<ha-icon icon="${name}"></ha-icon>`;
+    }
+    return `<span>•</span>`;
+  }
+
+  _current() {
+    return (
+      this._options.find((option) => option.value === this._value) ||
+      (this._explicit?.value === this._value ? this._explicit : null)
+    );
+  }
+
+  _paint() {
+    if (!this._drawn) return;
+    const $ = (id) => this.shadowRoot.getElementById(id);
+    const current = this._current();
+    $("label").textContent = current?.label ?? this._value ?? "";
+    $("lead").innerHTML = this._icon(current?.icon);
+    $("trail").innerHTML = this._icon("mdi:chevron-down");
+    this.shadowRoot.querySelector(".trigger").disabled =
+      this._disabled || !this._options.length;
+    if (this._open) this._fill();
+  }
+
+  _fill() {
+    const menu = this.shadowRoot.getElementById("menu");
+    menu.innerHTML = this._options
+      .map(
+        (option) => `<button role="option" data-value="${option.value}"
+           aria-selected="${option.value === this._value}">
+           ${this._icon(
+             // The tick takes the icon's place on the current row: which one
+             // is chosen is already said by the icon on the trigger.
+             option.value === this._value ? "mdi:check" : option.icon
+           )}<span class="text">${option.label}</span></button>`
+      )
+      .join("");
+    menu.querySelectorAll("button").forEach((row) =>
+      row.addEventListener("click", () => {
+        this._close();
+        const value = row.dataset.value;
+        if (value === this._value) return;
+        this._value = value;
+        this._paint();
+        this.dispatchEvent(
+          new CustomEvent("value-changed", {
+            detail: { value },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      })
+    );
+  }
+
+  _show() {
+    if (!this._options.length) return;
+    this._open = true;
+    const menu = this.shadowRoot.getElementById("menu");
+    menu.hidden = false;
+    this._fill();
+    this._place(menu);
+
+    this._outside = (event) => {
+      if (!event.composedPath().includes(this)) this._close();
+    };
+    document.addEventListener("pointerdown", this._outside, true);
+    menu.querySelector('[aria-selected="true"], button')?.focus();
+  }
+
+  /**
+   * Below the trigger unless there is no room below, and always a whole
+   * number of rows.
+   *
+   * The height is rows plus the menu's own padding and border, measured from
+   * the element rather than assumed -- two pixels short of the truth is a
+   * scrollbar for the sake of the last row's bottom edge, which is exactly
+   * what a guessed constant produced.
+   */
+  _place(menu) {
+    const style = getComputedStyle(menu);
+    const chrome =
+      parseFloat(style.paddingTop) +
+      parseFloat(style.paddingBottom) +
+      parseFloat(style.borderTopWidth) +
+      parseFloat(style.borderBottomWidth);
+
+    const first = menu.querySelector("button");
+    const rowHeight = first ? first.getBoundingClientRect().height : 44;
+    const box = this.getBoundingClientRect();
+    const below = window.innerHeight - box.bottom - 16;
+    const above = box.top - 16;
+
+    const fits = (room) =>
+      Math.max(1, Math.floor((room - chrome) / rowHeight));
+    const downwards = below >= above || fits(below) >= this._options.length;
+    const room = downwards ? below : above;
+    const rows = Math.min(
+      this._options.length,
+      BlDropdown.ROWS,
+      Math.max(1, fits(room))
+    );
+
+    menu.style.maxHeight = `${rows * rowHeight + chrome}px`;
+    if (downwards) {
+      menu.style.top = `${box.height + 8}px`;
+      menu.style.bottom = "auto";
+    } else {
+      menu.style.bottom = `${box.height + 8}px`;
+      menu.style.top = "auto";
+    }
+  }
+
+  _close() {
+    this._open = false;
+    if (this._outside) {
+      document.removeEventListener("pointerdown", this._outside, true);
+      this._outside = null;
+    }
+    const menu = this.shadowRoot?.getElementById("menu");
+    if (menu) menu.hidden = true;
+  }
+}
+
+if (!customElements.get("bl-dropdown")) {
+  customElements.define("bl-dropdown", BlDropdown);
+}
+
 class BetterLightingCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("better-lighting-card-editor");
@@ -146,7 +423,6 @@ class BetterLightingCard extends HTMLElement {
     // brightness until the drag ends, so an echo from the bulbs cannot yank
     // the handle out from under whoever is moving it.
     this._pending = null;
-    this._menuOpen = false;
     this._tick = null;
     this._words = WORDS.en;
   }
@@ -179,7 +455,6 @@ class BetterLightingCard extends HTMLElement {
 
   disconnectedCallback() {
     this._stopTicking();
-    this._closeMenu();
   }
 
   // -- the entities this card drives --------------------------------------
@@ -224,13 +499,7 @@ class BetterLightingCard extends HTMLElement {
     this._drawn = true;
     this.shadowRoot.innerHTML = `
       <style>
-        :host {
-          --bl-warm: var(--state-light-color, #ffc768);
-          /* One gutter for the picker's two edges and the menu's icon column,
-             so every icon in the control sits on one vertical line. */
-          --bl-gutter: 20px;
-          --bl-pad: 18px;
-        }
+        :host { --bl-warm: var(--state-light-color, #ffc768); }
         ha-card {
           padding: 14px;
           display: flex;
@@ -305,7 +574,7 @@ class BetterLightingCard extends HTMLElement {
           transition: width .18s ease;
         }
         .bar.dragging .fill { transition: none; }
-        .bar[aria-disabled="true"] { opacity: .5; cursor: default; }
+
         /* Shown while dragging and not otherwise. The length of the fill
            is the reading; a number sitting on top of it is either the wrong
            colour for the track or the wrong colour for the fill, and at rest
@@ -321,6 +590,7 @@ class BetterLightingCard extends HTMLElement {
         .bar.dragging .pct { opacity: .85; }
 
         .scenes { display: flex; align-items: center; gap: 8px; }
+        .scenes bl-dropdown { flex: 1 1 auto; min-width: 0; }
         /* Wide, not round. Three pills across the row, the middle one
            widest -- a circle either side made them read as icon buttons
            rather than as the two ends of one control. */
@@ -333,72 +603,6 @@ class BetterLightingCard extends HTMLElement {
         }
         .step:hover:not(:disabled) { background: var(--secondary-background-color); }
         .step:disabled { opacity: .4; cursor: default; }
-/* Three columns rather than a row: the scene's icon and the chevron take
-           the same fixed width on either side, which is the only way the name
-           between them is actually centred rather than merely looking it. */
-        .picker {
-          flex: 1 1 auto; min-width: 0; height: 42px;
-          border-radius: 999px; border: 1px solid var(--divider-color);
-          background: none; color: var(--primary-text-color); cursor: pointer;
-          font: inherit; display: grid;
-          grid-template-columns: var(--bl-gutter) 1fr var(--bl-gutter);
-          align-items: center;
-          padding: 0 var(--bl-pad);
-        }
-        .picker:hover { background: var(--secondary-background-color); }
-        .picker .current {
-          min-width: 0; text-align: center;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          padding: 0 8px;
-        }
-        .picker .lead { display: inline-flex; justify-content: flex-start; }
-        .picker .trail { display: inline-flex; justify-content: flex-end; }
-        .picker ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
-
-        /* The menu. A surface over the card rather than the browser's own
-           list, which cannot be styled and looks like nothing else here. */
-        /* Anchored to the scene row, and below it unless there is no room
-           below -- which is the usual case for a card near the bottom of a
-           dashboard, and was the only case before. */
-        /* As wide as the control it belongs to, and no wider: a menu that
-           spans the whole card is a menu that does not look attached to the
-           thing that opened it. Left and width are set when it opens. */
-        .menu {
-          position: absolute;
-          /* Its own padding and border count towards the width set on it,
-             or "as wide as the picker" comes out fourteen pixels wider. */
-          box-sizing: border-box;
-          z-index: 3; border-radius: 16px;
-          background: var(--card-background-color, #1c1c1c);
-          box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
-          border: 1px solid var(--divider-color);
-          overflow-y: auto; overscroll-behavior: contain; padding: 6px;
-        }
-/* The icon column lines up with the picker's: the menu sits at the
-           picker's left edge, so one border and the menu's own padding are
-           taken off the picker's padding to land in the same place. */
-        .menu button {
-          display: grid; grid-template-columns: var(--bl-gutter) 1fr;
-          align-items: center; width: 100%;
-          padding: 11px 12px 11px calc(var(--bl-pad) - 6px);
-          border: 0; background: none; cursor: pointer;
-          color: var(--primary-text-color); font: inherit; text-align: left;
-          border-radius: 10px;
-        }
-        .menu button .label {
-          min-width: 0; padding: 0 8px; text-align: left;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .menu button:hover, .menu button:focus-visible {
-          background: var(--secondary-background-color); outline: none;
-        }
-        .menu button[aria-selected="true"] { color: var(--primary-color); }
-        .menu ha-icon { --mdc-icon-size: 20px; flex: 0 0 auto; }
-        /* Only for the card itself. A click anywhere else in Home Assistant
-           is caught on the document, because a scrim the size of one card
-           cannot cover the dashboard around it. */
-        .scrim { position: absolute; inset: 0; z-index: 2; }
-
         .missing { padding: 16px; color: var(--error-color, #db4437); }
         /* An explicit display beats the hidden attribute, so anything that
            hides itself has to say so louder than its own layout rule. */
@@ -427,16 +631,10 @@ class BetterLightingCard extends HTMLElement {
 
         <div class="scenes" id="scenes">
           <button class="step" id="prev" title="${this._words.previous_scene}"></button>
-          <button class="picker" id="picker" aria-haspopup="listbox">
-            <span class="lead" id="scene-icon"></span>
-            <span class="current" id="current"></span>
-            <span class="trail" id="chevron"></span>
-          </button>
+          <bl-dropdown id="picker"></bl-dropdown>
           <button class="step" id="next" title="${this._words.next_scene}"></button>
         </div>
 
-        <div class="scrim" id="scrim" hidden></div>
-        <div class="menu" id="menu" role="listbox" hidden></div>
       </ha-card>`;
 
     const $ = (id) => this.shadowRoot.getElementById(id);
@@ -448,15 +646,13 @@ class BetterLightingCard extends HTMLElement {
     $("adaptive").addEventListener("click", () => this._backToAdaptive());
     $("prev").addEventListener("click", () => this._step(-1));
     $("next").addEventListener("click", () => this._step(1));
-    $("picker").addEventListener("click", () => this._toggleMenu());
-    $("scrim").addEventListener("click", () => this._closeMenu());
+    $("picker").addEventListener("value-changed", (event) =>
+      this._call("select", "select_option", {
+        entity_id: this._selectId,
+        option: event.detail.value,
+      })
+    );
     this._wireBar($("bar"));
-    this.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && this._menuOpen) {
-        this._closeMenu();
-        $("picker").focus();
-      }
-    });
   }
 
   /** Drag, click and arrow keys on the brightness bar. */
@@ -478,7 +674,6 @@ class BetterLightingCard extends HTMLElement {
       this._pending = null;
     };
     bar.addEventListener("pointerdown", (event) => {
-      if (bar.getAttribute("aria-disabled") === "true") return;
       event.preventDefault();
       bar.classList.add("dragging");
       move(event);
@@ -513,6 +708,17 @@ class BetterLightingCard extends HTMLElement {
       ? Math.round((attrs.brightness / 255) * 100)
       : 0;
   }
+
+  /**
+   * Setting a brightness on a dark room lights it.
+   *
+   * Not a special case here, because it is not one in the room either: a
+   * brightness on its own, on a room that is off, is an explicit request for
+   * that level. The room takes the brightness axis as manually owned and
+   * leaves colour to the sun, which is exactly "on, adaptive, but this
+   * bright". So the bar is never disabled -- a dark room is the most likely
+   * reason somebody reaches for it.
+   */
 
   _sync() {
     const card = this.shadowRoot.querySelector("ha-card");
@@ -596,12 +802,13 @@ class BetterLightingCard extends HTMLElement {
 
   _paintBar() {
     const bar = this.shadowRoot.getElementById("bar");
-    const on = this._light?.state === "on";
     const pct = this._shownPct();
-    bar.setAttribute("aria-disabled", String(!on));
     bar.setAttribute("aria-valuenow", String(pct));
     const fill = this.shadowRoot.getElementById("fill");
-    fill.style.width = `${on ? pct : 0}%`;
+    // While dragging, the handle follows the finger even in a dark room --
+    // that drag is how the room gets lit, so showing nothing until it is
+    // over would be the one moment the control says least.
+    fill.style.width = `${pct}%`;
     fill.style.background = this._fillColour();
     this.shadowRoot.getElementById("pct").textContent = `${pct}%`;
   }
@@ -629,12 +836,21 @@ class BetterLightingCard extends HTMLElement {
     if (!select) return;
 
     const options = this._options(select);
-    this.shadowRoot.getElementById("current").textContent = select.state;
-    this.shadowRoot.getElementById("scene-icon").innerHTML = this._icon(
-      this._optionIcon(select, select.state)
-    );
-    this.shadowRoot.getElementById("chevron").innerHTML =
-      this._icon("mdi:chevron-down");
+    const picker = this.shadowRoot.getElementById("picker");
+    picker.options = options.map((option) => ({
+      value: option,
+      label: option,
+      icon: this._optionIcon(select, option),
+    }));
+    // Named even when hidden: a scene left out of this card can still be the
+    // one that is on, set from somewhere else.
+    picker.current = {
+      value: select.state,
+      label: select.state,
+      icon: this._optionIcon(select, select.state),
+    };
+    picker.value = select.state;
+
     this.shadowRoot.getElementById("prev").innerHTML =
       this._icon("mdi:chevron-left");
     this.shadowRoot.getElementById("next").innerHTML =
@@ -648,42 +864,11 @@ class BetterLightingCard extends HTMLElement {
     const single = options.length < 2;
     this.shadowRoot.getElementById("prev").disabled = single || !on;
     this.shadowRoot.getElementById("next").disabled = single || !on;
-    this.shadowRoot.getElementById("picker").disabled = !options.length;
-
-    if (this._menuOpen) this._paintMenu(options, select.state);
   }
 
   /** The icon a scene is drawn with, as the room itself reports it. */
   _optionIcon(select, option) {
     return select?.attributes?.bl_option_icons?.[option] || "mdi:palette";
-  }
-
-  _paintMenu(options, current) {
-    const menu = this.shadowRoot.getElementById("menu");
-    const select = this._sceneSelect;
-    menu.innerHTML = options
-      .map(
-        (option) => `<button role="option" data-option="${option}"
-           aria-selected="${option === current}">
-           ${this._icon(
-             // The tick takes the icon's place on the current row rather than
-             // sitting beside it: which scene is showing is already said by
-             // the icon on the picker above.
-             option === current
-               ? "mdi:check"
-               : this._optionIcon(select, option)
-           )}<span class="label">${option}</span></button>`
-      )
-      .join("");
-    menu.querySelectorAll("button").forEach((row) =>
-      row.addEventListener("click", () => {
-        this._closeMenu();
-        this._call("select", "select_option", {
-          entity_id: this._selectId,
-          option: row.dataset.option,
-        });
-      })
-    );
   }
 
   // -- the countdown -------------------------------------------------------
@@ -785,85 +970,6 @@ class BetterLightingCard extends HTMLElement {
       entity_id: this._selectId,
       option: options[next],
     });
-  }
-
-  _toggleMenu() {
-    if (this._menuOpen) {
-      this._closeMenu();
-    } else {
-      this._openMenu();
-    }
-  }
-
-  _openMenu() {
-    const select = this._sceneSelect;
-    if (!select) return;
-    this._menuOpen = true;
-    const options = this._options(select);
-    this._paintMenu(options, select.state);
-
-    const menu = this.shadowRoot.getElementById("menu");
-    menu.hidden = false;
-    this.shadowRoot.getElementById("scrim").hidden = false;
-    this._placeMenu(menu, options.length);
-
-    // Anywhere else in Home Assistant, not just anywhere else on this card.
-    this._outside = (event) => {
-      if (!event.composedPath().includes(this)) this._closeMenu();
-    };
-    document.addEventListener("pointerdown", this._outside, true);
-    menu.querySelector('[aria-selected="true"], button')?.focus();
-  }
-
-  /**
-   * Below the scene row, unless there is not room for it there.
-   *
-   * Measured against the window rather than the card: a card near the bottom
-   * of a dashboard has plenty of room inside itself and none underneath, and
-   * opening downwards into the edge of the screen is how a menu ends up with
-   * two of its five entries reachable.
-   */
-  _placeMenu(menu, count) {
-    const card = this.getBoundingClientRect();
-    const picker = this.shadowRoot
-      .getElementById("picker")
-      .getBoundingClientRect();
-    // As wide as the control it drops from, and starting at its left edge.
-    menu.style.left = `${picker.left - card.left}px`;
-    menu.style.width = `${picker.width}px`;
-
-    const row = this.shadowRoot.getElementById("scenes").getBoundingClientRect();
-    const below = window.innerHeight - row.bottom - 16;
-    const above = row.top - 16;
-    // Measured rather than assumed: a row's height follows the theme's font,
-    // and five rows of a guess is four and a half rows on somebody's screen.
-    const first = menu.querySelector("button");
-    const rowHeight = first ? first.getBoundingClientRect().height : 44;
-    const wanted = Math.min(count, MENU_ROWS) * rowHeight + 12;
-
-    const downwards = below >= Math.min(wanted, above) || below >= wanted;
-    const room = Math.max(120, downwards ? below : above);
-    menu.style.maxHeight = `${Math.min(wanted, room)}px`;
-
-    if (downwards) {
-      menu.style.top = `${row.bottom - card.top + 8}px`;
-      menu.style.bottom = "auto";
-    } else {
-      menu.style.bottom = `${card.bottom - row.top + 8}px`;
-      menu.style.top = "auto";
-    }
-  }
-
-  _closeMenu() {
-    this._menuOpen = false;
-    if (this._outside) {
-      document.removeEventListener("pointerdown", this._outside, true);
-      this._outside = null;
-    }
-    const menu = this.shadowRoot?.getElementById("menu");
-    const scrim = this.shadowRoot?.getElementById("scrim");
-    if (menu) menu.hidden = true;
-    if (scrim) scrim.hidden = true;
   }
 
   _openMoreInfo() {

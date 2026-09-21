@@ -93,6 +93,7 @@ Inside a room:
 | **Light calibration** | Per-light minimum, maximum and offsets, to match a mismatched bulb to its neighbours. |
 | **Triggers** | The sensors that ask for this room's lights — motion, a door, a cover. Any one of them is enough. |
 | **Rules** | What has to hold before a trigger may fire — after dark, dark enough, not on holiday. All of them have to hold. |
+| **Presence simulation** | What this room does while the house is empty: replay last week, light adaptively, show a scene, or sit it out. |
 | **Light group** | Several of this room's lights under one name — the three bulbs in one fitting, a row of ceiling spots. Given a Zigbee group entity, the whole group changes in one command instead of arriving one bulb at a time. Groups can hold groups, so a 3×3 of spots is three rows. |
 | **Zone** | A part of this room that may be told something different — the couch and the desk of one living room. A zone follows its room until it has a reason not to. |
 
@@ -195,6 +196,46 @@ one more can only make it fire more. A rule whose sensor cannot be read blocks b
 default — "allowed only if every rule passes", and a rule nobody can evaluate has
 not passed — and each rule can be told to let it through instead, for a flaky
 sensor that should not leave somebody on an unlit path.
+
+### Presence simulation
+
+While the house is empty, make it look lived in. Point the integration at **one
+helper that says nobody is home** — deliberately not worked out from device
+trackers, because a guest nobody tracks is still somebody at home, and
+simulating over their head is the one failure here that actually matters. An
+unreadable helper counts as *not* empty.
+
+Each room chooses what it does:
+
+| Mode | What happens |
+|---|---|
+| **Replay what it actually did** | The same weekday, a week ago, from the recorder — shifted. This is the convincing one. |
+| **Light it adaptively** | Steady, and obviously so. |
+| **Show a scene** | One fixed look. |
+| *(taking part turned off)* | Nothing. A bathroom nobody can see from the street proves nothing. |
+
+Replay matters more than it sounds. A hall light that comes on at 19:03:12 every
+single evening is advertising an empty house rather than hiding one — so **each
+step moves by its own random amount**, up to the jitter you set. Shifting the
+whole evening by the same twelve minutes would still be exactly last week.
+Order survives the shuffle: a light still comes on before it goes off. Only
+*which rooms were lit when* is replayed; brightness comes from the room's own
+curve, which knows what nine in the evening should look like better than last
+Tuesday does.
+
+**Rules** gate the whole thing, the same rules a trigger uses — a time window,
+a lux threshold, a holiday helper. `switch.better_lighting_presence_simulation`
+shows whether one is running and which rooms are in it, and turning it on runs
+one regardless of the rules, which is how you check the setup without waiting
+for nightfall.
+
+It stops the instant the helper says somebody is back — not at the end of the
+timeline — and every room it lit goes off again, unless somebody reached for a
+switch on their way in.
+
+Replay needs the `recorder`. Without it that mode finds nothing to play and
+leaves the room dark, which is a better impression of an empty house than
+lighting it all evening.
 
 ### Light groups: three bulbs, told once
 

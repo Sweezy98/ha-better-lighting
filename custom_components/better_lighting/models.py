@@ -39,6 +39,7 @@ from .const import (
     CONF_ANY_CHANGE_IS_PRESS,
     CONF_AREA_ID,
     CONF_AUTORESET_MANUAL_S,
+    CONF_AWAY_ENTITY,
     CONF_BINDING_ENTITY,
     CONF_BINDING_TYPE,
     CONF_BRIGHTNESS_MODE,
@@ -176,6 +177,12 @@ from .const import (
     CONF_SCENE_TRANSITION,
     CONF_SEND_SPLIT_DELAY_MS,
     CONF_SEPARATE_TURN_ON,
+    CONF_SIMULATE,
+    CONF_SIMULATION_DAYS_BACK,
+    CONF_SIMULATION_JITTER_MIN,
+    CONF_SIMULATION_MODE,
+    CONF_SIMULATION_RULES,
+    CONF_SIMULATION_SCENE,
     CONF_SNAPSHOT_ON_ENTER,
     CONF_STATES,
     CONF_SUNRISE_OFFSET,
@@ -238,6 +245,7 @@ from .scenes import (
     SceneOverride,
     UnsupportedColorPolicy,
 )
+from .simulation import SimulationMode
 from .triggers import SensorTrigger
 from .zones import Zone
 
@@ -274,6 +282,14 @@ class HubConfig:
     # Effects the user has written, by id. The built-in ones are not here:
     # they are the same for every house and live in code.
     effects: Mapping[str, Effect]
+
+    # Presence simulation. The away entity is the one helper that says the
+    # house is genuinely empty, guests included; the rules are what else has
+    # to hold before pretending somebody is in.
+    away_entity: str | None
+    simulation_days_back: int
+    simulation_jitter_minutes: int
+    simulation_rules: tuple[Condition, ...]
     time_dark: int
     time_light: int
     sunrise_offset: int
@@ -303,6 +319,13 @@ class HubConfig:
             brightness_mode=BrightnessMode(raw[CONF_BRIGHTNESS_MODE]),
             night_source_entity=raw.get(CONF_NIGHT_SOURCE) or None,
             log_retention_hours=int(raw.get(CONF_LOG_RETENTION_H, 48)),
+            away_entity=raw.get(CONF_AWAY_ENTITY) or None,
+            simulation_days_back=int(raw.get(CONF_SIMULATION_DAYS_BACK, 7)),
+            simulation_jitter_minutes=int(raw.get(CONF_SIMULATION_JITTER_MIN, 15)),
+            simulation_rules=tuple(
+                condition_from(entry)
+                for entry in (raw.get(CONF_SIMULATION_RULES) or ())
+            ),
             effects={
                 str(entry.get(CONF_EFFECT_ID) or ""): effect_from_mapping(entry)
                 for entry in (raw.get(CONF_EFFECTS) or ())
@@ -390,6 +413,12 @@ class RoomConfig:
     # The rules that say whether those sensors may act, ANDed and read where
     # they are set rather than named from a list somewhere else.
     rules: tuple[Condition, ...]
+
+    # What this room does while the house is empty. Opt-out rather than
+    # opt-in, and inert until the house has an away helper at all.
+    simulate: bool
+    simulation_mode: SimulationMode
+    simulation_scene_id: str | None
     # Somebody reached for the switch. The automatic turn-off stands down
     # until the lights are off again, and then takes over as before.
     hold_when_set_by_hand: bool
@@ -565,6 +594,11 @@ class RoomConfig:
             presence_off_action=PresenceOffAction(raw[CONF_PRESENCE_OFF_ACTION]),
             presence_respects_manual=bool(raw[CONF_PRESENCE_RESPECTS_MANUAL]),
             rules=_rules(raw),
+            simulate=bool(raw.get(CONF_SIMULATE, True)),
+            simulation_mode=SimulationMode(
+                raw.get(CONF_SIMULATION_MODE, SimulationMode.REPLAY.value)
+            ),
+            simulation_scene_id=raw.get(CONF_SIMULATION_SCENE) or None,
             hold_when_set_by_hand=bool(raw.get(CONF_HOLD_WHEN_SET_BY_HAND, True)),
             window_entities=tuple(raw.get(CONF_WINDOW_ENTITIES) or ()),
             insect_action=InsectAction(

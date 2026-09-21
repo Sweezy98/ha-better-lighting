@@ -200,6 +200,24 @@
           "trigger_entity": "A motion sensor, a door, a cover, a presence toggle — anything that says something is happening here.",
           "active_state": "Leave empty for the usual: on, open, home or detected. Name a state for a sensor that reports something else."
         }
+      },
+      "simulation": {
+        "title": "Presence simulation",
+        "data": {
+          "away_entity": "Nobody home",
+          "simulation_days_back": "Replay from",
+          "simulation_jitter_minutes": "Move each step by up to",
+          "simulate": "Take part in presence simulation",
+          "simulation_mode": "What this room does",
+          "simulation_scene_id": "Scene"
+        },
+        "data_description": {
+          "away_entity": "The one helper that says the house is genuinely empty — guests included. Deliberately not worked out from device trackers: somebody nobody tracks is still somebody at home, and simulating over their head is the one failure that matters.",
+          "simulation_days_back": "How many days back to replay. Seven by default, so a Tuesday evening is replayed from a Tuesday evening.",
+          "simulation_jitter_minutes": "The most any one step may move, in either direction. Each step moves by its own amount: shifting the whole evening together is still exactly last week.",
+          "simulate": "Turn this off for a room nobody can see from outside. A bathroom proves nothing.",
+          "simulation_mode": "Replay is the convincing one. Adaptive simply lights the room, which is steady and obviously so; a scene shows one fixed look."
+        }
       }
     },
     "error": {
@@ -1417,6 +1435,13 @@
         "above": "A number above a threshold",
         "state_is": "An entity in a particular state"
       }
+    },
+    "simulation_mode": {
+      "options": {
+        "adaptive": "Light it adaptively",
+        "scene": "Show a scene",
+        "replay": "Replay what it actually did"
+      }
     }
   },
   "entity": {
@@ -1436,6 +1461,9 @@
       "mode_enabled": {
         "name": "Enabled",
         "state_attributes": {}
+      },
+      "presence_simulation": {
+        "name": "Presence simulation"
       }
     },
     "select": {

@@ -200,6 +200,24 @@
           "trigger_entity": "Ein Bewegungsmelder, eine Tür, ein Rollladen, ein Anwesenheitsschalter — alles, was sagt, dass hier etwas passiert.",
           "active_state": "Leer lassen für die üblichen Werte: on, open, home oder detected. Einen Zustand angeben, wenn der Sensor etwas anderes meldet."
         }
+      },
+      "simulation": {
+        "title": "Anwesenheitssimulation",
+        "data": {
+          "away_entity": "Niemand zu Hause",
+          "simulation_days_back": "Wiedergeben von vor",
+          "simulation_jitter_minutes": "Jeden Schritt verschieben um bis zu",
+          "simulate": "An der Anwesenheitssimulation teilnehmen",
+          "simulation_mode": "Was dieser Raum tut",
+          "simulation_scene_id": "Szene"
+        },
+        "data_description": {
+          "away_entity": "Der eine Helfer, der sagt, dass das Haus wirklich leer ist — Gäste eingeschlossen. Bewusst nicht aus Gerätetrackern abgeleitet: wer nicht getrackt wird, ist trotzdem zu Hause, und über seinen Kopf hinweg zu simulieren ist der eine Fehler, der zählt.",
+          "simulation_days_back": "Wie viele Tage zurück wiedergegeben wird. Standardmäßig sieben, damit ein Dienstagabend von einem Dienstagabend stammt.",
+          "simulation_jitter_minutes": "Wie weit ein einzelner Schritt höchstens verschoben wird, in beide Richtungen. Jeder Schritt verschiebt sich um seinen eigenen Betrag: den ganzen Abend gemeinsam zu verschieben wäre weiterhin exakt die letzte Woche.",
+          "simulate": "Für einen Raum ausschalten, den man von außen nicht sieht. Ein Bad beweist nichts.",
+          "simulation_mode": "Die Wiedergabe ist die überzeugende Variante. Adaptiv beleuchtet den Raum einfach — gleichmäßig und offensichtlich; eine Szene zeigt ein festes Bild."
+        }
       }
     },
     "error": {
@@ -1417,6 +1435,13 @@
         "above": "Ein Wert über einem Schwellwert",
         "state_is": "Eine Entität in einem bestimmten Zustand"
       }
+    },
+    "simulation_mode": {
+      "options": {
+        "adaptive": "Adaptiv beleuchten",
+        "scene": "Eine Szene zeigen",
+        "replay": "Wiedergeben, was er wirklich tat"
+      }
     }
   },
   "entity": {
@@ -1436,6 +1461,9 @@
       "mode_enabled": {
         "name": "Aktiviert",
         "state_attributes": {}
+      },
+      "presence_simulation": {
+        "name": "Anwesenheitssimulation"
       }
     },
     "select": {

@@ -191,12 +191,28 @@ def _mode_diagnostics(runtime: Any, mode_id: str) -> dict[str, Any]:
 
 
 def _as_dict(obj: Any) -> dict[str, Any]:
-    """A dataclass as plain JSON-safe values."""
+    """A dataclass as plain JSON-safe values.
+
+    Tuples become lists because this dump is read two ways -- downloaded, and
+    over the websocket to the panel -- and only one of those goes through
+    JSON. Leaving them as tuples made the two disagree about a field nobody
+    had looked at, which is exactly the sort of difference that makes a
+    diagnostics page worth less than the bug report it is meant to support.
+    """
     from dataclasses import asdict, is_dataclass
 
     if not is_dataclass(obj):
         return {}
-    return {
-        key: (value.value if hasattr(value, "value") else value)
-        for key, value in asdict(obj).items()
-    }
+    return {key: _plain(value) for key, value in asdict(obj).items()}
+
+
+def _plain(value: Any) -> Any:
+    if hasattr(value, "value"):  # an enum
+        return value.value
+    if isinstance(value, tuple | set | frozenset):
+        return [_plain(item) for item in value]
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _plain(item) for key, item in value.items()}
+    return value

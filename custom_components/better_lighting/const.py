@@ -19,6 +19,7 @@ from homeassistant.helpers import selector
 
 from .conditions import ConditionKind
 from .session import OptedOutOnExit, RestoreMode, RoomAction
+from .simulation import SimulationMode
 
 DOMAIN = "better_lighting"
 
@@ -61,6 +62,7 @@ class Section(StrEnum):
     PRESENCE = "presence"
     INSECT = "insect"
     GROUP = "group"
+    SIMULATION = "simulation"
     # The lower half of a two-button switch.
     DOWN = "down"
     ADVANCED = "advanced"
@@ -1648,6 +1650,75 @@ _PRESENCE_GATE_SPECS: tuple[FieldSpec, ...] = (
 ROOM_PRESENCE_SPECS = (*ROOM_PRESENCE_SPECS, *_PRESENCE_GATE_SPECS)
 
 
+CONF_AWAY_ENTITY = "away_entity"
+CONF_SIMULATION_DAYS_BACK = "simulation_days_back"
+CONF_SIMULATION_JITTER_MIN = "simulation_jitter_minutes"
+CONF_SIMULATION_RULES = "simulation_rules"
+CONF_SIMULATE = "simulate"
+CONF_SIMULATION_MODE = "simulation_mode"
+CONF_SIMULATION_SCENE = "simulation_scene_id"
+
+HUB_SIMULATION_SPECS: tuple[FieldSpec, ...] = (
+    # The one helper that says the house is genuinely empty. Not inferred from
+    # device trackers: a guest nobody tracks is still somebody at home, and a
+    # simulation running over their head is the one failure that matters.
+    FieldSpec(
+        CONF_AWAY_ENTITY,
+        None,
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["binary_sensor", "input_boolean", "schedule", "person"]
+            )
+        ),
+        section=Section.SIMULATION,
+    ),
+    FieldSpec(
+        CONF_SIMULATION_DAYS_BACK,
+        7,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=1, max=28, step=1, mode=selector.NumberSelectorMode.BOX
+            )
+        ),
+        section=Section.SIMULATION,
+    ),
+    FieldSpec(
+        CONF_SIMULATION_JITTER_MIN,
+        15,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0, max=120, step=1, mode=selector.NumberSelectorMode.BOX
+            )
+        ),
+        section=Section.SIMULATION,
+    ),
+)
+
+ROOM_SIMULATION_SPECS: tuple[FieldSpec, ...] = (
+    # On by default, and inert until the house has an away helper. A room
+    # nobody can see from the street turns it off.
+    FieldSpec(CONF_SIMULATE, True, _boolean(), section=Section.SIMULATION),
+    FieldSpec(
+        CONF_SIMULATION_MODE,
+        SimulationMode.REPLAY.value,
+        _select(
+            [m.value for m in SimulationMode if m is not SimulationMode.NONE],
+            "simulation_mode",
+        ),
+        section=Section.SIMULATION,
+        depends_on=(CONF_SIMULATE, (True,)),
+    ),
+    FieldSpec(
+        CONF_SIMULATION_SCENE,
+        None,
+        _select([], "scene"),
+        options_key="scenes",
+        section=Section.SIMULATION,
+        depends_on=(CONF_SIMULATION_MODE, (SimulationMode.SCENE.value,)),
+    ),
+)
+
+
 ROOM_ZONE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_NAME,
@@ -1907,7 +1978,10 @@ ROOM_SPECS = (
     + ROOM_POWER_SPECS
     + ROOM_PRESENCE_SPECS
     + ROOM_INSECT_SPECS
+    + ROOM_SIMULATION_SPECS
 )
+
+HUB_SPECS = HUB_SPECS + HUB_SIMULATION_SPECS
 
 
 SPECS_BY_SUBENTRY: dict[str, tuple[FieldSpec, ...]] = {

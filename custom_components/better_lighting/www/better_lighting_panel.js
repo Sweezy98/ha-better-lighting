@@ -483,6 +483,7 @@ const SECTION_ICONS = {
   calibrations: "mdi:tune-variant",
   light_groups: "mdi:lightbulb-group",
   room_zones: "mdi:select-group",
+  simulation: "mdi:home-account",
   rules: "mdi:lightning-bolt-outline",
   presets: "mdi:palette-swatch",
 };
@@ -3435,12 +3436,38 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintPresets();
       case "effects":
         return this._paintEffects();
-      case "hub":
+      case "hub": {
+        // Mutated in place by the nested editor below, and carried into the
+        // save: simulation rules are not form fields, so the pending values
+        // will never mention them.
+        const hub = { ...this._hub };
         return this._paintSettings({
           form: this._schema?.forms.hub || [],
-          values: this._hub,
-          save: (values) => this._call("save_hub", { options: values }),
+          values: hub,
+          save: (values) => this._call("save_hub", { options: { ...hub, ...values } }),
+          extra:
+            this._view.section === "simulation"
+              ? (into) => {
+                  hub.simulation_rules = (hub.simulation_rules || []).map((r) => ({
+                    ...r,
+                  }));
+                  this._paintNestedList(into, {
+                    title: this._t("rules"),
+                    hint: this._t("simulation_rules_hint"),
+                    formKey: "condition",
+                    items: hub.simulation_rules,
+                    blank: {
+                      check: "state_is",
+                      required_state: "on",
+                      unknown_blocks: true,
+                    },
+                    addLabel: this._t("add_rule"),
+                    describe: (rule) => this._describeCondition(rule),
+                  });
+                }
+              : null,
         });
+      }
       case "mode":
         return this._paintMode();
       case "import":

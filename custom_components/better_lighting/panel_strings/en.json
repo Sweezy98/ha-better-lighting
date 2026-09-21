@@ -141,5 +141,6 @@
   "triggers_hint": "Any one of these turns the lights on. While at least one is active they stay on; when the last one clears they go off after the delay above.",
   "add_trigger": "Add a trigger",
   "rules_hint": "All of these have to hold before a trigger may fire. Adding another can only ever make it happen less often.",
-  "add_rule": "Add a rule"
+  "add_rule": "Add a rule",
+  "simulation_rules_hint": "All of these have to hold before a simulation may run at all. The switch runs one anyway, for checking the setup."
 }

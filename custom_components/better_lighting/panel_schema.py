@@ -62,8 +62,14 @@ ROOM_SECTIONS: tuple[Section, ...] = (
     Section.POWER,
     Section.PRESENCE,
     Section.INSECT,
+    Section.SIMULATION,
 )
-HUB_SECTIONS: tuple[Section, ...] = (Section.BASIC, Section.NIGHT, Section.ADVANCED)
+HUB_SECTIONS: tuple[Section, ...] = (
+    Section.BASIC,
+    Section.NIGHT,
+    Section.SIMULATION,
+    Section.ADVANCED,
+)
 SWITCH_SECTIONS: tuple[Section, ...] = (
     Section.BASIC,
     Section.ADVANCED,

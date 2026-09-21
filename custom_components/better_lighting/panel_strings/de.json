@@ -141,5 +141,6 @@
   "triggers_hint": "Jeder einzelne davon schaltet das Licht ein. Solange mindestens einer aktiv ist, bleibt es an; wenn der letzte frei wird, geht es nach der Verzögerung oben aus.",
   "add_trigger": "Auslöser hinzufügen",
   "rules_hint": "Alle müssen zutreffen, bevor ein Auslöser schalten darf. Eine weitere Regel kann nur dafür sorgen, dass seltener geschaltet wird.",
-  "add_rule": "Regel hinzufügen"
+  "add_rule": "Regel hinzufügen",
+  "simulation_rules_hint": "Alle müssen zutreffen, bevor eine Simulation überhaupt läuft. Der Schalter startet sie trotzdem — zum Prüfen der Einrichtung."
 }

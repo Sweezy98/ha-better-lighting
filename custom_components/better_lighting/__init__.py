@@ -61,6 +61,7 @@ from .room import EVENT_ROOM_MODE_CHANGED, RoomController
 from .scenes import Scene
 from .services import async_register_services, async_remove_services
 from .session import DeferredRegistry
+from .simulate import SimulationRunner
 from .store import SessionStore
 
 # Everything worth remembering, which is the same set the panel watches.
@@ -110,6 +111,9 @@ class BetterLightingRuntime:
     # room subentry_id so any subsystem can reach a room without a global.
     room_lights: dict[str, RoomLight] = field(default_factory=dict)
     contexts: ContextRegistry = field(default_factory=ContextRegistry)
+    # Makes an empty house look lived in. One per hub, because being away is
+    # a fact about the house rather than about any room in it.
+    simulation: SimulationRunner | None = None
     # Fingerprint of the config this runtime was built from, so an update
     # callback that changes nothing does not trigger a reload storm.
     config_fingerprint: int = 0
@@ -394,6 +398,13 @@ async def async_setup_entry(
         runtime.mode_runtimes[subentry_id] = mode_runtime
         await mode_runtime.async_setup()
         entry.async_on_unload(mode_runtime.async_shutdown)
+
+    # After the rooms, because it drives them; and after the modes, because
+    # a mode running while the house is empty is a stranger situation than
+    # anything this does and should win by having got there first.
+    runtime.simulation = SimulationRunner(hass, runtime)
+    await runtime.simulation.async_setup()
+    entry.async_on_unload(runtime.simulation.async_shutdown)
 
     _async_tidy_switch_orders(hass, entry)
     _async_prune_entities(hass, entry, runtime)

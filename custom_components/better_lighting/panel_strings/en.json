@@ -142,5 +142,7 @@
   "add_trigger": "Add a trigger",
   "rules_hint": "All of these have to hold before a trigger may fire. Adding another can only ever make it happen less often.",
   "add_rule": "Add a rule",
-  "simulation_rules_hint": "All of these have to hold before a simulation may run at all. The switch runs one anyway, for checking the setup."
+  "simulation_rules_hint": "All of these have to hold before a simulation may run at all. The switch runs one anyway, for checking the setup.",
+  "simulation_rules": "Simulation rules",
+  "room_simulation_rules_hint": "Added to the house-wide rules rather than replacing them: both have to hold before this room takes part."
 }

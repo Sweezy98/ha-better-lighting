@@ -209,14 +209,16 @@
           "simulation_jitter_minutes": "Jeden Schritt verschieben um bis zu",
           "simulate": "An der Anwesenheitssimulation teilnehmen",
           "simulation_mode": "Was dieser Raum tut",
-          "simulation_scene_id": "Szene"
+          "simulation_scene_id": "Szene",
+          "simulate_only_when_covers_open": "Nur bei geöffneten Rollläden"
         },
         "data_description": {
           "away_entity": "Der eine Helfer, der sagt, dass das Haus wirklich leer ist — Gäste eingeschlossen. Bewusst nicht aus Gerätetrackern abgeleitet: wer nicht getrackt wird, ist trotzdem zu Hause, und über seinen Kopf hinweg zu simulieren ist der eine Fehler, der zählt.",
           "simulation_days_back": "Wie viele Tage zurück wiedergegeben wird. Standardmäßig sieben, damit ein Dienstagabend von einem Dienstagabend stammt.",
           "simulation_jitter_minutes": "Wie weit ein einzelner Schritt höchstens verschoben wird, in beide Richtungen. Jeder Schritt verschiebt sich um seinen eigenen Betrag: den ganzen Abend gemeinsam zu verschieben wäre weiterhin exakt die letzte Woche.",
           "simulate": "Für einen Raum ausschalten, den man von außen nicht sieht. Ein Bad beweist nichts.",
-          "simulation_mode": "Die Wiedergabe ist die überzeugende Variante. Adaptiv beleuchtet den Raum einfach — gleichmäßig und offensichtlich; eine Szene zeigt ein festes Bild."
+          "simulation_mode": "Die Wiedergabe ist die überzeugende Variante. Adaptiv beleuchtet den Raum einfach — gleichmäßig und offensichtlich; eine Szene zeigt ein festes Bild.",
+          "simulate_only_when_covers_open": "Ein beleuchteter Raum hinter geschlossenen Rollläden überzeugt draußen niemanden. Verwendet die Rollläden dieses Raums, die auf der Anwesenheitsseite eingetragen sind. Ein nicht lesbarer Rollladen gilt als nicht offen."
         }
       }
     },

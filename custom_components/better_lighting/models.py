@@ -178,6 +178,7 @@ from .const import (
     CONF_SEND_SPLIT_DELAY_MS,
     CONF_SEPARATE_TURN_ON,
     CONF_SIMULATE,
+    CONF_SIMULATE_COVERS_OPEN,
     CONF_SIMULATION_DAYS_BACK,
     CONF_SIMULATION_JITTER_MIN,
     CONF_SIMULATION_MODE,
@@ -419,6 +420,11 @@ class RoomConfig:
     simulate: bool
     simulation_mode: SimulationMode
     simulation_scene_id: str | None
+    # Only pretend somebody is in when the blinds would let it be seen.
+    simulate_only_when_covers_open: bool
+    # This room's own rules for the simulation, added to the house's rather
+    # than replacing them: both have to hold.
+    simulation_rules: tuple[Condition, ...]
     # Somebody reached for the switch. The automatic turn-off stands down
     # until the lights are off again, and then takes over as before.
     hold_when_set_by_hand: bool
@@ -599,6 +605,13 @@ class RoomConfig:
                 raw.get(CONF_SIMULATION_MODE, SimulationMode.REPLAY.value)
             ),
             simulation_scene_id=raw.get(CONF_SIMULATION_SCENE) or None,
+            simulate_only_when_covers_open=bool(
+                raw.get(CONF_SIMULATE_COVERS_OPEN, False)
+            ),
+            simulation_rules=tuple(
+                condition_from(entry)
+                for entry in (raw.get(CONF_SIMULATION_RULES) or ())
+            ),
             hold_when_set_by_hand=bool(raw.get(CONF_HOLD_WHEN_SET_BY_HAND, True)),
             window_entities=tuple(raw.get(CONF_WINDOW_ENTITIES) or ()),
             insect_action=InsectAction(

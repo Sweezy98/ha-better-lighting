@@ -209,14 +209,16 @@
           "simulation_jitter_minutes": "Move each step by up to",
           "simulate": "Take part in presence simulation",
           "simulation_mode": "What this room does",
-          "simulation_scene_id": "Scene"
+          "simulation_scene_id": "Scene",
+          "simulate_only_when_covers_open": "Only when the blinds are open"
         },
         "data_description": {
           "away_entity": "The one helper that says the house is genuinely empty — guests included. Deliberately not worked out from device trackers: somebody nobody tracks is still somebody at home, and simulating over their head is the one failure that matters.",
           "simulation_days_back": "How many days back to replay. Seven by default, so a Tuesday evening is replayed from a Tuesday evening.",
           "simulation_jitter_minutes": "The most any one step may move, in either direction. Each step moves by its own amount: shifting the whole evening together is still exactly last week.",
           "simulate": "Turn this off for a room nobody can see from outside. A bathroom proves nothing.",
-          "simulation_mode": "Replay is the convincing one. Adaptive simply lights the room, which is steady and obviously so; a scene shows one fixed look."
+          "simulation_mode": "Replay is the convincing one. Adaptive simply lights the room, which is steady and obviously so; a scene shows one fixed look.",
+          "simulate_only_when_covers_open": "A lit room behind a closed blind convinces nobody outside. Uses this room's covers, the ones named on the Presence screen. A cover that cannot be read counts as not open."
         }
       }
     },

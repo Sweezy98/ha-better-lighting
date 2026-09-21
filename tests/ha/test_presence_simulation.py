@@ -25,12 +25,19 @@ from tests.conftest import (
 
 AWAY = "binary_sensor.nobody_home"
 LUX = "sensor.outside_lux"
+HOLIDAY = "input_boolean.holiday"
 
 DARK_ENOUGH = {
     "name": "After dark",
     "check": "below",
     "condition_entity": LUX,
     "threshold": 10,
+}
+NOT_ON_HOLIDAY = {
+    "name": "Not on holiday",
+    "check": "state_is",
+    "condition_entity": HOLIDAY,
+    "required_state": "off",
 }
 
 
@@ -327,3 +334,146 @@ class TestReplay:
 
         assert entry.runtime_data.simulation.running
         assert not _lit(hass, "light.lounge_main")
+
+
+class TestRoomLevelRules:
+    """A room's rules are added to the house's, not instead of them."""
+
+    async def test_a_room_rule_can_hold_one_room_back(
+        self, hass: HomeAssistant
+    ) -> None:
+        entry = await _build(
+            hass,
+            rooms=[
+                room_subentry(
+                    "Lounge", ["light.lounge_main"], simulation_mode="adaptive"
+                ),
+                room_subentry(
+                    "Bathroom",
+                    ["light.bathroom_main"],
+                    simulation_mode="adaptive",
+                    simulation_rules=[DARK_ENOUGH],
+                ),
+            ],
+        )
+        await _set(hass, LUX, "400")
+
+        await _set(hass, AWAY, "on")
+
+        assert entry.runtime_data.simulation.running
+        assert _lit(hass, "light.lounge_main")
+        assert not _lit(hass, "light.bathroom_main")
+
+    async def test_both_sets_have_to_hold(self, hass: HomeAssistant) -> None:
+        """The house says when, the room says whether."""
+        await _build(
+            hass,
+            simulation_rules=[NOT_ON_HOLIDAY],
+            rooms=[
+                room_subentry(
+                    "Lounge",
+                    ["light.lounge_main"],
+                    simulation_mode="adaptive",
+                    simulation_rules=[DARK_ENOUGH],
+                )
+            ],
+        )
+        await _set(hass, HOLIDAY, "off")
+        await _set(hass, LUX, "4")
+
+        await _set(hass, AWAY, "on")
+
+        assert _lit(hass, "light.lounge_main")
+
+    async def test_a_room_with_no_rules_follows_the_house(
+        self, hass: HomeAssistant
+    ) -> None:
+        await _build(hass)
+
+        await _set(hass, AWAY, "on")
+
+        assert _lit(hass, "light.lounge_main")
+
+
+class TestTheBlinds:
+    """A lit room behind a closed blind convinces nobody outside."""
+
+    async def _with_cover(self, hass: HomeAssistant, **extra):
+        return await _build(
+            hass,
+            rooms=[
+                room_subentry(
+                    "Lounge",
+                    ["light.lounge_main"],
+                    simulation_mode="adaptive",
+                    presence_covers=["cover.lounge"],
+                    simulate_only_when_covers_open=True,
+                    **extra,
+                )
+            ],
+        )
+
+    async def test_open_blinds_let_it_run(self, hass: HomeAssistant) -> None:
+        await self._with_cover(hass)
+        await _set(hass, "cover.lounge", "open")
+
+        await _set(hass, AWAY, "on")
+
+        assert _lit(hass, "light.lounge_main")
+
+    async def test_closed_blinds_sit_the_room_out(self, hass: HomeAssistant) -> None:
+        await self._with_cover(hass)
+        await _set(hass, "cover.lounge", "closed")
+
+        await _set(hass, AWAY, "on")
+
+        assert not _lit(hass, "light.lounge_main")
+
+    async def test_a_cover_nobody_can_read_counts_as_shut(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Failing to simulate costs one dark room. The other way round is
+        lighting a room nobody can see and believing it did something."""
+        await self._with_cover(hass)
+        await _set(hass, "cover.lounge", "unavailable")
+
+        await _set(hass, AWAY, "on")
+
+        assert not _lit(hass, "light.lounge_main")
+
+    async def test_a_room_with_no_covers_is_as_visible_as_it_ever_is(
+        self, hass: HomeAssistant
+    ) -> None:
+        await _build(
+            hass,
+            rooms=[
+                room_subentry(
+                    "Lounge",
+                    ["light.lounge_main"],
+                    simulation_mode="adaptive",
+                    simulate_only_when_covers_open=True,
+                )
+            ],
+        )
+
+        await _set(hass, AWAY, "on")
+
+        assert _lit(hass, "light.lounge_main")
+
+    async def test_the_toggle_off_ignores_the_blinds(self, hass: HomeAssistant) -> None:
+        await _build(
+            hass,
+            rooms=[
+                room_subentry(
+                    "Lounge",
+                    ["light.lounge_main"],
+                    simulation_mode="adaptive",
+                    presence_covers=["cover.lounge"],
+                )
+            ],
+        )
+        await _set(hass, "cover.lounge", "closed")
+
+        await _set(hass, AWAY, "on")
+
+        assert _lit(hass, "light.lounge_main")

@@ -23,6 +23,83 @@
 
 const HA_ICON = "ha-icon";
 
+const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+
+/**
+ * A colour temperature as something to paint with.
+ *
+ * The same approximation the panel uses for its colour chips, so a room reads
+ * the same warmth in both places.
+ */
+function kelvinToRgb(kelvin) {
+  const t = clamp(kelvin, 1000, 12000) / 100;
+  let r;
+  let g;
+  let b;
+  if (t <= 66) {
+    r = 255;
+    g = 99.4708025861 * Math.log(t) - 161.1195681661;
+    b = t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307;
+  } else {
+    r = 329.698727446 * (t - 60) ** -0.1332047592;
+    g = 288.1221695283 * (t - 60) ** -0.0755148492;
+    b = 255;
+  }
+  return [r, g, b].map((v) => Math.round(clamp(v, 0, 255)));
+}
+
+// How many scenes the menu shows before it scrolls. Fewer where there is less
+// screen to give.
+const MENU_ROWS = 5;
+
+/**
+ * The card's own words.
+ *
+ * Carried here rather than fetched: the card talks to no private endpoint of
+ * ours, and a dozen strings are cheaper to ship than a round trip and a
+ * dependency on the panel being installed. English is the fallback for every
+ * language not listed.
+ */
+const WORDS = {
+  en: {
+    choose_room: "Choose a room.",
+    unknown_entity: "Unknown entity",
+    brightness: "Brightness",
+    previous_scene: "Previous scene",
+    next_scene: "Next scene",
+    back_to_adaptive: "Back to adaptive",
+    turn_on: "Turn on",
+    turn_off: "Turn off",
+    presence: "Presence detected",
+    nobody: "Nobody here",
+    by_hand: "On by hand",
+    automatically: "On automatically",
+    switching_off: "Switching off",
+    room: "Room",
+  },
+  de: {
+    choose_room: "Raum auswählen.",
+    unknown_entity: "Unbekannte Entität",
+    brightness: "Helligkeit",
+    previous_scene: "Vorherige Szene",
+    next_scene: "Nächste Szene",
+    back_to_adaptive: "Zurück zu adaptiv",
+    turn_on: "Einschalten",
+    turn_off: "Ausschalten",
+    presence: "Anwesenheit erkannt",
+    nobody: "Niemand hier",
+    by_hand: "Von Hand eingeschaltet",
+    automatically: "Automatisch eingeschaltet",
+    switching_off: "Schaltet ab",
+    room: "Raum",
+  },
+};
+
+function words(hass) {
+  const language = hass?.locale?.language || hass?.language || "en";
+  return WORDS[language] || WORDS[language.split("-")[0]] || WORDS.en;
+}
+
 class BetterLightingCard extends HTMLElement {
   static getConfigElement() {
     return document.createElement("better-lighting-card-editor");
@@ -47,6 +124,7 @@ class BetterLightingCard extends HTMLElement {
     this._pending = null;
     this._menuOpen = false;
     this._tick = null;
+    this._words = WORDS.en;
   }
 
   setConfig(config) {
@@ -64,8 +142,14 @@ class BetterLightingCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const before = this._hass?.locale?.language || this._hass?.language;
     this._hass = hass;
-    if (!this._drawn) this._render();
+    this._words = words(hass);
+    // A language change rebuilds rather than repaints: half of these strings
+    // are written into the markup once.
+    if (!this._drawn || before !== (hass?.locale?.language || hass?.language)) {
+      this._render();
+    }
     this._sync();
   }
 
@@ -119,6 +203,9 @@ class BetterLightingCard extends HTMLElement {
           flex-direction: column;
           gap: 14px;
           position: relative;
+          /* Said here because some themes clip a card's contents, and the
+             scene menu is deliberately taller than the card it belongs to. */
+          overflow: visible;
         }
         .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
         .title {
@@ -224,13 +311,16 @@ class BetterLightingCard extends HTMLElement {
 
         /* The menu. A surface over the card rather than the browser's own
            list, which cannot be styled and looks like nothing else here. */
+        /* Anchored to the scene row, and below it unless there is no room
+           below -- which is the usual case for a card near the bottom of a
+           dashboard, and was the only case before. */
         .menu {
-          position: absolute; left: 14px; right: 14px; bottom: 14px;
+          position: absolute; left: 14px; right: 14px;
           z-index: 3; border-radius: 16px;
           background: var(--card-background-color, #1c1c1c);
           box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
           border: 1px solid var(--divider-color);
-          max-height: 280px; overflow-y: auto; padding: 6px;
+          overflow-y: auto; overscroll-behavior: contain; padding: 6px;
         }
         .menu button {
           display: flex; align-items: center; gap: 12px; width: 100%;
@@ -243,6 +333,9 @@ class BetterLightingCard extends HTMLElement {
         }
         .menu button[aria-selected="true"] { color: var(--primary-color); }
         .menu ha-icon { --mdc-icon-size: 20px; flex: 0 0 auto; }
+        /* Only for the card itself. A click anywhere else in Home Assistant
+           is caught on the document, because a scrim the size of one card
+           cannot cover the dashboard around it. */
         .scrim { position: absolute; inset: 0; z-index: 2; }
 
         .missing { padding: 16px; color: var(--error-color, #db4437); }
@@ -265,18 +358,19 @@ class BetterLightingCard extends HTMLElement {
         </div>
 
         <div class="bar" id="bar" role="slider" tabindex="0"
-             aria-label="Brightness" aria-valuemin="1" aria-valuemax="100">
+             aria-label="${this._words.brightness}"
+             aria-valuemin="1" aria-valuemax="100">
           <div class="fill" id="fill"></div>
           <div class="pct" id="pct"></div>
         </div>
 
         <div class="scenes" id="scenes">
-          <button class="step" id="prev" title="Previous scene"></button>
+          <button class="step" id="prev" title="${this._words.previous_scene}"></button>
           <button class="picker" id="picker" aria-haspopup="listbox">
             <span class="current" id="current"></span>
             <span id="chevron"></span>
           </button>
-          <button class="step" id="next" title="Next scene"></button>
+          <button class="step" id="next" title="${this._words.next_scene}"></button>
         </div>
 
         <div class="scrim" id="scrim" hidden></div>
@@ -362,13 +456,13 @@ class BetterLightingCard extends HTMLElement {
     const card = this.shadowRoot.querySelector("ha-card");
     if (!this._config.entity) {
       // Being drawn in the card picker before a room has been chosen.
-      card.innerHTML = `<div class="missing">Choose a room.</div>`;
+      card.innerHTML = `<div class="missing">${this._words.choose_room}</div>`;
       this._drawn = false;
       return;
     }
     const light = this._light;
     if (!light) {
-      card.innerHTML = `<div class="missing">Unknown entity: ${this._config.entity}</div>`;
+      card.innerHTML = `<div class="missing">${this._words.unknown_entity}: ${this._config.entity}</div>`;
       this._drawn = false;
       return;
     }
@@ -393,12 +487,12 @@ class BetterLightingCard extends HTMLElement {
     // there on every room that was simply switched off.
     $("adaptive").hidden = !on || attrs.bl_adaptive !== false;
     $("adaptive").innerHTML = this._icon("mdi:white-balance-sunny");
-    $("adaptive").title = "Back to adaptive";
+    $("adaptive").title = this._words.back_to_adaptive;
 
     const power = $("power");
     power.innerHTML = this._icon("mdi:power");
     power.setAttribute("aria-pressed", String(on));
-    power.title = on ? "Turn off" : "Turn on";
+    power.title = on ? this._words.turn_off : this._words.turn_on;
 
     this._paintBar();
     this._paintScenes();
@@ -408,9 +502,9 @@ class BetterLightingCard extends HTMLElement {
   _paintBadges(attrs, on) {
     const badges = [];
     if (attrs.bl_presence === true) {
-      badges.push(["mdi:motion-sensor", "on", "Presence detected"]);
+      badges.push(["mdi:motion-sensor", "on", this._words.presence]);
     } else if (attrs.bl_presence === false) {
-      badges.push(["mdi:motion-sensor-off", "", "Nobody here"]);
+      badges.push(["mdi:motion-sensor-off", "", this._words.nobody]);
     }
     const left = this._secondsLeft(attrs.bl_off_at);
     // A countdown only runs when nobody is holding the lights on, so saying
@@ -419,14 +513,14 @@ class BetterLightingCard extends HTMLElement {
     if (on && left === null) {
       badges.push(
         attrs.bl_held_by_hand
-          ? ["mdi:hand-back-right", "on", "On by hand"]
-          : ["mdi:motion-sensor", "", "On automatically"]
+          ? ["mdi:hand-back-right", "on", this._words.by_hand]
+          : ["mdi:motion-sensor", "", this._words.automatically]
       );
     }
     const countdown =
       left === null
         ? ""
-        : `<span class="countdown" title="Switching off">${this._icon(
+        : `<span class="countdown" title="${this._words.switching_off}">${this._icon(
             "mdi:timer-outline"
           )}${this._clock(left)}</span>`;
     this.shadowRoot.getElementById("badges").innerHTML =
@@ -444,8 +538,26 @@ class BetterLightingCard extends HTMLElement {
     const pct = this._shownPct();
     bar.setAttribute("aria-disabled", String(!on));
     bar.setAttribute("aria-valuenow", String(pct));
-    this.shadowRoot.getElementById("fill").style.width = `${on ? pct : 0}%`;
+    const fill = this.shadowRoot.getElementById("fill");
+    fill.style.width = `${on ? pct : 0}%`;
+    fill.style.background = this._fillColour();
     this.shadowRoot.getElementById("pct").textContent = `${pct}%`;
+  }
+
+  /**
+   * What the room is actually giving off.
+   *
+   * A bar that is always the same amber is a bar that says nothing about a
+   * room sitting in deep orange for a film. The group entity reports whatever
+   * its members agree on, so this is the room's own light or, when they
+   * disagree and it reports nothing, the default warmth.
+   */
+  _fillColour() {
+    const attrs = this._light?.attributes || {};
+    const rgb =
+      attrs.rgb_color ||
+      (attrs.color_temp_kelvin ? kelvinToRgb(attrs.color_temp_kelvin) : null);
+    return rgb ? `rgb(${rgb.slice(0, 3).join(",")})` : "var(--bl-warm)";
   }
 
   _paintScenes() {
@@ -587,17 +699,60 @@ class BetterLightingCard extends HTMLElement {
     const select = this._sceneSelect;
     if (!select) return;
     this._menuOpen = true;
-    this._paintMenu(select.attributes.options || [], select.state);
-    this.shadowRoot.getElementById("menu").hidden = false;
+    const options = select.attributes.options || [];
+    this._paintMenu(options, select.state);
+
+    const menu = this.shadowRoot.getElementById("menu");
+    menu.hidden = false;
     this.shadowRoot.getElementById("scrim").hidden = false;
-    this.shadowRoot
-      .getElementById("menu")
-      .querySelector('[aria-selected="true"], button')
-      ?.focus();
+    this._placeMenu(menu, options.length);
+
+    // Anywhere else in Home Assistant, not just anywhere else on this card.
+    this._outside = (event) => {
+      if (!event.composedPath().includes(this)) this._closeMenu();
+    };
+    document.addEventListener("pointerdown", this._outside, true);
+    menu.querySelector('[aria-selected="true"], button')?.focus();
+  }
+
+  /**
+   * Below the scene row, unless there is not room for it there.
+   *
+   * Measured against the window rather than the card: a card near the bottom
+   * of a dashboard has plenty of room inside itself and none underneath, and
+   * opening downwards into the edge of the screen is how a menu ends up with
+   * two of its five entries reachable.
+   */
+  _placeMenu(menu, count) {
+    const row = this.shadowRoot.getElementById("scenes").getBoundingClientRect();
+    const below = window.innerHeight - row.bottom - 16;
+    const above = row.top - 16;
+    // Measured rather than assumed: a row's height follows the theme's font,
+    // and five rows of a guess is four and a half rows on somebody's screen.
+    const first = menu.querySelector("button");
+    const rowHeight = first ? first.getBoundingClientRect().height : 44;
+    const wanted = Math.min(count, MENU_ROWS) * rowHeight + 12;
+
+    const downwards = below >= Math.min(wanted, above) || below >= wanted;
+    const room = Math.max(120, downwards ? below : above);
+    menu.style.maxHeight = `${Math.min(wanted, room)}px`;
+
+    const card = this.getBoundingClientRect();
+    if (downwards) {
+      menu.style.top = `${row.bottom - card.top + 8}px`;
+      menu.style.bottom = "auto";
+    } else {
+      menu.style.bottom = `${card.bottom - row.top + 8}px`;
+      menu.style.top = "auto";
+    }
   }
 
   _closeMenu() {
     this._menuOpen = false;
+    if (this._outside) {
+      document.removeEventListener("pointerdown", this._outside, true);
+      this._outside = null;
+    }
     const menu = this.shadowRoot?.getElementById("menu");
     const scrim = this.shadowRoot?.getElementById("scrim");
     if (menu) menu.hidden = true;
@@ -638,7 +793,7 @@ class BetterLightingCardEditor extends HTMLElement {
     if (!this._picker) {
       this.innerHTML = "";
       this._picker = document.createElement("ha-entity-picker");
-      this._picker.label = "Room";
+      this._picker.label = words(this._hass).room;
       this._picker.allowCustomEntity = false;
       // A room, not a bulb. `includeDomains` narrows it to lights for the
       // frontends that ignore a filter function; the filter does the rest.

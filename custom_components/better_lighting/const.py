@@ -1657,6 +1657,7 @@ CONF_SIMULATION_RULES = "simulation_rules"
 CONF_SIMULATE = "simulate"
 CONF_SIMULATION_MODE = "simulation_mode"
 CONF_SIMULATION_SCENE = "simulation_scene_id"
+CONF_SIMULATE_COVERS_OPEN = "simulate_only_when_covers_open"
 
 HUB_SIMULATION_SPECS: tuple[FieldSpec, ...] = (
     # The one helper that says the house is genuinely empty. Not inferred from
@@ -1715,6 +1716,16 @@ ROOM_SIMULATION_SPECS: tuple[FieldSpec, ...] = (
         options_key="scenes",
         section=Section.SIMULATION,
         depends_on=(CONF_SIMULATION_MODE, (SimulationMode.SCENE.value,)),
+    ),
+    # A lit room behind a closed blind convinces nobody outside, and this is
+    # the one thing simulation is for. Uses the room's own covers, the ones
+    # named on the Presence screen -- a room has one set of blinds, not two.
+    FieldSpec(
+        CONF_SIMULATE_COVERS_OPEN,
+        False,
+        _boolean(),
+        section=Section.SIMULATION,
+        depends_on=(CONF_SIMULATE, (True,)),
     ),
 )
 

@@ -228,7 +228,10 @@ curve, which knows what nine in the evening should look like better than last
 Tuesday does.
 
 **Rules** gate the whole thing, the same rules a trigger uses — a time window,
-a lux threshold, a holiday helper. `switch.better_lighting_presence_simulation`
+a lux threshold, a holiday helper. House-wide rules live in **Global settings →
+Presence simulation**; a room can add its own on its own simulation screen, and
+both have to hold before that room takes part. A room can also be told to sit it
+out while its blinds are closed, since a lit room nobody can see proves nothing. `switch.better_lighting_presence_simulation`
 shows whether one is running and which rooms are in it, and turning it on runs
 one regardless of the rules, which is how you check the setup without waiting
 for nightfall.

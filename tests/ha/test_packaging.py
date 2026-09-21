@@ -812,3 +812,28 @@ def test_the_adaptive_button_needs_a_lit_room() -> None:
     card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
 
     assert '$("adaptive").hidden = !on || attrs.bl_adaptive !== false;' in card
+
+
+def test_the_sidebar_icon_is_registered_before_it_is_used() -> None:
+    """A sidebar entry with a blank square is worse than a generic bulb.
+
+    The name only resolves if the icon set is loaded, so the two have to
+    travel together: served, handed to the frontend, and named in the panel
+    registration.
+    """
+    from custom_components.better_lighting import panel
+
+    assert (COMPONENT / "www" / panel.ICONS_FILE).is_file()
+    source = (COMPONENT / "panel.py").read_text()
+    assert "ICONS_FILE" in source.split("_async_serve(hass")[1].split(")")[0]
+    # The whole of the function that hands scripts to the frontend, rather
+    # than a slice of the file that happens to contain a similar loop.
+    registers = source[source.index("async def _async_register_card") :]
+    registers = registers[: registers.index("\n@callback")]
+    assert "ICONS_FILE" in registers
+    assert "add_extra_js_url" in registers
+
+    icons = (COMPONENT / "www" / panel.ICONS_FILE).read_text()
+    setname, _, name = panel.SIDEBAR_ICON.partition(":")
+    assert f'window.customIconsets["{setname}"]' in icons
+    assert f"{name}:" in icons

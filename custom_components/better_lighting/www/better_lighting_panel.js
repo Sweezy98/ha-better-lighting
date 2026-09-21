@@ -2638,19 +2638,16 @@ class BetterLightingPanel extends HTMLElement {
     backdrop.innerHTML = `
       <div class="modal-card">
         <div class="about-head">
-          <!-- The registry first, because a new icon there is a new icon
-               here with nothing to release; then our own copy, which is what
-               every install sees until the brands pull request lands; then a
-               plain glyph, for a browser that will load neither. -->
+          <!-- The registry first, since a newer icon there wins without a
+               release here; then the copy this integration ships, which is
+               what every install has. There is no third case worth drawing a
+               generic lamp for. -->
           <img class="about-icon" alt="" src="${BRAND_ICON}"
                data-fallback="${OWN_ICON}"
                onerror="if (this.dataset.fallback) {
                           this.src = this.dataset.fallback;
                           this.dataset.fallback = '';
-                        } else {
-                          this.replaceWith(this.nextElementSibling);
                         }">
-          ${this._icon("mdi:lightbulb-group")}
           <h2>${about.name || "Better Lighting"}</h2>
         </div>
         <p class="muted">${this._t("about_blurb")}</p>
@@ -3453,27 +3450,24 @@ class BetterLightingPanel extends HTMLElement {
           form: this._schema?.forms.hub || [],
           values: hub,
           save: (values) => this._call("save_hub", { options: { ...hub, ...values } }),
-          extra:
-            this._view.section === "simulation"
-              ? (into) => {
-                  hub.simulation_rules = (hub.simulation_rules || []).map((r) => ({
-                    ...r,
-                  }));
-                  this._paintNestedList(into, {
-                    title: this._t("rules"),
-                    hint: this._t("simulation_rules_hint"),
-                    formKey: "condition",
-                    items: hub.simulation_rules,
-                    blank: {
-                      check: "state_is",
-                      required_state: "on",
-                      unknown_blocks: true,
-                    },
-                    addLabel: this._t("add_rule"),
-                    describe: (rule) => this._describeCondition(rule),
-                  });
-                }
-              : null,
+          extra: (into) => {
+            hub.simulation_rules = (hub.simulation_rules || []).map((rule) => ({
+              ...rule,
+            }));
+            this._paintNestedList(into, {
+              title: this._t("simulation_rules"),
+              hint: this._t("simulation_rules_hint"),
+              formKey: "condition",
+              items: hub.simulation_rules,
+              blank: {
+                check: "state_is",
+                required_state: "on",
+                unknown_blocks: true,
+              },
+              addLabel: this._t("add_rule"),
+              describe: (rule) => this._describeCondition(rule),
+            });
+          },
         });
       }
       case "mode":
@@ -3649,10 +3643,31 @@ class BetterLightingPanel extends HTMLElement {
         this._view = { kind: "room", section: group.section };
         return result;
       },
-      extra:
-        group.section === "presence"
-          ? (into) => this._paintTriggerEditors(into, values)
-          : null,
+      extra: (into) => {
+        if (group.section === "presence") {
+          this._paintTriggerEditors(into, values);
+        }
+        if (group.section === "simulation") {
+          // Added to the house's rules rather than replacing them, which is
+          // why they are a second list rather than an override of the first.
+          values.simulation_rules = (values.simulation_rules || []).map(
+            (rule) => ({ ...rule })
+          );
+          this._paintNestedList(into, {
+            title: this._t("simulation_rules"),
+            hint: this._t("room_simulation_rules_hint"),
+            formKey: "condition",
+            items: values.simulation_rules,
+            blank: {
+              check: "state_is",
+              required_state: "on",
+              unknown_blocks: true,
+            },
+            addLabel: this._t("add_rule"),
+            describe: (rule) => this._describeCondition(rule),
+          });
+        }
+      },
       // Deleting belongs on the screen that names the room, not on the one
       // about presence sensors.
       remove:

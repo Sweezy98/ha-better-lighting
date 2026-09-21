@@ -176,10 +176,8 @@ class SimulationRunner:
         self.hass.bus.async_fire(EVENT_SIMULATION, {"state": "started", "why": reason})
 
         for room_id, controller in self.runtime.controllers.items():
-            room = controller.room
-            if not room.simulate or room.simulation_mode is SimulationMode.NONE:
-                continue
-            await self._async_begin_room(room_id, controller)
+            if self._may_simulate(controller):
+                await self._async_begin_room(room_id, controller)
 
         self._notify()
         return True
@@ -205,6 +203,43 @@ class SimulationRunner:
         self._runs.clear()
         self.hass.bus.async_fire(EVENT_SIMULATION, {"state": "stopped", "why": reason})
         self._notify()
+
+    def _may_simulate(self, controller) -> bool:
+        """Whether this room takes part right now.
+
+        The house's rules are not enough on their own: "after dark" is the
+        same everywhere, but a room may add its own, and a room behind a
+        closed blind proves nothing to anybody outside.
+        """
+        room = controller.room
+        if not room.simulate or room.simulation_mode is SimulationMode.NONE:
+            return False
+        if not (verdict := controller.rules_allow(room.simulation_rules)):
+            _LOGGER.debug(
+                "%s sits out the simulation: %s", room.name, verdict.blocked_by
+            )
+            return False
+        if room.simulate_only_when_covers_open and not self._covers_open(room):
+            _LOGGER.debug("%s sits out the simulation: blinds are not open", room.name)
+            return False
+        return True
+
+    def _covers_open(self, room) -> bool:
+        """Every one of this room's covers, open.
+
+        A cover nobody can read counts as not open. Failing to simulate is the
+        safe direction: the cost is one dark room, where the other way round
+        is lighting a room nobody can see and believing it did something.
+        """
+        covers = room.presence_covers
+        if not covers:
+            # Nothing to be behind. The room is as visible as it ever is.
+            return True
+        for entity_id in covers:
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state.casefold() != "open":
+                return False
+        return True
 
     async def _async_begin_room(self, room_id: str, controller) -> None:
         room = controller.room

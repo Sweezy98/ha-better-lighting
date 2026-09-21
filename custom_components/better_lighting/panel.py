@@ -95,6 +95,10 @@ CARD_FILE = "better_lighting_card.js"
 # 2026.3. Served here as well so the About box can show it on an older core,
 # where that folder means nothing -- one file, two readers.
 ICON_FILE = "brand/icon.png"
+# The same bulb as a single-colour glyph, because the sidebar takes an icon
+# name and not an image.
+ICONS_FILE = "better_lighting_icons.js"
+SIDEBAR_ICON = "better-lighting:lamp"
 ELEMENT = "better-lighting-panel"
 
 # The id a draft is applied under while it is being edited. Reserved: a scene
@@ -148,7 +152,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     # integration rather than restarting Home Assistant skipped it entirely.
     # That is exactly how somebody receives an update -- and how the card
     # shipped unreachable.
-    await _async_serve(hass, PANEL_FILE, CARD_FILE, ICON_FILE)
+    await _async_serve(hass, PANEL_FILE, CARD_FILE, ICONS_FILE, ICON_FILE)
     # Idempotent, and deliberately before the early return below: whether the
     # sidebar needs rebuilding says nothing about whether the card is loaded.
     await _async_register_card(hass)
@@ -171,7 +175,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         webcomponent_name=ELEMENT,
         module_url=module_url,
         sidebar_title="Better Lighting",
-        sidebar_icon="mdi:lightbulb-group",
+        sidebar_icon=SIDEBAR_ICON,
         require_admin=True,
     )
 
@@ -212,15 +216,16 @@ def _asset(name: str) -> Path:
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
-    """Load the dashboard card into the frontend.
+    """Load the dashboard card and our icon set into the frontend.
 
     As an extra module URL rather than a Lovelace resource: a resource is a
     row in the user's own configuration that we would then have to own the
     lifetime of, and removing the integration would leave it pointing at a
     file that is no longer served. This is ours, and it goes when we do.
     """
-    fingerprint = await hass.async_add_executor_job(_fingerprint, CARD_FILE)
-    frontend.add_extra_js_url(hass, f"{PANEL_URL}/{CARD_FILE}?v={fingerprint}")
+    for name in (CARD_FILE, ICONS_FILE):
+        fingerprint = await hass.async_add_executor_job(_fingerprint, name)
+        frontend.add_extra_js_url(hass, f"{PANEL_URL}/{name}?v={fingerprint}")
 
 
 @callback

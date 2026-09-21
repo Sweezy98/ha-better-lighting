@@ -919,3 +919,25 @@ def test_changing_the_room_forgets_which_scenes_were_hidden() -> None:
     editor = card[card.index("class BetterLightingCardEditor") :]
 
     assert "hidden_scenes: []" in editor
+
+
+def test_no_css_variable_is_handed_to_the_chart() -> None:
+    """A chart draws to a canvas, where `var(--success-color)` is not a colour.
+
+    It does not fail loudly either: the chart quietly uses its own palette, so
+    the strip came out in the wrong colours and nothing said why. Anything
+    passed as a chart colour has to be resolved first.
+    """
+    panel = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    at = panel.index("async _dayChart(")
+    charts = panel[at : panel.index("\n  _page(", at)]
+    # Comments only, stripped: the one explaining this fix names the very
+    # thing it forbids.
+    code = "\n".join(
+        line
+        for line in charts.splitlines()
+        if not line.lstrip().startswith(("//", "*", "/*"))
+    )
+
+    assert "var(--" not in code, "resolve theme colours before charting them"
+    assert "_themeColour(" in charts

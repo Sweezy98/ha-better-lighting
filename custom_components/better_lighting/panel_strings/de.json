@@ -145,5 +145,7 @@
   "simulation_rules_hint": "Alle müssen zutreffen, bevor eine Simulation überhaupt läuft. Der Schalter startet sie trotzdem — zum Prüfen der Einrichtung.",
   "simulation_rules": "Simulationsregeln",
   "room_simulation_rules_hint": "Zusätzlich zu den hausweiten Regeln, nicht statt ihrer: beide müssen zutreffen, damit dieser Raum mitmacht.",
-  "day_strip_hint": "Wann die Uhr es zulässt. Grün ist offen, Rot nicht — andere Regeln gelten weiterhin."
+  "day_strip_hint": "Wann die Uhr es zulässt. Grün ist offen, Rot nicht — andere Regeln gelten weiterhin.",
+  "active": "Aktiv",
+  "inactive": "Inaktiv"
 }

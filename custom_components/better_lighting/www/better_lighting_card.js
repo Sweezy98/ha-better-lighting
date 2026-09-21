@@ -224,7 +224,13 @@ class BetterLightingCard extends HTMLElement {
     this._drawn = true;
     this.shadowRoot.innerHTML = `
       <style>
-        :host { --bl-warm: var(--state-light-color, #ffc768); }
+        :host {
+          --bl-warm: var(--state-light-color, #ffc768);
+          /* One gutter for the picker's two edges and the menu's icon column,
+             so every icon in the control sits on one vertical line. */
+          --bl-gutter: 20px;
+          --bl-pad: 18px;
+        }
         ha-card {
           padding: 14px;
           display: flex;
@@ -327,20 +333,26 @@ class BetterLightingCard extends HTMLElement {
         }
         .step:hover:not(:disabled) { background: var(--secondary-background-color); }
         .step:disabled { opacity: .4; cursor: default; }
+/* Three columns rather than a row: the scene's icon and the chevron take
+           the same fixed width on either side, which is the only way the name
+           between them is actually centred rather than merely looking it. */
         .picker {
           flex: 1 1 auto; min-width: 0; height: 42px;
           border-radius: 999px; border: 1px solid var(--divider-color);
           background: none; color: var(--primary-text-color); cursor: pointer;
-          font: inherit; display: flex; align-items: center;
-          /* Room on the right for the chevron, which was sitting hard against
-             the edge of the pill. */
-          padding: 0 16px 0 18px; gap: 10px;
+          font: inherit; display: grid;
+          grid-template-columns: var(--bl-gutter) 1fr var(--bl-gutter);
+          align-items: center;
+          padding: 0 var(--bl-pad);
         }
         .picker:hover { background: var(--secondary-background-color); }
         .picker .current {
-          flex: 1 1 auto; min-width: 0; text-align: left;
+          min-width: 0; text-align: center;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          padding: 0 8px;
         }
+        .picker .lead { display: inline-flex; justify-content: flex-start; }
+        .picker .trail { display: inline-flex; justify-content: flex-end; }
         .picker ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
 
         /* The menu. A surface over the card rather than the browser's own
@@ -348,19 +360,34 @@ class BetterLightingCard extends HTMLElement {
         /* Anchored to the scene row, and below it unless there is no room
            below -- which is the usual case for a card near the bottom of a
            dashboard, and was the only case before. */
+        /* As wide as the control it belongs to, and no wider: a menu that
+           spans the whole card is a menu that does not look attached to the
+           thing that opened it. Left and width are set when it opens. */
         .menu {
-          position: absolute; left: 14px; right: 14px;
+          position: absolute;
+          /* Its own padding and border count towards the width set on it,
+             or "as wide as the picker" comes out fourteen pixels wider. */
+          box-sizing: border-box;
           z-index: 3; border-radius: 16px;
           background: var(--card-background-color, #1c1c1c);
           box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
           border: 1px solid var(--divider-color);
           overflow-y: auto; overscroll-behavior: contain; padding: 6px;
         }
+/* The icon column lines up with the picker's: the menu sits at the
+           picker's left edge, so one border and the menu's own padding are
+           taken off the picker's padding to land in the same place. */
         .menu button {
-          display: flex; align-items: center; gap: 12px; width: 100%;
-          padding: 11px 14px; border: 0; background: none; cursor: pointer;
+          display: grid; grid-template-columns: var(--bl-gutter) 1fr;
+          align-items: center; width: 100%;
+          padding: 11px 12px 11px calc(var(--bl-pad) - 6px);
+          border: 0; background: none; cursor: pointer;
           color: var(--primary-text-color); font: inherit; text-align: left;
           border-radius: 10px;
+        }
+        .menu button .label {
+          min-width: 0; padding: 0 8px; text-align: left;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .menu button:hover, .menu button:focus-visible {
           background: var(--secondary-background-color); outline: none;
@@ -401,8 +428,9 @@ class BetterLightingCard extends HTMLElement {
         <div class="scenes" id="scenes">
           <button class="step" id="prev" title="${this._words.previous_scene}"></button>
           <button class="picker" id="picker" aria-haspopup="listbox">
+            <span class="lead" id="scene-icon"></span>
             <span class="current" id="current"></span>
-            <span id="chevron"></span>
+            <span class="trail" id="chevron"></span>
           </button>
           <button class="step" id="next" title="${this._words.next_scene}"></button>
         </div>
@@ -602,6 +630,9 @@ class BetterLightingCard extends HTMLElement {
 
     const options = this._options(select);
     this.shadowRoot.getElementById("current").textContent = select.state;
+    this.shadowRoot.getElementById("scene-icon").innerHTML = this._icon(
+      this._optionIcon(select, select.state)
+    );
     this.shadowRoot.getElementById("chevron").innerHTML =
       this._icon("mdi:chevron-down");
     this.shadowRoot.getElementById("prev").innerHTML =
@@ -622,15 +653,26 @@ class BetterLightingCard extends HTMLElement {
     if (this._menuOpen) this._paintMenu(options, select.state);
   }
 
+  /** The icon a scene is drawn with, as the room itself reports it. */
+  _optionIcon(select, option) {
+    return select?.attributes?.bl_option_icons?.[option] || "mdi:palette";
+  }
+
   _paintMenu(options, current) {
     const menu = this.shadowRoot.getElementById("menu");
+    const select = this._sceneSelect;
     menu.innerHTML = options
       .map(
         (option) => `<button role="option" data-option="${option}"
            aria-selected="${option === current}">
            ${this._icon(
-             option === current ? "mdi:check" : "mdi:blank"
-           )}<span>${option}</span></button>`
+             // The tick takes the icon's place on the current row rather than
+             // sitting beside it: which scene is showing is already said by
+             // the icon on the picker above.
+             option === current
+               ? "mdi:check"
+               : this._optionIcon(select, option)
+           )}<span class="label">${option}</span></button>`
       )
       .join("");
     menu.querySelectorAll("button").forEach((row) =>
@@ -782,6 +824,14 @@ class BetterLightingCard extends HTMLElement {
    * two of its five entries reachable.
    */
   _placeMenu(menu, count) {
+    const card = this.getBoundingClientRect();
+    const picker = this.shadowRoot
+      .getElementById("picker")
+      .getBoundingClientRect();
+    // As wide as the control it drops from, and starting at its left edge.
+    menu.style.left = `${picker.left - card.left}px`;
+    menu.style.width = `${picker.width}px`;
+
     const row = this.shadowRoot.getElementById("scenes").getBoundingClientRect();
     const below = window.innerHeight - row.bottom - 16;
     const above = row.top - 16;
@@ -795,7 +845,6 @@ class BetterLightingCard extends HTMLElement {
     const room = Math.max(120, downwards ? below : above);
     menu.style.maxHeight = `${Math.min(wanted, room)}px`;
 
-    const card = this.getBoundingClientRect();
     if (downwards) {
       menu.style.top = `${row.bottom - card.top + 8}px`;
       menu.style.bottom = "auto";

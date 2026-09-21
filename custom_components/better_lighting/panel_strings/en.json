@@ -145,5 +145,7 @@
   "simulation_rules_hint": "All of these have to hold before a simulation may run at all. The switch runs one anyway, for checking the setup.",
   "simulation_rules": "Simulation rules",
   "room_simulation_rules_hint": "Added to the house-wide rules rather than replacing them: both have to hold before this room takes part.",
-  "day_strip_hint": "When the clock allows it. Green is open, red is not — other rules still apply."
+  "day_strip_hint": "When the clock allows it. Green is open, red is not — other rules still apply.",
+  "active": "Active",
+  "inactive": "Inactive"
 }

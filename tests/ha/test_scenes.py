@@ -762,3 +762,33 @@ class TestConditionalAndDescribedFields:
         # picker does not.
         assert "night_brightness_pct" in keys
         assert "night_scene_id" not in keys
+
+
+async def test_the_select_says_which_icon_each_option_wears(
+    hass: HomeAssistant,
+) -> None:
+    """A dashboard drawing this select as a list has no other way to reach
+    them: a scene's icon lives in the room's configuration, not on an entity.
+    """
+    await setup_members(hass, [MemberLight("One", is_on=True, brightness=100)])
+    entry = hub_entry(
+        subentries_data=[
+            room_subentry(
+                "Kitchen",
+                ["light.one"],
+                scenes=[
+                    {"scene_id": "cosy", "name": "Cosy", "icon": "mdi:sofa"},
+                    {"scene_id": "plain", "name": "Plain"},
+                ],
+            )
+        ]
+    )
+    await setup_hub(hass, entry)
+
+    icons = hass.states.get("select.kitchen_scenes").attributes["bl_option_icons"]
+
+    # Adaptive is not a scene, and takes the sun the card's own button uses.
+    assert icons["Adaptive"] == "mdi:white-balance-sunny"
+    assert icons["Cosy"] == "mdi:sofa"
+    # A scene with no icon of its own still gets one, so no row is blank.
+    assert icons["Plain"]

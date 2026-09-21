@@ -128,6 +128,19 @@ class RoomModeSelect(SelectEntity, RestoreEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         controller = self.controller
         return {
+            # The icon each option should be drawn with. A dashboard showing
+            # this select as a list of names has no other way to reach them:
+            # a scene's icon lives in the room's configuration, not on any
+            # entity. Adaptive is not a scene and takes the sun, the same one
+            # the card's own back-to-adaptive button uses.
+            "bl_option_icons": {
+                OPTION_ADAPTIVE: "mdi:white-balance-sunny",
+                **{
+                    name: (controller.scenes[scene_id].icon or "mdi:palette")
+                    for name, scene_id in self._scene_names.items()
+                    if scene_id in controller.scenes
+                },
+            },
             "bl_mode": controller.mode.value,
             # The mode as actually rendered, with night folded in.
             "bl_effective_mode": controller.effective_mode.value,

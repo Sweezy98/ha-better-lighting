@@ -2218,8 +2218,14 @@ class BetterLightingPanel extends HTMLElement {
            with the form squeezed both. */
         .page-body li.step { flex-wrap:wrap; }
         .day-strip { margin-top:14px; }
-        .day-strip .day-svg { width:100%; height:28px; display:block;
-                              margin-top:6px; border-radius:6px; }
+        .day-strip .day-bar { display:flex; height:30px; margin-top:6px;
+                              border-radius:8px; overflow:hidden; }
+        .day-strip .day-bar span { display:flex; align-items:center;
+                                   justify-content:center; font-size:12px;
+                                   color:#fff; white-space:nowrap;
+                                   overflow:hidden; }
+        .day-strip .day-bar .on { background:var(--success-color,#4caf50); }
+        .day-strip .day-bar .off { background:var(--error-color,#db4437); }
         .day-strip .day-ticks { display:flex; justify-content:space-between;
                                 font-size:12px; opacity:.6; margin-top:4px; }
         .page-body li.step .nested-caption { flex:1 0 100%; order:-1; }
@@ -4457,29 +4463,31 @@ class BetterLightingPanel extends HTMLElement {
 
     const segments = this._daySegments(mask);
     if (!(await this._dayChart(holder, segments))) {
-      // Hand-drawn, for a frontend that will not lend us its chart.
-      // The bar stretches to the width it is given; the hours must not, so
-      // they are written beside it rather than inside it. Text in a
-      // non-uniformly scaled viewBox comes out squashed one way and huge the
-      // other, which is what this looked like first.
+      // Hand-drawn, for a frontend that will not lend us its chart. Boxes
+      // rather than an SVG: a label inside a viewBox stretched one way and
+      // not the other comes out squashed and enormous, and a label is the
+      // whole point of the second attempt.
       holder.insertAdjacentHTML(
         "beforeend",
-        `<svg viewBox="0 0 1440 28" preserveAspectRatio="none" class="day-svg">
-          ${segments
-            .map(
-              ([from, to, active]) =>
-                `<rect x="${from}" y="0" width="${to - from}" height="28"
-                       fill="var(${
-                         active ? "--success-color, #4caf50" : "--error-color, #db4437"
-                       })"/>`
-            )
-            .join("")}
-        </svg>
+        `<div class="day-bar">${segments
+          .map(([from, to, active]) => {
+            const share = ((to - from) / 1440) * 100;
+            return `<span class="${active ? "on" : "off"}"
+                          style="width:${share}%"
+                    >${share >= 12 ? this._t(active ? "active" : "inactive") : ""}</span>`;
+          })
+          .join("")}</div>
         <div class="day-ticks">${[0, 6, 12, 18, 24]
           .map((hour) => `<span>${String(hour).padStart(2, "0")}:00</span>`)
           .join("")}</div>`
       );
     }
+  }
+
+  /** A theme colour, resolved. */
+  _themeColour(name, fallback) {
+    const value = getComputedStyle(this).getPropertyValue(name).trim();
+    return value || fallback;
   }
 
   /** The same strip, in Home Assistant's chart component. */
@@ -4491,6 +4499,12 @@ class BetterLightingPanel extends HTMLElement {
       const chart = document.createElement("ha-chart-base");
       chart.hass = this._hass;
       chart.height = "96px";
+      // Resolved here rather than handed over as `var(--success-color)`:
+      // the chart draws to a canvas, where a CSS custom property is not a
+      // colour at all -- so it quietly used its own palette instead, which
+      // is why the strip came out in the wrong colours.
+      const green = this._themeColour("--success-color", "#4caf50");
+      const red = this._themeColour("--error-color", "#db4437");
       // One stacked bar across the day: each run of the same answer is a
       // segment of it, which is what makes a window through midnight read as
       // two ends of one night rather than as a gap.
@@ -4499,11 +4513,16 @@ class BetterLightingPanel extends HTMLElement {
         type: "bar",
         stack: "day",
         silent: true,
-        barWidth: 26,
-        itemStyle: {
-          color: `var(${
-            active ? "--success-color, #4caf50" : "--error-color, #db4437"
-          })`,
+        barWidth: 30,
+        itemStyle: { color: active ? green : red },
+        // Only where it fits. A forty-minute segment cannot hold the word
+        // "inactive", and half a word is worse than none.
+        label: {
+          show: (to - from) / 1440 >= 0.12,
+          position: "inside",
+          formatter: this._t(active ? "active" : "inactive"),
+          color: "#fff",
+          fontSize: 12,
         },
         data: [to - from],
       }));

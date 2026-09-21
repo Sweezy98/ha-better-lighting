@@ -134,6 +134,20 @@ is the room's own business, which is what the room's presence settings are for.
 A light may be in at most one zone, for the same reason it is in at most one
 room, and saving is refused if two zones claim the same bulb.
 
+### Control, without building a dashboard first
+
+The panel has a **Control** screen: every room as the card below, plus the
+things that belong to the house rather than to any room — the presence
+simulation toggle and what it is running in, the lights-out request, and each
+cross-room mode's state.
+
+All of it is reachable from an ordinary Home Assistant dashboard too, because
+it is all published as entities. The screen exists so that somebody who has
+just finished setting a room up can see whether it does what they meant without
+going away and building a dashboard first — and so a house that never gets one
+is still usable from the page that configured it. The room cards are the very
+same custom card, instantiated there: one implementation, two places it shows.
+
 ### The dashboard card
 
 The integration ships a card, loaded for you — there is no Lovelace resource to

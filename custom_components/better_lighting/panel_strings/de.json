@@ -147,5 +147,14 @@
   "room_simulation_rules_hint": "Zusätzlich zu den hausweiten Regeln, nicht statt ihrer: beide müssen zutreffen, damit dieser Raum mitmacht.",
   "day_strip_hint": "Wann die Uhr es zulässt. Grün ist offen, Rot nicht — andere Regeln gelten weiterhin.",
   "active": "Aktiv",
-  "inactive": "Inaktiv"
+  "inactive": "Inaktiv",
+  "control": "Steuerung",
+  "the_house": "Das Haus",
+  "presence_simulation": "Anwesenheitssimulation",
+  "night_lights_off": "Licht aus",
+  "night_lights_off_hint": "Jeden Raum bitten, dunkel zu werden — wie im Nachtmodus.",
+  "ask": "Anfragen",
+  "idle": "Läuft nicht",
+  "n_rooms": "Läuft in {count} Raum/Räumen",
+  "card_missing": "Die Dashboard-Karte wurde nicht geladen, daher können hier keine Räume gezeigt werden."
 }

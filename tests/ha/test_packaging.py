@@ -280,6 +280,7 @@ def test_the_panel_covers_every_settings_surface() -> None:
         "the curve in Home Assistant's own chart": "_haChart",
         "the way back to Home Assistant on a phone": "hass-toggle-menu",
         "a mode's rules, on a screen of their own": "_paintRuleList",
+        "working the house rather than configuring it": "_paintControl",
     }
     missing = sorted(
         name for name, marker in surfaces.items() if marker not in panel_js
@@ -941,3 +942,20 @@ def test_no_css_variable_is_handed_to_the_chart() -> None:
 
     assert "var(--" not in code, "resolve theme colours before charting them"
     assert "_themeColour(" in charts
+
+
+def test_the_control_screen_shows_the_real_card() -> None:
+    """One implementation, two places it is shown.
+
+    A second, panel-only copy of the room card would drift from the one on
+    people's dashboards within a release, and the differences would be the
+    kind nobody notices until they matter.
+    """
+    panel = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    at = panel.index("_paintControl() {")
+    control = panel[at : panel.index("\n  _roomLight(", at)]
+
+    assert 'createElement("better-lighting-card")' in control
+    # And it says so when the card script is missing, rather than leaving a
+    # row of empty boxes.
+    assert "card_missing" in control

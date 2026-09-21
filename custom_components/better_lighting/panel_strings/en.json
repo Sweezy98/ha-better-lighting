@@ -147,5 +147,14 @@
   "room_simulation_rules_hint": "Added to the house-wide rules rather than replacing them: both have to hold before this room takes part.",
   "day_strip_hint": "When the clock allows it. Green is open, red is not — other rules still apply.",
   "active": "Active",
-  "inactive": "Inactive"
+  "inactive": "Inactive",
+  "control": "Control",
+  "the_house": "The house",
+  "presence_simulation": "Presence simulation",
+  "night_lights_off": "Lights out",
+  "night_lights_off_hint": "Ask every room to go dark, as night mode would.",
+  "ask": "Ask",
+  "idle": "Not running",
+  "n_rooms": "Running in {count} room(s)",
+  "card_missing": "The dashboard card did not load, so rooms cannot be shown here."
 }

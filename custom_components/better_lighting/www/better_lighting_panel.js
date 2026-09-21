@@ -1690,6 +1690,8 @@ class BetterLightingPanel extends HTMLElement {
         return [modes];
       case "hub":
         return [{ label: this._t("global_settings") }];
+      case "control":
+        return [{ label: this._t("control") }];
       case "diagnostics":
         return [{ label: this._t("diagnostics") }];
       case "import":
@@ -2218,6 +2220,18 @@ class BetterLightingPanel extends HTMLElement {
            with the form squeezed both. */
         .page-body li.step { flex-wrap:wrap; }
         .day-strip { margin-top:14px; }
+        .cards { display:grid; gap:16px; margin-top:16px;
+                 grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); }
+        #house h3 { margin:0 0 8px; font-size:1rem; font-weight:600; }
+        #house li { display:flex; align-items:center; gap:12px; }
+        button.pill { border-radius:999px; padding:0 16px; min-height:36px;
+                      border:1px solid var(--divider-color); background:none;
+                      color:var(--primary-color); cursor:pointer; font:inherit; }
+        button.pill:hover { background:var(--secondary-background-color); }
+        #house select.mode { min-height:36px; border-radius:18px; padding:0 12px;
+                             background:var(--card-background-color);
+                             color:var(--primary-text-color);
+                             border:1px solid var(--divider-color); font:inherit; }
         .day-strip .day-bar { display:flex; height:30px; margin-top:6px;
                               border-radius:8px; overflow:hidden; }
         .day-strip .day-bar span { display:flex; align-items:center;
@@ -3194,6 +3208,11 @@ class BetterLightingPanel extends HTMLElement {
           }">${icon("mdi:flare")}<span class="grow">${this._t(
             "effects"
           )}</span></li>
+          <li class="section" data-control="1" aria-selected="${
+            this._view.kind === "control"
+          }">${icon("mdi:tune")}<span class="grow">${this._t(
+            "control"
+          )}</span></li>
           <li class="section" data-diagnostics="1" aria-selected="${
             this._view.kind === "diagnostics"
           }">${icon("mdi:stethoscope")}<span class="grow">${this._t(
@@ -3373,6 +3392,10 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "effects" };
       this._paint();
     });
+    go(nav.querySelector("li[data-control]"), () => {
+      this._view = { kind: "control" };
+      this._paint();
+    });
     go(nav.querySelector("li[data-diagnostics]"), () => {
       this._view = { kind: "diagnostics" };
       this._paint();
@@ -3453,6 +3476,8 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintRooms();
       case "modes":
         return this._paintModes();
+      case "control":
+        return this._paintControl();
       case "diagnostics":
         return this._paintDiagnostics();
       case "presets":
@@ -4578,6 +4603,141 @@ class BetterLightingPanel extends HTMLElement {
       addLabel: this._t("add_rule"),
       describe: (rule) => this._describeCondition(rule),
     });
+  }
+
+  /**
+   * The house, worked rather than configured.
+   *
+   * Everything here is reachable from a Home Assistant dashboard already --
+   * that is the point of publishing entities rather than hiding behind an
+   * API. But somebody who has just finished setting a room up should not have
+   * to go and build a dashboard to see whether it does what they meant, and a
+   * house that never gets a dashboard should still be usable from the page
+   * that configured it.
+   *
+   * The room cards are the very same custom card, instantiated here. One
+   * implementation, two places it is shown.
+   */
+  _paintControl() {
+    const main = this._page(
+      `<div id="house"></div>
+       <div class="cards" id="cards"></div>
+       ${this._rooms.length ? "" : this._empty()}`
+    );
+    this._paintHouseControls(main.querySelector("#house"));
+
+    const cards = main.querySelector("#cards");
+    for (const room of this._rooms) {
+      const entityId = this._roomLight(room.id);
+      if (!entityId) continue;
+      const card = document.createElement("better-lighting-card");
+      if (typeof card.setConfig !== "function") {
+        // The card script did not load. Say so once rather than leaving a
+        // row of empty boxes: it is served by us, so this is our problem.
+        cards.innerHTML = `<div class="muted">${this._t("card_missing")}</div>`;
+        return;
+      }
+      card.setConfig({ entity: entityId });
+      card.hass = this._hass;
+      cards.appendChild(card);
+    }
+  }
+
+  /** The light entity of one room, as the room itself claims it. */
+  _roomLight(roomId) {
+    const states = this._hass?.states || {};
+    return (
+      Object.keys(states).find(
+        (id) =>
+          id.startsWith("light.") && states[id].attributes?.bl_room_id === roomId
+      ) || null
+    );
+  }
+
+  /**
+   * The controls that belong to the house rather than to any room.
+   *
+   * Found by what they are rather than by name: the entity ids follow the
+   * hub's own name, which somebody may well have renamed.
+   */
+  _paintHouseControls(into) {
+    const states = this._hass?.states || {};
+    const ours = (prefix, attribute) =>
+      Object.keys(states).filter(
+        (id) => id.startsWith(prefix) && states[id].attributes?.[attribute]
+      );
+
+    const simulation = Object.keys(states).find((id) =>
+      id.startsWith("switch.") && "rooms" in (states[id].attributes || {})
+    );
+    const nightOff = Object.keys(states).find((id) =>
+      id.endsWith("_night_lights_off")
+    );
+    const modes = ours("select.", "bl_rooms");
+
+    const rows = [];
+    if (simulation) {
+      const on = states[simulation].state === "on";
+      const running = (states[simulation].attributes.rooms || []).length;
+      rows.push(`<li>
+        ${this._icon("mdi:home-account")}
+        <span class="grow">${this._t("presence_simulation")}
+          <div class="muted">${
+            on ? this._t("n_rooms").replace("{count}", String(running)) : this._t("idle")
+          }</div></span>
+        <span class="toggle-here"></span>
+      </li>`);
+    }
+    if (nightOff) {
+      rows.push(`<li>
+        ${this._icon("mdi:weather-night")}
+        <span class="grow">${this._t("night_lights_off")}
+          <div class="muted">${this._t("night_lights_off_hint")}</div></span>
+        <button class="pill" id="night">${this._t("ask")}</button>
+      </li>`);
+    }
+    for (const id of modes) {
+      const state = states[id];
+      rows.push(`<li>
+        ${this._icon("mdi:auto-mode")}
+        <span class="grow">${state.attributes.friendly_name || id}</span>
+        <select class="mode" data-entity="${id}">${(
+          state.attributes.options || []
+        )
+          .map(
+            (option) =>
+              `<option${option === state.state ? " selected" : ""}>${option}</option>`
+          )
+          .join("")}</select>
+      </li>`);
+    }
+    if (!rows.length) return;
+
+    into.innerHTML = `<h3>${this._t("the_house")}</h3><ul>${rows.join("")}</ul>`;
+
+    const slot = into.querySelector(".toggle-here");
+    if (slot && simulation) {
+      slot.replaceWith(
+        this._toggleControl(states[simulation].state === "on", (wanted) =>
+          this._hass.callService(
+            "switch",
+            wanted ? "turn_on" : "turn_off",
+            { entity_id: simulation }
+          )
+        )
+      );
+    }
+    into.querySelector("#night")?.addEventListener("click", () =>
+      this._hass.callService("button", "press", { entity_id: nightOff })
+    );
+    into.querySelectorAll("select.mode").forEach((picker) =>
+      picker.addEventListener("change", (event) =>
+        this._hass.callService("select", "select_option", {
+          entity_id: event.target.dataset.entity,
+          option: event.target.value,
+        })
+      )
+    );
   }
 
   _paintPresets() {

@@ -1,5 +1,7 @@
 # Better Lighting
 
+![Better Lighting — one integration for how your house is lit](images/header.png)
+
 A Home Assistant integration that makes a light switch do the obvious thing.
 
 Press it once and the room comes on in **adaptive mode** — brightness and colour temperature
@@ -19,6 +21,7 @@ express.
 [adaptive-lighting]: https://github.com/basnijholt/adaptive-lighting
 [relative-light-group]: https://github.com/Cheerpipe/relative-light-group
 [scenery]: https://github.com/j9brown/scenery
+[presence-simulation]: https://github.com/slashback100/presence_simulation
 
 > **Status: beta.** Everything described here is implemented, tested, and running on a live
 > Home Assistant instance. Expect rough edges, and please open an issue if you find one.
@@ -749,14 +752,15 @@ intact.
 
 ## Standing on
 
-Three integrations each solved a third of this, and none of them talked to the others. This one
-exists because of them, and parts of it are their work rather than mine.
+Several integrations each solved a piece of this, and none of them talked to the others. This
+one exists because of them, and parts of it are their work rather than mine.
 
 | Project | What it does | What came from it |
 |---|---|---|
 | [adaptive-lighting] | Brightness and colour temperature from the sun's position | The sun and curve mathematics in `adaptive.py` is a port of its `color_and_brightness.py`, and its `tests/test_color_and_brightness.py` was repointed at ours. The `FieldSpec` table generalises its `VALIDATION_TUPLES` plus side-car `EXTRA_VALIDATION`. |
 | [relative-light-group] | A light group that dims members relative to their own brightness | The headroom algorithm in `brightness.py`, and the decision to vendor a group base rather than subclass Home Assistant's non-public `LightGroup`. |
 | [scenery] | Named colour and brightness presets, cycled by a select | The colour model and the tolerance-based state comparators in `scenes.py`, ported from its `light_utils.py`. |
+| [presence-simulation] | Replays your lights from history while you are away | The reference for presence simulation: fetching significant states on the recorder's own executor, and filtering `unknown` and `unavailable` out of a recorded day before replaying it. |
 
 Where this integration disagrees with them it is written down: per-`(room, light)` manual-override
 tracking rather than a global dictionary keyed by light, zero-flash turn-on from a structural

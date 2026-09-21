@@ -1,0 +1,212 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: #060b10;
+    font-family: Inter, system-ui, sans-serif;
+    color: #e9f2f8;
+    position: relative;
+  }
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(120,190,230,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(120,190,230,.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .glow {
+    position: absolute; border-radius: 50%; filter: blur(90px);
+  }
+  .glow.warm { width: 620px; height: 620px; right: -120px; top: -80px;
+               background: radial-gradient(circle, rgba(255,176,60,.30), transparent 65%); }
+  .glow.cool { width: 560px; height: 560px; left: -160px; bottom: -200px;
+               background: radial-gradient(circle, rgba(60,170,255,.20), transparent 65%); }
+
+  .left { position: absolute; left: 64px; top: 52px; width: 620px; }
+  .badge { display: flex; align-items: center; gap: 14px; margin-bottom: 34px; }
+  .mark {
+    width: 54px; height: 54px; border-radius: 16px;
+    border: 1.5px solid rgba(120,200,255,.45);
+    background: rgba(20,40,58,.7);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 26px rgba(80,180,255,.28);
+  }
+  .kicker {
+    font-family: 'JetBrains Mono', monospace; font-size: 13px; letter-spacing: .22em;
+    color: #8fb6cc; text-transform: uppercase; display: flex; align-items: center; gap: 10px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #54c8ff;
+         box-shadow: 0 0 10px #54c8ff; }
+
+  h1 { font-size: 66px; font-weight: 800; letter-spacing: -.022em; line-height: 1.03; }
+  h1 .warm { color: #ffb43c; }
+  .tag { margin-top: 16px; font-family: 'JetBrains Mono', monospace;
+         font-size: 20px; color: #cfe3ef; letter-spacing: .01em; }
+  .sub { margin-top: 10px; font-family: 'JetBrains Mono', monospace;
+         font-size: 14px; color: #7f9fb2; letter-spacing: .04em; }
+  .chips { margin-top: 28px; display: flex; gap: 12px; }
+  .chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    padding: 8px 18px; border-radius: 999px;
+    border: 1px solid rgba(120,200,255,.32); color: #9fd2ef;
+  }
+  .chip.amber { border-color: rgba(255,180,60,.4); color: #ffc775; }
+
+  .curve { position: absolute; left: 64px; bottom: 44px; width: 640px; }
+  .curve .label {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: .2em;
+    color: #7f9fb2; text-transform: uppercase; margin-bottom: 12px;
+    display: flex; justify-content: space-between;
+  }
+  .ticks {
+    display: flex; justify-content: space-between; margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6d8a9c;
+  }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow warm"></div>
+  <div class="glow cool"></div>
+
+  <div class="left">
+    <div class="badge">
+      <div class="mark">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <path d="M12 3a6 6 0 0 0-3.2 11.08c.42.27.7.7.78 1.19l.12.73h4.6l.12-.73c.08-.49.36-.92.78-1.19A6 6 0 0 0 12 3Z"
+                stroke="#7fd2ff" stroke-width="1.5" stroke-linejoin="round"/>
+          <path d="M9.9 19.2h4.2M10.5 21.2h3" stroke="#7fd2ff" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="kicker"><span class="dot"></span>Home&nbsp;Assistant &nbsp;·&nbsp; Custom&nbsp;Integration</div>
+    </div>
+
+    <h1>Better <span class="warm">Lighting</span></h1>
+    <div class="tag">One integration for how your house is lit.</div>
+    <div class="sub">adaptive curve · rooms &amp; zones · scenes · triggers &amp; rules</div>
+
+    <div class="chips">
+      <div class="chip">HACS</div>
+      <div class="chip">Config Flow</div>
+      <div class="chip amber">Own Panel</div>
+    </div>
+  </div>
+
+  <!-- The brightness and colour a room is given across one day: the thing the
+       integration actually computes, drawn rather than described. -->
+  <div class="curve">
+    <div class="label"><span>Adaptive curve</span><span>sunrise → noon → sunset</span></div>
+    <svg width="640" height="112" viewBox="0 0 640 112" fill="none">
+      <defs>
+        <linearGradient id="day" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="640" y2="0">
+          <stop offset="0"    stop-color="#2b6ea8"/>
+          <stop offset="0.16" stop-color="#ffb43c"/>
+          <stop offset="0.5"  stop-color="#fff4d6"/>
+          <stop offset="0.84" stop-color="#ffb43c"/>
+          <stop offset="1"    stop-color="#2b6ea8"/>
+        </linearGradient>
+        <linearGradient id="fill" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="112">
+          <stop offset="0" stop-color="#ffb43c" stop-opacity=".26"/>
+          <stop offset="1" stop-color="#ffb43c" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <line x1="0" y1="103" x2="640" y2="103" stroke="#1d3040" stroke-width="1"/>
+      <path d="M0 98 C 90 96, 120 26, 200 18 L 440 18 C 520 26, 550 96, 640 98 L 640 103 L 0 103 Z"
+            fill="url(#fill)"/>
+      <path d="M0 98 C 90 96, 120 26, 200 18 L 440 18 C 520 26, 550 96, 640 98"
+            stroke="url(#day)" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="470" cy="28" r="7" fill="#ffd27a"/>
+      <circle cx="470" cy="28" r="14" fill="none" stroke="#ffd27a" stroke-opacity=".35" stroke-width="2"/>
+    </svg>
+    <div class="ticks"><span>06:00</span><span>12:00</span><span>18:00</span><span>00:00</span></div>
+  </div>
+
+  <!-- One room, drawn the way the card draws it. -->
+  <svg class="room" style="position:absolute; right:56px; top:96px" width="430" height="452" viewBox="0 0 430 452" fill="none">
+    <defs>
+      <linearGradient id="bulbGlow" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ffd88a" stop-opacity=".95"/>
+        <stop offset="1" stop-color="#ff9c2e" stop-opacity=".25"/>
+      </linearGradient>
+      <linearGradient id="beam" gradientUnits="userSpaceOnUse" x1="0" y1="100" x2="0" y2="250">
+        <stop offset="0" stop-color="#ffc768" stop-opacity=".22"/>
+        <stop offset="1" stop-color="#ffc768" stop-opacity="0"/>
+      </linearGradient>
+      <filter id="soft" x="-60%" y="-160%" width="220%" height="420%">
+        <feGaussianBlur stdDeviation="5"/>
+      </filter>
+      <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0e1a24" stop-opacity=".92"/>
+        <stop offset="1" stop-color="#0a141c" stop-opacity=".92"/>
+      </linearGradient>
+    </defs>
+
+    <text x="4" y="12" font-family="JetBrains Mono, monospace" font-size="12"
+          letter-spacing="3.4" fill="#7f9fb2">LIVING ROOM</text>
+    <path d="M1 22 v 14 M1 22 h 14" stroke="#24455c" stroke-width="1.5" fill="none"/>
+    <path d="M429 22 v 14 M429 22 h -14" stroke="#24455c" stroke-width="1.5" fill="none"/>
+
+    <!-- Three pendants at three colour temperatures: one room, lit by parts
+         of itself that do not have to agree. -->
+    <g>
+      <line x1="95"  y1="44" x2="95"  y2="108" stroke="#2a4356" stroke-width="1.6"/>
+      <line x1="215" y1="44" x2="215" y2="88"  stroke="#2a4356" stroke-width="1.6"/>
+      <line x1="335" y1="44" x2="335" y2="126" stroke="#2a4356" stroke-width="1.6"/>
+
+      <path d="M95 108 l -17 20 h 34 Z"  fill="#d99b3f" fill-opacity=".9"/>
+      <path d="M215 88 l -17 20 h 34 Z"  fill="#e8b055" fill-opacity=".9"/>
+      <path d="M335 126 l -17 20 h 34 Z" fill="#c9843a" fill-opacity=".9"/>
+
+      <path d="M95 130 l -30 118 h 60 Z"  fill="url(#beam)"/>
+      <path d="M215 110 l -34 138 h 68 Z" fill="url(#beam)"/>
+      <path d="M335 148 l -28 100 h 56 Z" fill="url(#beam)"/>
+
+      <ellipse cx="95"  cy="248" rx="34" ry="7" fill="#ffc768" fill-opacity=".14"
+               filter="url(#soft)"/>
+      <ellipse cx="215" cy="248" rx="38" ry="8" fill="#ffe0a4" fill-opacity=".16"
+               filter="url(#soft)"/>
+      <ellipse cx="335" cy="248" rx="30" ry="6" fill="#ff9c2e" fill-opacity=".12"
+               filter="url(#soft)"/>
+
+      <circle cx="95"  cy="126" r="3.4" fill="#fff0cf"/>
+      <circle cx="215" cy="106" r="3.4" fill="#ffe4a8"/>
+      <circle cx="335" cy="144" r="3.4" fill="#ffca7a"/>
+    </g>
+
+    <!-- the card's own row, in miniature -->
+    <g transform="translate(0,300)">
+      <rect x="0" y="0" width="430" height="140" rx="16" fill="url(#panel)" stroke="#1d3446"/>
+      <circle cx="30" cy="34" r="9" fill="none" stroke="#7fd2ff" stroke-width="1.6"/>
+      <text x="50" y="40" font-family="Inter, sans-serif" font-size="19" font-weight="600" fill="#e9f2f8">Living Room</text>
+      <circle cx="366" cy="34" r="16" fill="rgba(255,180,60,.16)"/>
+      <circle cx="366" cy="34" r="4.6" fill="none" stroke="#ffc775" stroke-width="2"/>
+      <g stroke="#ffc775" stroke-width="2" stroke-linecap="round">
+        <path d="M366 24.4 v 2.6 M366 41 v 2.6 M356.4 34 h 2.6 M373 34 h 2.6"/>
+        <path d="M359.2 27.2 l 1.9 1.9 M370.9 38.9 l 1.9 1.9
+                 M372.8 27.2 l -1.9 1.9 M361.1 38.9 l -1.9 1.9"/>
+      </g>
+      <circle cx="402" cy="34" r="16" fill="rgba(90,190,255,.16)"/>
+      <path d="M402 27 v 8" stroke="#7fd2ff" stroke-width="2" stroke-linecap="round"/>
+      <path d="M395.5 29 a 9 9 0 1 0 13 0" stroke="#7fd2ff" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+      <rect x="20" y="62" width="390" height="26" rx="13" fill="#152532"/>
+      <rect x="20" y="62" width="268" height="26" rx="13" fill="#ffc768" fill-opacity=".85"/>
+
+      <rect x="20"  y="100" width="86"  height="26" rx="13" fill="none" stroke="#2a4a60"/>
+      <rect x="116" y="100" width="198" height="26" rx="13" fill="none" stroke="#2a4a60"/>
+      <rect x="324" y="100" width="86"  height="26" rx="13" fill="none" stroke="#2a4a60"/>
+      <text x="215" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace"
+            font-size="13" fill="#9fd2ef">Relax</text>
+      <text x="63"  y="118" text-anchor="middle" font-family="JetBrains Mono, monospace"
+            font-size="14" fill="#6d8a9c">‹</text>
+      <text x="367" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace"
+            font-size="14" fill="#6d8a9c">›</text>
+    </g>
+  </svg>
+</body>
+</html>

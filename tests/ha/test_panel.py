@@ -208,6 +208,54 @@ async def test_without_a_frontend_everything_else_still_works(
     assert hass.states.get("light.kitchen") is not None
 
 
+class TestTheDashboardCard:
+    """A card nobody can fetch is a card nobody has."""
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_the_frontend_is_told_to_load_it(self, hass: HomeAssistant) -> None:
+        from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+
+        urls = hass.data[DATA_EXTRA_MODULE_URL].urls
+        assert any("better_lighting_card.js" in url for url in urls), sorted(urls)
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_a_file_added_by_an_upgrade_is_still_served(
+        self, hass: HomeAssistant
+    ) -> None:
+        """How the card shipped unreachable.
+
+        One flag said "the static routes are done", so a file that did not
+        exist when it was set was never served -- and reloading the
+        integration rather than restarting Home Assistant is exactly how
+        somebody receives an update.
+        """
+        from custom_components.better_lighting import panel
+
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+
+        # Pretend the run started before the card existed.
+        hass.data[panel._STATIC_REGISTERED] = {panel.PANEL_FILE}
+        served: list[str] = []
+
+        async def _record(configs):
+            served.extend(config.url_path for config in configs)
+
+        hass.http.async_register_static_paths = _record
+        await panel.async_setup_panel(hass)
+
+        assert any(panel.CARD_FILE in url for url in served), served
+
+
 class TestEverySettingIsReachable:
     """The panel edits the same tables the config flow renders."""
 
@@ -717,7 +765,7 @@ class TestThePanelScriptIsNotCachedForever:
             "module_url"
         ]
 
-        monkeypatch.setattr(panel, "_fingerprint", lambda: "deadbeefcafe")
+        monkeypatch.setattr(panel, "_fingerprint", lambda name=None: "deadbeefcafe")
         await panel.async_setup_panel(hass)
         after = hass.data["frontend_panels"][DOMAIN].config["_panel_custom"][
             "module_url"

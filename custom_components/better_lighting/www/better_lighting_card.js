@@ -46,10 +46,12 @@ class BetterLightingCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config?.entity || !config.entity.startsWith("light.")) {
+    const entity = config?.entity || "";
+    if (entity && !entity.startsWith("light.")) {
       throw new Error("A Better Lighting card needs a room's light entity");
     }
-    this._config = { name: null, ...config };
+    this._config = { name: null, ...config, entity };
+    this._selectId = null;
     this._drawn = false;
   }
 
@@ -293,8 +295,14 @@ class BetterLightingCard extends HTMLElement {
   // -- keeping it in step with the room ------------------------------------
 
   _sync() {
-    const light = this._light;
     const card = this.shadowRoot.querySelector("ha-card");
+    if (!this._config.entity) {
+      // Being drawn in the card picker before a room has been chosen.
+      card.innerHTML = `<div class="missing">Choose a room.</div>`;
+      this._drawn = false;
+      return;
+    }
+    const light = this._light;
     if (!light) {
       card.innerHTML = `<div class="missing">Unknown entity: ${
         this._config.entity
@@ -438,10 +446,16 @@ class BetterLightingCard extends HTMLElement {
   }
 }
 
-/** The visual editor, so the card can be added without typing YAML. */
+/**
+ * The visual editor.
+ *
+ * One question, and only rooms this integration publishes as answers: a list
+ * of every light in the house would be a list of mostly wrong answers, since
+ * the card reads attributes only a Better Lighting room has.
+ */
 class BetterLightingCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = config;
+    this._config = { ...config };
     this._render();
   }
 
@@ -451,23 +465,32 @@ class BetterLightingCardEditor extends HTMLElement {
   }
 
   _render() {
-    if (!this._hass || !this._config || this._drawn) return;
-    this._drawn = true;
-    this.innerHTML = `<ha-entity-picker></ha-entity-picker>`;
-    const picker = this.querySelector("ha-entity-picker");
-    picker.hass = this._hass;
-    picker.value = this._config.entity || "";
-    picker.includeDomains = ["light"];
-    picker.label = "Room";
-    picker.addEventListener("value-changed", (event) => {
-      this.dispatchEvent(
-        new CustomEvent("config-changed", {
-          detail: { config: { ...this._config, entity: event.detail.value } },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    });
+    if (!this._hass) return;
+    if (!this._picker) {
+      this.innerHTML = "";
+      this._picker = document.createElement("ha-entity-picker");
+      this._picker.label = "Room";
+      this._picker.allowCustomEntity = false;
+      // A room, not a bulb. `includeDomains` narrows it to lights for the
+      // frontends that ignore a filter function; the filter does the rest.
+      this._picker.includeDomains = ["light"];
+      this._picker.entityFilter = (state) =>
+        state?.attributes?.bl_room_id !== undefined;
+      this._picker.addEventListener("value-changed", (event) => {
+        if (event.detail.value === this._config?.entity) return;
+        this._config = { ...this._config, entity: event.detail.value };
+        this.dispatchEvent(
+          new CustomEvent("config-changed", {
+            detail: { config: this._config },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+      this.appendChild(this._picker);
+    }
+    this._picker.hass = this._hass;
+    this._picker.value = this._config?.entity || "";
   }
 }
 

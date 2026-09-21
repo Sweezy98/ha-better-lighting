@@ -139,6 +139,17 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         )
         return
 
+    # Serving comes first, and per file. Tracking one flag for "the static
+    # routes are done" meant a file added by an upgrade was never served: the
+    # flag was already set from earlier in the same run, so reloading the
+    # integration rather than restarting Home Assistant skipped it entirely.
+    # That is exactly how somebody receives an update -- and how the card
+    # shipped unreachable.
+    await _async_serve(hass, PANEL_FILE, CARD_FILE)
+    # Idempotent, and deliberately before the early return below: whether the
+    # sidebar needs rebuilding says nothing about whether the card is loaded.
+    await _async_register_card(hass)
+
     fingerprint = await hass.async_add_executor_job(_fingerprint)
     module_url = f"{PANEL_URL}/{PANEL_FILE}?v={fingerprint}"
 
@@ -151,24 +162,6 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         # leaving the sidebar pointing at a URL nothing will fetch again.
         frontend.async_remove_panel(hass, DOMAIN)
 
-    # The route is registered once per run; aiohttp refuses a second one for
-    # the same path, and the fingerprint lives in the query string anyway.
-    if not hass.data.get(_STATIC_REGISTERED):
-        hass.data[_STATIC_REGISTERED] = True
-        await hass.http.async_register_static_paths(
-            [
-                StaticPathConfig(
-                    f"{PANEL_URL}/{name}",
-                    str(Path(__file__).parent / "www" / name),
-                    # Safe to cache hard: the URL carries the file's
-                    # fingerprint, so a changed file is a different URL.
-                    True,
-                )
-                for name in (PANEL_FILE, CARD_FILE)
-            ]
-        )
-        await _async_register_card(hass)
-
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=DOMAIN,
@@ -177,6 +170,32 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         sidebar_title="Better Lighting",
         sidebar_icon="mdi:lightbulb-group",
         require_admin=True,
+    )
+
+
+async def _async_serve(hass: HomeAssistant, *names: str) -> None:
+    """Put our scripts on a URL, once each per run.
+
+    aiohttp refuses a second route for the same path, so each file is tracked
+    on its own rather than behind one flag for all of them. The fingerprint
+    lives in the query string, so the route itself never has to change.
+    """
+    done: set[str] = hass.data.setdefault(_STATIC_REGISTERED, set())
+    wanted = [name for name in names if name not in done]
+    if not wanted:
+        return
+    done.update(wanted)
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                f"{PANEL_URL}/{name}",
+                str(Path(__file__).parent / "www" / name),
+                # Safe to cache hard: the URL carries the file's fingerprint,
+                # so a changed file is a different URL.
+                True,
+            )
+            for name in wanted
+        ]
     )
 
 

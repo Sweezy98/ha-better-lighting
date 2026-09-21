@@ -717,3 +717,32 @@ def test_the_card_hides_what_it_means_to_hide() -> None:
 
     assert ".hidden = " in card
     assert "[hidden] { display: none !important; }" in card
+
+
+def test_the_card_can_be_added_without_yaml() -> None:
+    """Everything the card picker needs, in one place.
+
+    A card that only works from YAML is a card most people never find. The
+    picker needs it announced with a preview, and the editor needs a static
+    `getConfigElement` returning an element that is actually defined.
+    """
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    assert "window.customCards" in card
+    assert "preview: true" in card
+    assert "static getConfigElement()" in card
+    assert "static getStubConfig(" in card
+    assert 'customElements.define("better-lighting-card-editor"' in card
+    # And the editor has to say what changed, or nothing is ever saved.
+    assert "config-changed" in card
+
+
+def test_the_card_survives_being_drawn_without_a_room() -> None:
+    """The picker builds one before anybody has chosen; throwing there is a
+    broken preview rather than a helpful error."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+    body = card[card.index("setConfig(config)") : card.index("getCardSize()")]
+
+    assert "if (entity && !entity.startsWith" in body, (
+        "an empty entity must be allowed through setConfig"
+    )

@@ -2133,8 +2133,13 @@ class BetterLightingPanel extends HTMLElement {
         /* Filled rather than merely recoloured on hover: at this size a change
            of text colour is easy to miss, and one of these is destructive. */
         .row-actions button[data-delete]:hover,
-        .row-actions button[data-delete]:focus-visible {
+        .row-actions button[data-delete]:focus-visible,
+        li.step button[data-delete]:hover,
+        li.step button[data-delete]:focus-visible {
           background:var(--error-color,#db4437); color:#fff; opacity:1; }
+        li.step button[data-delete] { border-radius:999px; padding:0 8px;
+                                      min-height:34px; opacity:.55; }
+        li.step:hover button[data-delete] { opacity:1; }
         .row-actions button[data-duplicate]:hover,
         .row-actions button[data-duplicate]:focus-visible {
           background:var(--secondary-background-color);
@@ -4206,7 +4211,7 @@ class BetterLightingPanel extends HTMLElement {
   _paintEffect(mine, save) {
     const index = this._view.index;
     const current = mine[index] || { name: "", repeat: true, steps: [] };
-    let steps = (current.steps || []).map((step) => ({ ...step }));
+    const steps = (current.steps || []).map((step) => ({ ...step }));
 
     this._paintSettings({
       form: this._schema?.forms.effect || [],
@@ -4226,70 +4231,20 @@ class BetterLightingPanel extends HTMLElement {
             }
           : null,
       extra: (into) => {
-        const fold = document.createElement("details");
-        fold.open = true;
-        fold.innerHTML = `<summary>${this._t("steps")}</summary>
-          <div class="fold-body">
-            <p class="muted">${this._t("steps_hint")}</p>
-            <ul id="steps"></ul>
-          </div>`;
-        into.appendChild(fold);
-        const list = fold.querySelector("#steps");
-
-        const draw = () => {
-          list.innerHTML = "";
-          steps.forEach((step, at) => {
-            const row = document.createElement("li");
-            row.className = "step";
-            const form = document.createElement("bl-form");
-            form.configure({
-              fields: (this._schema?.forms.effect_step || []).flatMap(
-                (group) => group.fields
-              ),
-              values: step,
-              labels: this._labels,
-              choices: {},
-              states: this._hass.states,
-              hass: this._hass,
-            });
-            form.addEventListener("value-changed", (event) => {
-              steps[at] = { ...steps[at], [event.detail.key]: event.detail.value };
-              this._touch();
-            });
-            row.appendChild(form);
-
-            const drop = document.createElement("button");
-            drop.className = "flat";
-            drop.title = this._t("delete");
-            drop.innerHTML = this._icon("mdi:delete-outline") || "\u2715";
-            drop.addEventListener("click", () => {
-              steps.splice(at, 1);
-              this._touch();
-              draw();
-            });
-            row.appendChild(drop);
-            list.appendChild(row);
-          });
-
-          const adder = document.createElement("li");
-          adder.className = "add";
-          adder.innerHTML = `${this._icon("mdi:plus")}<span class="grow">${this._t(
-            "add_step"
-          )}</span>`;
-          adder.addEventListener("click", () => {
-            steps = [...steps, { level: 100, transition: 0.4, hold: 0.2 }];
-            this._touch();
-            draw();
-          });
-          list.appendChild(adder);
-        };
-        draw();
+        // The same shape as a room's triggers and its rules, and said once.
+        this._paintNestedList(into, {
+          title: this._t("steps"),
+          hint: this._t("steps_hint"),
+          formKey: "effect_step",
+          items: steps,
+          blank: { level: 100, transition: 0.4, hold: 0.2 },
+          addLabel: this._t("add_step"),
+        });
         if (current.effect_id) this._tryEffect(into, current.effect_id);
       },
     });
   }
 
-  /** The house's named colours, stored with the global settings. */
   /** A rule in one line, so the list says what each one actually checks. */
   _describeCondition(condition) {
     const where = condition.condition_entity || "—";
@@ -4358,6 +4313,7 @@ class BetterLightingPanel extends HTMLElement {
 
         const drop = document.createElement("button");
         drop.className = "flat";
+        drop.dataset.delete = "";
         drop.title = this._t("delete");
         drop.innerHTML = this._icon("mdi:delete-outline") || "\u2715";
         drop.addEventListener("click", () => {

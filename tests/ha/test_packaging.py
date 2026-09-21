@@ -793,3 +793,29 @@ def test_the_brand_assets_are_the_sizes_brands_asks_for() -> None:
         width, height = size(name)
         assert width > height, f"{name} should be landscape"
         assert floor <= height <= ceiling, f"{name} shortest side is {height}"
+
+
+def test_the_card_owns_its_controls() -> None:
+    """A browser dropdown cannot be styled, so the card draws its own.
+
+    The reason is visible rather than theoretical: a native `select` renders
+    as the operating system's list in the middle of a card that looks like
+    nothing else on the dashboard.
+    """
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    assert "<select" not in card, "the scene picker should not be a native select"
+    assert 'role="listbox"' in card
+    assert 'role="slider"' in card
+    # And the menu has to be reachable and dismissable without a mouse.
+    assert 'event.key === "Escape"' in card
+    assert "ArrowLeft" in card
+
+
+def test_the_adaptive_button_needs_a_lit_room() -> None:
+    """It is the way back from something else driving the room. A room that
+    is simply switched off has nothing to come back from, which is how it
+    shipped visible on every dark room."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    assert '$("adaptive").hidden = !on || attrs.bl_adaptive !== false;' in card

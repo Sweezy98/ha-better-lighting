@@ -194,3 +194,27 @@ async def test_dimming_still_does_not_light_dark_members(
 
     assert hass.states.get("light.one").attributes["brightness"] < 200
     assert hass.states.get("light.two").state == "off"
+
+
+async def test_the_room_light_follows_its_controller(hass: HomeAssistant) -> None:
+    """What the entity says *about* the room has to stay fresh.
+
+    The group base follows the member bulbs, which covers on, off and
+    brightness. The mode, the hold and the countdown all come from the
+    controller and move no bulb, so without a subscription they were only ever
+    as fresh as the last thing that happened to a light -- which is how a
+    dashboard ends up showing yesterday's answer.
+    """
+    entry = await _setup(
+        hass,
+        MemberLight("One", is_on=True, brightness=100),
+        MemberLight("Two", is_on=True, brightness=100),
+    )
+    controller = next(iter(entry.runtime_data.controllers.values()))
+    assert hass.states.get(ROOM).attributes["bl_held_by_hand"] is False
+
+    controller._held_by_hand = True
+    controller.async_notify()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(ROOM).attributes["bl_held_by_hand"] is True

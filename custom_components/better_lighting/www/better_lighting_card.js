@@ -2,25 +2,26 @@
  * A dashboard card for one room.
  *
  * Deliberately not a light card with extra buttons. A room already knows what
- * it is doing -- adaptive, a scene, held on by hand, somebody standing in it --
- * and the card's job is to say so and offer the three things anybody actually
- * reaches for: on, brighter, a different scene. Colour and temperature are a
- * tap away in Home Assistant's own dialog rather than two more buttons that
- * get used twice a year.
+ * it is doing -- adaptive, a scene, held on by hand, somebody standing in it,
+ * due to switch itself off in four minutes -- and the card's job is to say so
+ * and offer the three things anybody actually reaches for: on, brighter, a
+ * different scene. Colour and temperature are a tap away in Home Assistant's
+ * own dialog rather than two more buttons that get used twice a year.
  *
  * Every control is an entity this integration already publishes, so the card
  * has no private channel to the backend and keeps working if it is loaded on
  * its own.
  *
+ * The brightness bar and the scene menu are drawn here rather than borrowed.
+ * Home Assistant's own are close, but their internals move between releases,
+ * and the browser's own dropdown cannot be styled at all -- which is how a
+ * card ends up with one control that looks like nothing else on it.
+ *
  * No build step, for the same reason the panel has none: one file, readable in
  * the browser that runs it.
  */
 
-/** Home Assistant's own controls, borrowed when they are there. */
-const HA = {
-  icon: "ha-icon",
-  slider: "ha-control-slider",
-};
+const HA_ICON = "ha-icon";
 
 class BetterLightingCard extends HTMLElement {
   static getConfigElement() {
@@ -40,9 +41,12 @@ class BetterLightingCard extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._drawn = false;
-    // Held while somebody is dragging, so an echo from the bulbs does not
-    // yank the handle out from under them.
-    this._dragging = false;
+    // What the handle is being dragged to. It wins over the entity's own
+    // brightness until the drag ends, so an echo from the bulbs cannot yank
+    // the handle out from under whoever is moving it.
+    this._pending = null;
+    this._menuOpen = false;
+    this._tick = null;
   }
 
   setConfig(config) {
@@ -65,6 +69,11 @@ class BetterLightingCard extends HTMLElement {
     this._sync();
   }
 
+  disconnectedCallback() {
+    this._stopTicking();
+    this._closeMenu();
+  }
+
   // -- the entities this card drives --------------------------------------
 
   get _light() {
@@ -82,12 +91,12 @@ class BetterLightingCard extends HTMLElement {
     const hass = this._hass;
     const mine = hass?.entities?.[this._config.entity];
     if (!mine?.device_id) return null;
-    const found = Object.keys(hass.entities || {}).find(
-      (id) =>
-        id.startsWith(prefix) &&
-        hass.entities[id].device_id === mine.device_id
+    return (
+      Object.keys(hass.entities || {}).find(
+        (id) =>
+          id.startsWith(prefix) && hass.entities[id].device_id === mine.device_id
+      ) || null
     );
-    return found || null;
   }
 
   get _sceneSelect() {
@@ -103,113 +112,145 @@ class BetterLightingCard extends HTMLElement {
     this._drawn = true;
     this.shadowRoot.innerHTML = `
       <style>
+        :host { --bl-warm: var(--state-light-color, #ffc768); }
         ha-card {
-          padding: 12px;
+          padding: 14px;
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 14px;
+          position: relative;
         }
-        .head {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          min-width: 0;
-        }
+        .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
         .title {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          flex: 1 1 auto;
-          min-width: 0;
-          cursor: pointer;
-          background: none;
-          border: 0;
-          padding: 0;
-          color: inherit;
-          font: inherit;
-          text-align: left;
+          display: flex; align-items: center; gap: 12px;
+          flex: 1 1 auto; min-width: 0;
+          cursor: pointer; background: none; border: 0; padding: 0;
+          color: inherit; font: inherit; text-align: left;
         }
         .title:focus-visible { outline: 2px solid var(--primary-color); }
         .name {
-          font-size: 1.5rem;
-          font-weight: 500;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          font-size: 1.35rem; font-weight: 600; letter-spacing: -.01em;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
           color: var(--primary-text-color);
         }
-        .room-icon { --mdc-icon-size: 28px; color: var(--state-icon-color, #9b9b9b); }
+        .room-icon {
+          --mdc-icon-size: 26px;
+          color: var(--state-icon-color, var(--secondary-text-color));
+        }
         /* Badges say why the room looks the way it does. They are not
            buttons: nothing here is a thing to press. */
-        .badges { display: flex; gap: 2px; flex: 0 0 auto; }
-        .badge {
-          --mdc-icon-size: 18px;
+        .badges { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+        .badge { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+        .badge.on { color: var(--primary-color); }
+        .countdown {
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 3px 9px 3px 7px; border-radius: 999px;
+          background: var(--secondary-background-color);
           color: var(--secondary-text-color);
-          opacity: .85;
+          font-size: .78rem; font-variant-numeric: tabular-nums;
         }
-        .badge.on { color: var(--primary-color); opacity: 1; }
+        .countdown ha-icon { --mdc-icon-size: 15px; }
+
         button.round {
-          flex: 0 0 auto;
-          width: 44px;
-          height: 44px;
-          min-height: 0;
-          border: 0;
-          border-radius: 50%;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
+          flex: 0 0 auto; width: 42px; height: 42px; min-height: 0;
+          border: 0; border-radius: 50%; cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center;
           background: var(--secondary-background-color);
           color: var(--secondary-text-color);
           transition: background .15s ease, color .15s ease;
         }
-        button.round:hover { filter: brightness(1.15); }
-        button.round[aria-pressed="true"] {
-          background: rgba(var(--rgb-state-light-color, 255, 214, 10), .2);
-          color: var(--state-light-color, #ffd60a);
+        button.round:hover { filter: brightness(1.18); }
+        button.round.adaptive {
+          background: rgba(255, 199, 104, .16); color: var(--bl-warm);
         }
         button.round.power[aria-pressed="true"] {
-          background: rgba(var(--rgb-primary-color, 3, 169, 244), .2);
+          background: rgba(var(--rgb-primary-color, 3, 169, 244), .18);
           color: var(--primary-color);
         }
-        button.round:disabled { opacity: .45; cursor: default; }
-        .slider-row { display: flex; align-items: center; gap: 8px; }
-        ha-control-slider { flex: 1 1 auto; --control-slider-thickness: 48px; }
-        input[type="range"] { flex: 1 1 auto; }
+
+        /* The brightness bar: one thick rounded track, filled. */
+        .bar {
+          position: relative; height: 46px; border-radius: 14px;
+          background: var(--secondary-background-color);
+          overflow: hidden; cursor: pointer; touch-action: none;
+          outline: none;
+        }
+        .bar:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); }
+        .fill {
+          position: absolute; inset: 0 auto 0 0;
+          background: var(--bl-warm);
+          transition: width .18s ease;
+        }
+        .bar.dragging .fill { transition: none; }
+        .bar[aria-disabled="true"] { opacity: .5; cursor: default; }
+        /* Shown while dragging and not otherwise. The length of the fill
+           is the reading; a number sitting on top of it is either the wrong
+           colour for the track or the wrong colour for the fill, and at rest
+           it is answering a question nobody asked. */
+        .bar .pct {
+          position: absolute; inset: 0; display: flex; align-items: center;
+          justify-content: flex-end; padding: 0 16px;
+          font-size: .85rem; font-weight: 600;
+          color: var(--primary-text-color);
+          pointer-events: none; font-variant-numeric: tabular-nums;
+          opacity: 0; transition: opacity .12s ease;
+        }
+        .bar.dragging .pct { opacity: .85; }
+
         .scenes { display: flex; align-items: center; gap: 8px; }
-        select {
-          flex: 1 1 auto;
-          min-width: 0;
-          height: 40px;
-          border-radius: 20px;
-          border: 1px solid var(--divider-color);
-          background: var(--card-background-color);
-          color: var(--primary-text-color);
-          padding: 0 12px;
-          font: inherit;
-        }
         .step {
-          flex: 0 0 auto;
-          width: 40px;
-          height: 40px;
-          min-height: 0;
-          border-radius: 50%;
-          border: 1px solid var(--divider-color);
-          background: none;
-          color: var(--primary-text-color);
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
+          flex: 0 0 auto; width: 42px; height: 42px; min-height: 0;
+          border-radius: 999px; border: 1px solid var(--divider-color);
+          background: none; color: var(--primary-text-color); cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center;
         }
-        .step:hover { background: var(--secondary-background-color); }
+        .step:hover:not(:disabled) { background: var(--secondary-background-color); }
         .step:disabled { opacity: .4; cursor: default; }
+        .picker {
+          flex: 1 1 auto; min-width: 0; height: 42px;
+          border-radius: 999px; border: 1px solid var(--divider-color);
+          background: none; color: var(--primary-text-color); cursor: pointer;
+          font: inherit; display: flex; align-items: center;
+          /* Room on the right for the chevron, which was sitting hard against
+             the edge of the pill. */
+          padding: 0 16px 0 18px; gap: 10px;
+        }
+        .picker:hover { background: var(--secondary-background-color); }
+        .picker .current {
+          flex: 1 1 auto; min-width: 0; text-align: left;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .picker ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
+
+        /* The menu. A surface over the card rather than the browser's own
+           list, which cannot be styled and looks like nothing else here. */
+        .menu {
+          position: absolute; left: 14px; right: 14px; bottom: 14px;
+          z-index: 3; border-radius: 16px;
+          background: var(--card-background-color, #1c1c1c);
+          box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
+          border: 1px solid var(--divider-color);
+          max-height: 280px; overflow-y: auto; padding: 6px;
+        }
+        .menu button {
+          display: flex; align-items: center; gap: 12px; width: 100%;
+          padding: 11px 14px; border: 0; background: none; cursor: pointer;
+          color: var(--primary-text-color); font: inherit; text-align: left;
+          border-radius: 10px;
+        }
+        .menu button:hover, .menu button:focus-visible {
+          background: var(--secondary-background-color); outline: none;
+        }
+        .menu button[aria-selected="true"] { color: var(--primary-color); }
+        .menu ha-icon { --mdc-icon-size: 20px; flex: 0 0 auto; }
+        .scrim { position: absolute; inset: 0; z-index: 2; }
+
         .missing { padding: 16px; color: var(--error-color, #db4437); }
         /* An explicit display beats the hidden attribute, so anything that
            hides itself has to say so louder than its own layout rule. */
         [hidden] { display: none !important; }
         @media (prefers-reduced-motion: reduce) {
-          button.round, .step { transition: none; }
+          button.round, .step, .fill, .bar .pct { transition: none; }
         }
       </style>
       <ha-card>
@@ -219,15 +260,27 @@ class BetterLightingCard extends HTMLElement {
             <span class="name" id="name"></span>
           </button>
           <div class="badges" id="badges"></div>
-          <button class="round" id="adaptive" title=""></button>
-          <button class="round power" id="power" title=""></button>
+          <button class="round adaptive" id="adaptive"></button>
+          <button class="round power" id="power"></button>
         </div>
-        <div class="slider-row" id="slider-row"></div>
+
+        <div class="bar" id="bar" role="slider" tabindex="0"
+             aria-label="Brightness" aria-valuemin="1" aria-valuemax="100">
+          <div class="fill" id="fill"></div>
+          <div class="pct" id="pct"></div>
+        </div>
+
         <div class="scenes" id="scenes">
           <button class="step" id="prev" title="Previous scene"></button>
-          <select id="scene"></select>
+          <button class="picker" id="picker" aria-haspopup="listbox">
+            <span class="current" id="current"></span>
+            <span id="chevron"></span>
+          </button>
           <button class="step" id="next" title="Next scene"></button>
         </div>
+
+        <div class="scrim" id="scrim" hidden></div>
+        <div class="menu" id="menu" role="listbox" hidden></div>
       </ha-card>`;
 
     const $ = (id) => this.shadowRoot.getElementById(id);
@@ -239,52 +292,55 @@ class BetterLightingCard extends HTMLElement {
     $("adaptive").addEventListener("click", () => this._backToAdaptive());
     $("prev").addEventListener("click", () => this._step("select_previous"));
     $("next").addEventListener("click", () => this._step("select_next"));
-    $("scene").addEventListener("change", (event) =>
-      this._call("select", "select_option", {
-        entity_id: this._selectId,
-        option: event.target.value,
-      })
-    );
-    this._buildSlider($("slider-row"));
+    $("picker").addEventListener("click", () => this._toggleMenu());
+    $("scrim").addEventListener("click", () => this._closeMenu());
+    this._wireBar($("bar"));
+    this.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && this._menuOpen) {
+        this._closeMenu();
+        $("picker").focus();
+      }
+    });
   }
 
-  /**
-   * Home Assistant's own slider where it exists, a plain range where it does
-   * not -- so the card still works on an older frontend rather than showing
-   * an empty box.
-   */
-  _buildSlider(row) {
-    const ha = customElements.get(HA.slider);
-    const slider = document.createElement(ha ? HA.slider : "input");
-    if (ha) {
-      slider.mode = "start";
-      slider.min = 1;
-      slider.max = 100;
-      slider.addEventListener("value-changed", (event) => {
-        this._dragging = false;
-        this._setBrightness(event.detail.value);
-      });
-      slider.addEventListener("slider-moved", () => {
-        this._dragging = true;
-      });
-    } else {
-      slider.type = "range";
-      slider.min = "1";
-      slider.max = "100";
-      slider.addEventListener("input", () => {
-        this._dragging = true;
-      });
-      slider.addEventListener("change", (event) => {
-        this._dragging = false;
-        this._setBrightness(Number(event.target.value));
-      });
-    }
-    this._slider = slider;
-    row.appendChild(slider);
+  /** Drag, click and arrow keys on the brightness bar. */
+  _wireBar(bar) {
+    const value = (event) => {
+      const box = bar.getBoundingClientRect();
+      const across = (event.clientX - box.left) / box.width;
+      return Math.max(1, Math.min(100, Math.round(across * 100)));
+    };
+    const move = (event) => {
+      this._pending = value(event);
+      this._paintBar();
+    };
+    const up = (event) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      bar.classList.remove("dragging");
+      this._setBrightness(value(event));
+      this._pending = null;
+    };
+    bar.addEventListener("pointerdown", (event) => {
+      if (bar.getAttribute("aria-disabled") === "true") return;
+      event.preventDefault();
+      bar.classList.add("dragging");
+      move(event);
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
+    bar.addEventListener("keydown", (event) => {
+      const step = { ArrowLeft: -5, ArrowDown: -5, ArrowRight: 5, ArrowUp: 5 }[
+        event.key
+      ];
+      if (step === undefined) return;
+      event.preventDefault();
+      this._setBrightness((this._shownPct() || 0) + step);
+    });
   }
 
-  _icon(name, className) {
-    if (customElements.get(HA.icon)) {
+  _icon(name, className = "") {
+    if (customElements.get(HA_ICON)) {
       return `<ha-icon class="${className}" icon="${name}"></ha-icon>`;
     }
     // A dot rather than nothing: the layout should not collapse because an
@@ -293,6 +349,14 @@ class BetterLightingCard extends HTMLElement {
   }
 
   // -- keeping it in step with the room ------------------------------------
+
+  _shownPct() {
+    if (this._pending !== null) return this._pending;
+    const attrs = this._light?.attributes || {};
+    return this._light?.state === "on" && attrs.brightness
+      ? Math.round((attrs.brightness / 255) * 100)
+      : 0;
+  }
 
   _sync() {
     const card = this.shadowRoot.querySelector("ha-card");
@@ -304,9 +368,7 @@ class BetterLightingCard extends HTMLElement {
     }
     const light = this._light;
     if (!light) {
-      card.innerHTML = `<div class="missing">Unknown entity: ${
-        this._config.entity
-      }</div>`;
+      card.innerHTML = `<div class="missing">Unknown entity: ${this._config.entity}</div>`;
       this._drawn = false;
       return;
     }
@@ -322,81 +384,159 @@ class BetterLightingCard extends HTMLElement {
     $("name").textContent =
       this._config.name || attrs.friendly_name || this._config.entity;
 
-    // Two badges, and only when they have something to say. A room with no
-    // sensor is not a room nobody is in, so it shows nothing at all.
+    this._paintBadges(attrs, on);
+
+    // Not a toggle: there is no such thing as turning adaptive off from here.
+    // It is the way back once something else has taken the room over, so it
+    // appears only when the room is lit *and* something else is driving it.
+    // A dark room has nothing to come back from, which is why it used to sit
+    // there on every room that was simply switched off.
+    $("adaptive").hidden = !on || attrs.bl_adaptive !== false;
+    $("adaptive").innerHTML = this._icon("mdi:white-balance-sunny");
+    $("adaptive").title = "Back to adaptive";
+
+    const power = $("power");
+    power.innerHTML = this._icon("mdi:power");
+    power.setAttribute("aria-pressed", String(on));
+    power.title = on ? "Turn off" : "Turn on";
+
+    this._paintBar();
+    this._paintScenes();
+    this._watchCountdown(attrs.bl_off_at);
+  }
+
+  _paintBadges(attrs, on) {
     const badges = [];
     if (attrs.bl_presence === true) {
-      badges.push([`mdi:motion-sensor`, "on", "Presence detected"]);
+      badges.push(["mdi:motion-sensor", "on", "Presence detected"]);
     } else if (attrs.bl_presence === false) {
-      badges.push([`mdi:motion-sensor-off`, "", "Nobody here"]);
+      badges.push(["mdi:motion-sensor-off", "", "Nobody here"]);
     }
-    if (on) {
+    const left = this._secondsLeft(attrs.bl_off_at);
+    // A countdown only runs when nobody is holding the lights on, so saying
+    // "on automatically" beside it is the same fact twice -- and the room
+    // name is what loses the space.
+    if (on && left === null) {
       badges.push(
         attrs.bl_held_by_hand
           ? ["mdi:hand-back-right", "on", "On by hand"]
           : ["mdi:motion-sensor", "", "On automatically"]
       );
     }
-    $("badges").innerHTML = badges
-      .map(
-        ([icon, cls, title]) =>
-          `<span title="${title}">${this._icon(icon, `badge ${cls}`)}</span>`
-      )
-      .join("");
-
-    // Not a toggle: there is no such thing as turning adaptive off from here.
-    // It is the way back once something else has taken the room over, so it
-    // is only there when there is something to come back from.
-    const adaptive = attrs.bl_adaptive === true;
-    const back = $("adaptive");
-    back.hidden = adaptive || attrs.bl_adaptive === undefined;
-    back.innerHTML = this._icon("mdi:white-balance-sunny", "");
-    back.title = "Back to adaptive";
-
-    const power = $("power");
-    power.innerHTML = this._icon("mdi:power", "");
-    power.setAttribute("aria-pressed", String(on));
-    power.title = on ? "Turn off" : "Turn on";
-
-    if (!this._dragging) {
-      const pct = on && attrs.brightness ? Math.round((attrs.brightness / 255) * 100) : 0;
-      if ("value" in this._slider) this._slider.value = pct;
-      this._slider.disabled = !on;
-    }
-
-    this._syncScenes();
+    const countdown =
+      left === null
+        ? ""
+        : `<span class="countdown" title="Switching off">${this._icon(
+            "mdi:timer-outline"
+          )}${this._clock(left)}</span>`;
+    this.shadowRoot.getElementById("badges").innerHTML =
+      badges
+        .map(
+          ([icon, cls, title]) =>
+            `<span title="${title}">${this._icon(icon, `badge ${cls}`)}</span>`
+        )
+        .join("") + countdown;
   }
 
-  _syncScenes() {
+  _paintBar() {
+    const bar = this.shadowRoot.getElementById("bar");
+    const on = this._light?.state === "on";
+    const pct = this._shownPct();
+    bar.setAttribute("aria-disabled", String(!on));
+    bar.setAttribute("aria-valuenow", String(pct));
+    this.shadowRoot.getElementById("fill").style.width = `${on ? pct : 0}%`;
+    this.shadowRoot.getElementById("pct").textContent = `${pct}%`;
+  }
+
+  _paintScenes() {
     const select = this._sceneSelect;
     const row = this.shadowRoot.getElementById("scenes");
     row.hidden = !select;
     if (!select) return;
 
     const options = select.attributes.options || [];
-    const picker = this.shadowRoot.getElementById("scene");
-    const signature = options.join(" ");
-    if (picker.dataset.signature !== signature) {
-      picker.dataset.signature = signature;
-      picker.innerHTML = options
-        .map((option) => `<option value="${option}">${option}</option>`)
-        .join("");
-    }
-    picker.value = select.state;
+    this.shadowRoot.getElementById("current").textContent = select.state;
+    this.shadowRoot.getElementById("chevron").innerHTML =
+      this._icon("mdi:chevron-down");
+    this.shadowRoot.getElementById("prev").innerHTML =
+      this._icon("mdi:chevron-left");
+    this.shadowRoot.getElementById("next").innerHTML =
+      this._icon("mdi:chevron-right");
 
-    const at = options.indexOf(select.state);
     const single = options.length < 2;
     this.shadowRoot.getElementById("prev").disabled = single;
     this.shadowRoot.getElementById("next").disabled = single;
-    this.shadowRoot.getElementById("prev").innerHTML = this._icon(
-      "mdi:chevron-left",
-      ""
+    this.shadowRoot.getElementById("picker").disabled = !options.length;
+
+    if (this._menuOpen) this._paintMenu(options, select.state);
+  }
+
+  _paintMenu(options, current) {
+    const menu = this.shadowRoot.getElementById("menu");
+    menu.innerHTML = options
+      .map(
+        (option) => `<button role="option" data-option="${option}"
+           aria-selected="${option === current}">
+           ${this._icon(
+             option === current ? "mdi:check" : "mdi:blank"
+           )}<span>${option}</span></button>`
+      )
+      .join("");
+    menu.querySelectorAll("button").forEach((row) =>
+      row.addEventListener("click", () => {
+        this._closeMenu();
+        this._call("select", "select_option", {
+          entity_id: this._selectId,
+          option: row.dataset.option,
+        });
+      })
     );
-    this.shadowRoot.getElementById("next").innerHTML = this._icon(
-      "mdi:chevron-right",
-      ""
-    );
-    picker.dataset.at = String(at);
+  }
+
+  // -- the countdown -------------------------------------------------------
+
+  _secondsLeft(when) {
+    if (!when) return null;
+    const left = Math.round((new Date(when).getTime() - Date.now()) / 1000);
+    return left > 0 ? left : null;
+  }
+
+  _clock(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    if (minutes >= 60) {
+      return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(
+        2,
+        "0"
+      )}m`;
+    }
+    return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+  }
+
+  /**
+   * Tick only while there is something to count.
+   *
+   * The state itself does not change every second -- the backend publishes
+   * when the room is due to go off, once -- so the second hand is ours to
+   * run, and ours to stop.
+   */
+  _watchCountdown(when) {
+    if (this._secondsLeft(when) === null) {
+      this._stopTicking();
+      return;
+    }
+    if (this._tick) return;
+    this._tick = window.setInterval(() => {
+      const attrs = this._light?.attributes || {};
+      if (this._secondsLeft(attrs.bl_off_at) === null) this._stopTicking();
+      this._paintBadges(attrs, this._light?.state === "on");
+    }, 1000);
+  }
+
+  _stopTicking() {
+    if (this._tick) {
+      window.clearInterval(this._tick);
+      this._tick = null;
+    }
   }
 
   // -- doing things --------------------------------------------------------
@@ -433,6 +573,35 @@ class BetterLightingCard extends HTMLElement {
   _step(service) {
     if (!this._selectId) return;
     this._call("select", service, { entity_id: this._selectId });
+  }
+
+  _toggleMenu() {
+    if (this._menuOpen) {
+      this._closeMenu();
+    } else {
+      this._openMenu();
+    }
+  }
+
+  _openMenu() {
+    const select = this._sceneSelect;
+    if (!select) return;
+    this._menuOpen = true;
+    this._paintMenu(select.attributes.options || [], select.state);
+    this.shadowRoot.getElementById("menu").hidden = false;
+    this.shadowRoot.getElementById("scrim").hidden = false;
+    this.shadowRoot
+      .getElementById("menu")
+      .querySelector('[aria-selected="true"], button')
+      ?.focus();
+  }
+
+  _closeMenu() {
+    this._menuOpen = false;
+    const menu = this.shadowRoot?.getElementById("menu");
+    const scrim = this.shadowRoot?.getElementById("scrim");
+    if (menu) menu.hidden = true;
+    if (scrim) scrim.hidden = true;
   }
 
   _openMoreInfo() {

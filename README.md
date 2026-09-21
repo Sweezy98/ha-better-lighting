@@ -148,9 +148,13 @@ One row of controls each, and nothing that gets used twice a year:
 - **Back to adaptive** appears only when the room is *not* adaptive. It is the
   way back after a scene or a manual change, not a toggle — there is no such
   thing as turning adaptive off from a card.
-- **Power** and a **brightness slider**, which moves the room the way the room is
-  configured to move: members keep their own headroom.
-- **Scenes** as previous, a dropdown, and next.
+- **Power** and a **brightness bar**, which moves the room the way the room is
+  configured to move: members keep their own headroom. Drag it, click it, or
+  use the arrow keys.
+- **Scenes** as previous, a menu, and next — the menu is drawn by the card, so
+  it looks like the rest of the dashboard rather than like the browser.
+- **A countdown** whenever the room is due to switch itself off, so a trigger's
+  remaining hold is visible rather than something you wait out.
 
 ```yaml
 type: custom:better-lighting-card

@@ -17,6 +17,7 @@ already-dark one -- and only tracking the presence sensor would miss it.
 
 from __future__ import annotations
 
+import datetime
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -36,6 +37,7 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 from .const import CoverCondition
 from .triggers import UNREADABLE, active_entities, any_active
@@ -60,14 +62,18 @@ class RoomPresence:
         on_occupied: Callable[[], None] | None = None,
         on_cleared: Callable[[], None] | None = None,
         on_gate_opened: Callable[[], None] | None = None,
+        on_countdown: Callable[[], None] | None = None,
     ) -> None:
         self.hass = hass
         self.room = room
         self._on_occupied = on_occupied
         self._on_cleared = on_cleared
         self._on_gate_opened = on_gate_opened
+        self._on_countdown = on_countdown
 
         self._occupied: bool | None = None
+        # When the wait ends, or None when nothing is waiting.
+        self.clear_at: datetime.datetime | None = None
         self._clear_timer: CALLBACK_TYPE | None = None
         self._unsubscribers: list[CALLBACK_TYPE] = []
 
@@ -233,6 +239,7 @@ class RoomPresence:
         @callback
         def _cleared(_now) -> None:
             self._clear_timer = None
+            self.clear_at = None
             _LOGGER.debug("%s: clear", self.room.name)
             if self._on_cleared is not None:
                 self._on_cleared()
@@ -240,13 +247,22 @@ class RoomPresence:
         if not delay:
             _cleared(None)
             return
+        # Kept so a dashboard can say how much of the wait is left, rather
+        # than only that something is pending.
+        self.clear_at = dt_util.utcnow() + datetime.timedelta(seconds=delay)
         self._clear_timer = async_call_later(self.hass, delay, _cleared)
+        if self._on_countdown is not None:
+            self._on_countdown()
 
     @callback
     def _cancel_timer(self) -> None:
+        was_waiting = self.clear_at is not None
+        self.clear_at = None
         if self._clear_timer is not None:
             self._clear_timer()
             self._clear_timer = None
+        if was_waiting and self._on_countdown is not None:
+            self._on_countdown()
 
 
 class ZoneOccupancy:
@@ -266,12 +282,16 @@ class ZoneOccupancy:
         *,
         on_occupied: Callable[[], None],
         on_cleared: Callable[[], None],
+        on_countdown: Callable[[], None] | None = None,
     ) -> None:
         self.hass = hass
         self.zone = zone
         self._on_occupied = on_occupied
         self._on_cleared = on_cleared
+        self._on_countdown = on_countdown
         self._occupied: bool | None = None
+        # When the wait ends, or None when nothing is waiting.
+        self.clear_at: datetime.datetime | None = None
         self._clear_timer: CALLBACK_TYPE | None = None
         self._unsubscribe: CALLBACK_TYPE | None = None
 
@@ -339,6 +359,7 @@ class ZoneOccupancy:
         @callback
         def _cleared(_now) -> None:
             self._clear_timer = None
+            self.clear_at = None
             _LOGGER.debug("%s: clear", self.zone.name)
             self._on_cleared()
 
@@ -346,10 +367,17 @@ class ZoneOccupancy:
         if not delay:
             _cleared(None)
             return
+        self.clear_at = dt_util.utcnow() + datetime.timedelta(seconds=delay)
         self._clear_timer = async_call_later(self.hass, delay, _cleared)
+        if self._on_countdown is not None:
+            self._on_countdown()
 
     @callback
     def _cancel_timer(self) -> None:
+        was_waiting = self.clear_at is not None
+        self.clear_at = None
         if self._clear_timer is not None:
             self._clear_timer()
             self._clear_timer = None
+        if was_waiting and self._on_countdown is not None:
+            self._on_countdown()

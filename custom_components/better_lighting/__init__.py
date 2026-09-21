@@ -348,6 +348,7 @@ async def async_setup_entry(
             on_occupied=_room_occupied(hass, runtime, subentry_id),
             on_cleared=_room_cleared(hass, runtime, subentry_id),
             on_gate_opened=_gate_opened(hass, controller),
+            on_countdown=controller.async_notify,
         )
         controller.presence = presence
         await presence.async_setup()

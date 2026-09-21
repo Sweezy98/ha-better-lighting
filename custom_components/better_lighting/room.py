@@ -260,6 +260,7 @@ class RoomController:
                 zone,
                 on_occupied=self._zone_occupied(zone.zone_id),
                 on_cleared=self._zone_cleared(zone.zone_id),
+                on_countdown=self.async_notify,
             )
             watch.async_setup()
             self._zone_watches.append(watch)
@@ -421,6 +422,22 @@ class RoomController:
     def detached_zones(self) -> frozenset[str]:
         """Zones currently standing apart from what the room is being told."""
         return frozenset(self._detached)
+
+    @property
+    def off_at(self) -> datetime.datetime | None:
+        """When these lights are next due to switch themselves off.
+
+        The soonest of the room's own wait and any of its zones', because a
+        room lit by one corner of itself is still a room with a countdown
+        running. None while nothing is waiting -- including while a sensor is
+        still active, when the wait has not started.
+        """
+        pending = [
+            watch.clear_at for watch in self._zone_watches if watch.clear_at is not None
+        ]
+        if self.presence is not None and self.presence.clear_at is not None:
+            pending.append(self.presence.clear_at)
+        return min(pending) if pending else None
 
     @property
     def held_by_hand(self) -> bool:

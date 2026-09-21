@@ -520,3 +520,48 @@ class TestSeveralTriggersAtOnce:
         await _set(hass, MOTION, "on")
 
         assert _lit(hass)
+
+
+class TestTheCountdownIsVisible:
+    """A dashboard should be able to say how long is left, not just that
+    something is pending. Asked of the room's own entity, which is what a
+    card is pointed at, even when a zone is what started the wait."""
+
+    def _off_at(self, hass: HomeAssistant) -> str | None:
+        return hass.states.get("light.outside").attributes["bl_off_at"]
+
+    async def test_nothing_pending_shows_nothing(self, hass: HomeAssistant) -> None:
+        await _build(hass, hold=60)
+
+        assert self._off_at(hass) is None
+
+    async def test_an_active_trigger_is_not_a_countdown(
+        self, hass: HomeAssistant
+    ) -> None:
+        """While the sensor is on there is no wait to count down."""
+        await _build(hass, hold=60)
+
+        await _set(hass, MOTION, "on")
+
+        assert self._off_at(hass) is None
+
+    async def test_the_wait_has_an_end(self, hass: HomeAssistant) -> None:
+        await _build(hass, hold=60)
+        await _set(hass, MOTION, "on")
+
+        await _set(hass, MOTION, "off")
+
+        off_at = self._off_at(hass)
+        assert off_at is not None
+        left = (dt_util.parse_datetime(off_at) - dt_util.utcnow()).total_seconds()
+        assert 0 < left <= 60
+
+    async def test_a_fresh_trigger_clears_it(self, hass: HomeAssistant) -> None:
+        await _build(hass, hold=60)
+        await _set(hass, MOTION, "on")
+        await _set(hass, MOTION, "off")
+        assert self._off_at(hass) is not None
+
+        await _set(hass, MOTION, "on")
+
+        assert self._off_at(hass) is None

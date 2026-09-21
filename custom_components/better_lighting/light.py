@@ -241,6 +241,16 @@ class RoomLight(GroupEntity, LightEntity, RestoreEntity):
                 "%s restored on-state memory: %s", self.entity_id, self._remembered
             )
         await super().async_added_to_hass()
+        # The group base follows the member bulbs, which is enough for on,
+        # off and brightness. Everything this entity says *about* the room --
+        # its mode, whether it is held on by hand, when it is due to switch
+        # itself off -- comes from the controller, and none of that moves a
+        # bulb. Without this they were only ever as fresh as the last time
+        # something happened to a light.
+        if self.controller is not None:
+            self.async_on_remove(
+                self.controller.async_add_listener(self.async_write_ha_state)
+            )
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData:
@@ -273,6 +283,15 @@ class RoomLight(GroupEntity, LightEntity, RestoreEntity):
             # turn-off is standing down, and worth a badge saying so.
             "bl_held_by_hand": (
                 controller.held_by_hand if controller is not None else None
+            ),
+            # When this room is due to switch itself off, so a dashboard can
+            # count it down rather than only say that something is pending.
+            # None whenever nothing is waiting -- including while a sensor is
+            # still active, when the wait has not started.
+            "bl_off_at": (
+                off_at.isoformat()
+                if controller is not None and (off_at := controller.off_at)
+                else None
             ),
         }
 

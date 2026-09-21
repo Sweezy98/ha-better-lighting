@@ -641,17 +641,18 @@ def test_the_panel_parses_as_a_module() -> None:
     if node is None:
         pytest.skip("no node to parse with")
 
-    source = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
-    with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False) as handle:
-        handle.write(source)
-        copy = handle.name
-    try:
-        done = subprocess.run(
-            [node, "--check", copy], capture_output=True, text=True, check=False
-        )
-    finally:
-        pathlib.Path(copy).unlink(missing_ok=True)
-    assert done.returncode == 0, done.stderr
+    for name in ("better_lighting_panel.js", "better_lighting_card.js"):
+        source = (COMPONENT / "www" / name).read_text()
+        with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False) as handle:
+            handle.write(source)
+            copy = handle.name
+        try:
+            done = subprocess.run(
+                [node, "--check", copy], capture_output=True, text=True, check=False
+            )
+        finally:
+            pathlib.Path(copy).unlink(missing_ok=True)
+        assert done.returncode == 0, f"{name}: {done.stderr}"
 
 
 def test_every_all_entry_resolves() -> None:
@@ -675,3 +676,44 @@ def test_every_all_entry_resolves() -> None:
             if not hasattr(module, name)
         ]
     assert not dangling
+
+
+def test_the_card_is_served_and_loaded() -> None:
+    """A card nobody can fetch is a card nobody has.
+
+    Three things have to agree: the file exists, the static route serves it,
+    and the frontend is told to load it. Each has been forgotten separately
+    in other integrations, and the symptom is the same silent nothing.
+    """
+    from custom_components.better_lighting import panel
+
+    assert (COMPONENT / "www" / panel.CARD_FILE).is_file()
+
+    source = (COMPONENT / "panel.py").read_text()
+    assert "add_extra_js_url" in source
+    assert "CARD_FILE" in source.split("StaticPathConfig")[1]
+
+
+def test_the_card_only_uses_entities_the_integration_publishes() -> None:
+    """The card has no private channel to the backend, and should keep none.
+
+    A card that called our websocket API would work on the dashboard and
+    nowhere else, and would need the panel's whole config payload to draw one
+    room. Services and states are the public surface; this keeps it that way.
+    """
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    assert "sendMessagePromise" not in card
+    assert "better_lighting/" not in card
+    # And nothing that takes over the page: a card is a tenant, not a host.
+    for forbidden in ("window.confirm", "window.alert", "window.prompt"):
+        assert forbidden not in card
+
+
+def test_the_card_hides_what_it_means_to_hide() -> None:
+    """`hidden` loses to an explicit display, which is how the adaptive
+    button shipped visible on every room in a first draft."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    assert ".hidden = " in card
+    assert "[hidden] { display: none !important; }" in card

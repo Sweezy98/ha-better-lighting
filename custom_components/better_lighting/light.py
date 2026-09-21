@@ -62,6 +62,7 @@ from .context import ContextRegistry
 from .group_entity import GroupEntity
 from .models import ControllerConfig, HubConfig, RoomConfig
 from .profiles import Axis
+from .render import RoomMode
 from .room import RoomController, Trigger
 
 _LOGGER = logging.getLogger(__name__)
@@ -247,11 +248,32 @@ class RoomLight(GroupEntity, LightEntity, RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
+        controller = self.controller
+        presence = controller.presence if controller is not None else None
         return {
             ATTR_ENTITY_ID: self._entity_ids,
             "bl_room_id": self.room.subentry_id,
             "bl_zone_id": self.room.subentry_id,  # the old spelling
             "bl_remembered_members": self._remembered,
+            # What a dashboard needs to say why the room looks the way it
+            # does, rather than only what it looks like. All derived from
+            # state we own, so none of it is guessed from the bulbs.
+            "bl_mode": (
+                controller.effective_mode.value if controller is not None else None
+            ),
+            "bl_adaptive": (
+                controller.effective_mode is RoomMode.ADAPTIVE
+                if controller is not None
+                else None
+            ),
+            # None when the room has no sensor at all, which is not the same
+            # as nobody being in it.
+            "bl_presence": presence.occupied if presence is not None else None,
+            # Whether somebody reached for a switch: it is why the automatic
+            # turn-off is standing down, and worth a badge saying so.
+            "bl_held_by_hand": (
+                controller.held_by_hand if controller is not None else None
+            ),
         }
 
     # -- member bookkeeping ------------------------------------------------

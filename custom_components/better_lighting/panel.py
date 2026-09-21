@@ -87,6 +87,10 @@ _LOGGER = logging.getLogger(__name__)
 PANEL_URL = f"/{DOMAIN}_panel"
 PANEL_PATH = f"{DOMAIN}-panel"
 PANEL_FILE = "better_lighting_panel.js"
+# The dashboard card. Served beside the panel and loaded into the
+# frontend for everybody, so nobody has to add a Lovelace resource by
+# hand to use a card their own integration ships.
+CARD_FILE = "better_lighting_card.js"
 ELEMENT = "better-lighting-panel"
 
 # The id a draft is applied under while it is being edited. Reserved: a scene
@@ -103,8 +107,8 @@ _CURVE_STEPS = 96
 _STATIC_REGISTERED = f"{DOMAIN}_panel_static"
 
 
-def _fingerprint() -> str:
-    """A short hash of the panel script, for the module URL.
+def _fingerprint(name: str = PANEL_FILE) -> str:
+    """A short hash of one of our scripts, for its URL.
 
     The browser -- and Home Assistant's own service worker -- are told to
     cache this file hard, so the URL has to change when the file does or an
@@ -112,7 +116,7 @@ def _fingerprint() -> str:
     than using the version means it is right even when the same version is
     installed twice, which is what happens to anybody tracking main.
     """
-    path = Path(__file__).parent / "www" / PANEL_FILE
+    path = Path(__file__).parent / "www" / name
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
     except OSError:  # pragma: no cover - the file ships with the integration
@@ -154,14 +158,16 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         await hass.http.async_register_static_paths(
             [
                 StaticPathConfig(
-                    f"{PANEL_URL}/{PANEL_FILE}",
-                    str(Path(__file__).parent / "www" / PANEL_FILE),
+                    f"{PANEL_URL}/{name}",
+                    str(Path(__file__).parent / "www" / name),
                     # Safe to cache hard: the URL carries the file's
                     # fingerprint, so a changed file is a different URL.
                     True,
                 )
+                for name in (PANEL_FILE, CARD_FILE)
             ]
         )
+        await _async_register_card(hass)
 
     await panel_custom.async_register_panel(
         hass,
@@ -172,6 +178,18 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         sidebar_icon="mdi:lightbulb-group",
         require_admin=True,
     )
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    """Load the dashboard card into the frontend.
+
+    As an extra module URL rather than a Lovelace resource: a resource is a
+    row in the user's own configuration that we would then have to own the
+    lifetime of, and removing the integration would leave it pointing at a
+    file that is no longer served. This is ours, and it goes when we do.
+    """
+    fingerprint = await hass.async_add_executor_job(_fingerprint, CARD_FILE)
+    frontend.add_extra_js_url(hass, f"{PANEL_URL}/{CARD_FILE}?v={fingerprint}")
 
 
 @callback

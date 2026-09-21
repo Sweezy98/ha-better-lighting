@@ -130,6 +130,29 @@ is the room's own business, which is what the room's presence settings are for.
 A light may be in at most one zone, for the same reason it is in at most one
 room, and saving is refused if two zones claim the same bulb.
 
+### The dashboard card
+
+The integration ships a card, loaded for you — there is no Lovelace resource to
+add. Pick **Better Lighting room** in the card picker and choose a room's light.
+
+One row of controls each, and nothing that gets used twice a year:
+
+- **The title** opens Home Assistant's own light dialog, which is where colour
+  and temperature live. They are not worth two buttons on every room.
+- **Badges** say *why* the room looks the way it does: somebody is here, and
+  whether the lights are on by hand or by a trigger.
+- **Back to adaptive** appears only when the room is *not* adaptive. It is the
+  way back after a scene or a manual change, not a toggle — there is no such
+  thing as turning adaptive off from a card.
+- **Power** and a **brightness slider**, which moves the room the way the room is
+  configured to move: members keep their own headroom.
+- **Scenes** as previous, a dropdown, and next.
+
+```yaml
+type: custom:better-lighting-card
+entity: light.living_room
+```
+
 ### Motion and door sensors
 
 Every room and every zone has its own **Triggers** and its own **Rules**, set

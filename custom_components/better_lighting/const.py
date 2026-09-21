@@ -853,12 +853,15 @@ LIGHT_GROUP_SPECS: tuple[FieldSpec, ...] = (
 # Effects the user has written, kept beside the colour presets: both are
 # house-wide vocabularies that scenes and services pick from by name.
 CONF_EFFECTS = "effects"
-# Named rules an automation can be gated on: "after dark", "nobody home", "the
-# drive is actually dark". House-wide and reusable for the same reason colour
-# presets are -- one rule wanted by every outdoor trigger, described once.
-CONF_CONDITIONS = "conditions"
+# The sensors that ask for a room or a zone to be lit, and the rules that say
+# whether they may. Both belong to the room or zone they act on rather than to
+# a house-wide list: they are read where they are set.
+CONF_TRIGGERS = "triggers"
+CONF_TRIGGER_ENTITY = "trigger_entity"
+CONF_TRIGGER_ACTIVE_STATE = "active_state"
+CONF_RULES = "rules"
 CONF_CONDITION_ID = "condition_id"
-CONF_CONDITION_KIND = "kind"
+CONF_CONDITION_KIND = "check"
 CONF_CONDITION_ENTITY = "condition_entity"
 CONF_CONDITION_THRESHOLD = "threshold"
 CONF_CONDITION_START = "window_start"
@@ -879,12 +882,45 @@ _NEEDS_NUMBER = (
     (ConditionKind.BELOW.value, ConditionKind.ABOVE.value),
 )
 
+TRIGGER_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_TRIGGER_ENTITY,
+        None,
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=[
+                    "binary_sensor",
+                    "cover",
+                    "device_tracker",
+                    "input_boolean",
+                    "person",
+                    "sensor",
+                    "switch",
+                ]
+            )
+        ),
+        required=True,
+    ),
+    # Left empty, the usual four: on, open, home, detected. Named, it is that
+    # state and nothing else, for a sensor that reports something odd.
+    FieldSpec(
+        CONF_TRIGGER_ACTIVE_STATE,
+        None,
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=["on", "open", "home", "detected", "off", "closed"],
+                mode="dropdown",
+                custom_value=True,
+            )
+        ),
+    ),
+)
+
 CONDITION_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_NAME,
         None,
         selector.TextSelector(selector.TextSelectorConfig()),
-        required=True,
     ),
     FieldSpec(
         CONF_CONDITION_KIND,
@@ -1544,20 +1580,9 @@ ROOM_INSECT_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(CONF_INSECT_OVERRIDABLE, True, _boolean(), section=Section.INSECT),
 )
 
-CONF_PRESENCE_CONDITIONS = "presence_conditions"
 CONF_HOLD_WHEN_SET_BY_HAND = "hold_when_set_by_hand"
 
 ROOM_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
-    FieldSpec(
-        CONF_PRESENCE_ENTITY,
-        None,
-        selector.EntitySelector(
-            selector.EntitySelectorConfig(
-                domain=["binary_sensor", "input_boolean", "device_tracker", "person"]
-            )
-        ),
-        section=Section.PRESENCE,
-    ),
     FieldSpec(
         CONF_PRESENCE_CLEAR_DELAY,
         120,
@@ -1610,17 +1635,6 @@ ROOM_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
 
 
 _PRESENCE_GATE_SPECS: tuple[FieldSpec, ...] = (
-    # Named rules, ANDed. Another rule can only ever make the automation fire
-    # less often, which is what makes a list of them safe to add to.
-    FieldSpec(
-        CONF_PRESENCE_CONDITIONS,
-        [],
-        selector.SelectSelector(
-            selector.SelectSelectorConfig(options=[], multiple=True)
-        ),
-        options_key="conditions",
-        section=Section.PRESENCE,
-    ),
     # Somebody reached for the switch. The automatic turn-off stands down
     # until they turn the lights off again, at which point it takes over.
     FieldSpec(

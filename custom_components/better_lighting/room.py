@@ -57,7 +57,7 @@ from homeassistant.helpers.sun import get_astral_location
 from homeassistant.util import dt as dt_util
 
 from .adaptive import AdaptiveConfig, SunEventOrderError, compute_for_transition
-from .conditions import Verdict, evaluate
+from .conditions import Condition, Verdict, evaluate
 from .const import (
     DOMAIN,
     NightBehavior,
@@ -253,7 +253,7 @@ class RoomController:
             )
 
         for zone in self.room.zones:
-            if not zone.presence_entity:
+            if not zone.triggers:
                 continue
             watch = ZoneOccupancy(
                 self.hass,
@@ -411,7 +411,7 @@ class RoomController:
         if zone.hold_when_set_by_hand and zone.zone_id in self._zone_held:
             # Already on by hand. Nothing to do, and nothing to take over.
             return False
-        verdict = self.conditions_allow(zone.conditions)
+        verdict = self.rules_allow(zone.rules)
         if not verdict:
             _LOGGER.debug("%s: trigger blocked by %s", zone.name, verdict.blocked_by)
             return False
@@ -1076,18 +1076,13 @@ class RoomController:
 
     # -- presence and windows ---------------------------------------------
 
-    def conditions_allow(self, condition_ids: Sequence[str]) -> Verdict:
-        """Whether every named rule holds right now.
+    def rules_allow(self, rules: Sequence[Condition]) -> Verdict:
+        """Whether every rule holds right now.
 
-        The rules are the hub's, named here by id, and ANDed: another rule can
-        only ever make an automation fire less often. An empty list is a
-        verdict of yes, which is what makes this safe to call unconditionally.
+        ANDed: another rule can only ever make an automation fire less often.
+        An empty list is a verdict of yes, which is what makes this safe to
+        call unconditionally.
         """
-        rules = [
-            rule
-            for condition_id in condition_ids
-            if (rule := self.hub.conditions.get(condition_id)) is not None
-        ]
         if not rules:
             return Verdict(True)
         states = {
@@ -1113,7 +1108,7 @@ class RoomController:
             return False
         if self.is_night and self.room.night_ignore_presence:
             return False
-        if not (verdict := self.conditions_allow(self.room.presence_conditions)):
+        if not (verdict := self.rules_allow(self.room.rules)):
             _LOGGER.debug(
                 "%s: presence blocked by %s", self.room.name, verdict.blocked_by
             )

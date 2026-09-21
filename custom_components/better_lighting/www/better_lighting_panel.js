@@ -1688,15 +1688,6 @@ class BetterLightingPanel extends HTMLElement {
         const preset = (this._hub.color_presets || [])[view.index];
         return [top, { label: preset?.name || this._t("add") }];
       }
-      case "conditions": {
-        const top = {
-          label: this._t("conditions"),
-          go: to({ kind: "conditions" }),
-        };
-        const item = (this._hub.conditions || [])[view.index];
-        if (view.index === undefined) return [top];
-        return [top, { label: item?.name || this._t("condition") }];
-      }
       case "effects": {
         const top = { label: this._t("effects"), go: to({ kind: "effects" }) };
         if (view.index === undefined) return [top];
@@ -1876,10 +1867,6 @@ class BetterLightingPanel extends HTMLElement {
       light_groups: (room?.data.light_groups || []).map((group) => ({
         value: group.group_id,
         label: group.name || group.group_id,
-      })),
-      conditions: (this._hub.conditions || []).map((condition) => ({
-        value: condition.condition_id,
-        label: condition.name || condition.condition_id,
       })),
       room_zones: (room?.data.zones || []).map((zone) => ({
         value: zone.zone_id,
@@ -2210,6 +2197,10 @@ class BetterLightingPanel extends HTMLElement {
         .page-body li.step { align-items:flex-start; gap:12px; }
         .page-body li.step bl-form { flex:1 1 auto; min-width:0; }
         .page-body li.step bl-form::part(fields) { display:flex; }
+        /* A row's caption belongs above it, not beside it: sharing the line
+           with the form squeezed both. */
+        .page-body li.step { flex-wrap:wrap; }
+        .page-body li.step .nested-caption { flex:1 0 100%; order:-1; }
         li[draggable="true"] { cursor:grab; }
         li.dragging { opacity:.4; }
         li.drop-target { outline:2px dashed var(--primary-color); }
@@ -3174,11 +3165,6 @@ class BetterLightingPanel extends HTMLElement {
           }">${icon("mdi:flare")}<span class="grow">${this._t(
             "effects"
           )}</span></li>
-          <li class="section" data-conditions="1" aria-selected="${
-            this._view.kind === "conditions"
-          }">${icon("mdi:filter-check")}<span class="grow">${this._t(
-            "conditions"
-          )}</span></li>
           <li class="section" data-diagnostics="1" aria-selected="${
             this._view.kind === "diagnostics"
           }">${icon("mdi:stethoscope")}<span class="grow">${this._t(
@@ -3358,10 +3344,6 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "effects" };
       this._paint();
     });
-    go(nav.querySelector("li[data-conditions]"), () => {
-      this._view = { kind: "conditions" };
-      this._paint();
-    });
     go(nav.querySelector("li[data-diagnostics]"), () => {
       this._view = { kind: "diagnostics" };
       this._paint();
@@ -3448,8 +3430,6 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintPresets();
       case "effects":
         return this._paintEffects();
-      case "conditions":
-        return this._paintConditions();
       case "hub":
         return this._paintSettings({
           form: this._schema?.forms.hub || [],
@@ -3629,6 +3609,10 @@ class BetterLightingPanel extends HTMLElement {
         this._view = { kind: "room", section: group.section };
         return result;
       },
+      extra:
+        group.section === "presence"
+          ? (into) => this._paintTriggerEditors(into, values)
+          : null,
       // Deleting belongs on the screen that names the room, not on the one
       // about presence sensors.
       remove:
@@ -3830,13 +3814,14 @@ class BetterLightingPanel extends HTMLElement {
       return;
     }
 
+    const values = { ...(items[index] || {}) };
     this._paintSettings({
       form: this._schema?.forms[formKey] || [],
-      values: { ...(items[index] || {}) },
+      values,
       choices: this._choices(room),
       save: async (next) => {
         const list = [...items];
-        list[index] = { ...(items[index] || {}), ...next };
+        list[index] = { ...values, ...next };
         let result;
         try {
           result = await this._call("save_room_collection", {
@@ -3868,10 +3853,14 @@ class BetterLightingPanel extends HTMLElement {
         });
         this._view = { kind: this._view.kind };
       },
-      extra:
-        storageKey === "switches" && index < items.length
-          ? (into) => this._paintSwitchOrder(into, index)
-          : null,
+      extra: (into) => {
+        if (storageKey === "switches" && index < items.length) {
+          this._paintSwitchOrder(into, index);
+        }
+        if (storageKey === "zones") {
+          this._paintTriggerEditors(into, values);
+        }
+      },
     });
   }
 
@@ -4301,34 +4290,10 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /** The house's named colours, stored with the global settings. */
-  _paintConditions() {
-    const conditions = this._hub.conditions || [];
-    this._paintListEditor({
-      items: conditions,
-      formKey: "condition",
-      choices: {},
-      describe: (condition) =>
-        `${this._icon("mdi:filter-check")}<span>${
-          condition.name || "—"
-        }<div class="muted">${this._describeCondition(condition)}</div></span>`,
-      onSave: (next) =>
-        this._call("save_hub", {
-          options: {
-            ...this._hub,
-            conditions: next.map((condition) => ({
-              ...condition,
-              condition_id:
-                condition.condition_id || `condition_${Date.now()}`,
-            })),
-          },
-        }),
-    });
-  }
-
   /** A rule in one line, so the list says what each one actually checks. */
   _describeCondition(condition) {
     const where = condition.condition_entity || "—";
-    switch (condition.kind) {
+    switch (condition.check) {
       case "time_window":
         return `${(condition.window_start || "00:00:00").slice(0, 5)} – ${(
           condition.window_end || "00:00:00"
@@ -4340,6 +4305,111 @@ class BetterLightingPanel extends HTMLElement {
       default:
         return `${where} = ${condition.required_state || "on"}`;
     }
+  }
+
+  /**
+   * A list of small things edited inside a bigger form.
+   *
+   * An effect's steps were this already; a room's triggers and its rules are
+   * the same shape, and saying it three times would be three places for the
+   * add button to drift. The list is mutated in place and handed back through
+   * ``onChange`` so the form that holds it saves it along with everything
+   * else -- these are not lists with a page of their own.
+   */
+  _paintNestedList(into, { title, hint, formKey, items, blank, addLabel, describe }) {
+    const fold = document.createElement("details");
+    fold.open = true;
+    fold.innerHTML = `<summary>${title}</summary>
+      <div class="fold-body">
+        ${hint ? `<p class="muted">${hint}</p>` : ""}
+        <ul class="nested"></ul>
+      </div>`;
+    into.appendChild(fold);
+    const list = fold.querySelector("ul");
+
+    const draw = () => {
+      list.innerHTML = "";
+      items.forEach((item, at) => {
+        const row = document.createElement("li");
+        row.className = "step";
+        if (describe) {
+          const caption = document.createElement("div");
+          caption.className = "muted nested-caption";
+          caption.textContent = describe(item);
+          row.appendChild(caption);
+        }
+        const form = document.createElement("bl-form");
+        form.configure({
+          fields: (this._schema?.forms[formKey] || []).flatMap((g) => g.fields),
+          values: item,
+          labels: this._labels,
+          choices: {},
+          states: this._hass.states,
+          hass: this._hass,
+        });
+        form.addEventListener("value-changed", (event) => {
+          items[at] = { ...items[at], [event.detail.key]: event.detail.value };
+          this._touch();
+          // Redrawn because a field can decide which other fields apply --
+          // a rule between two times asks nothing about an entity.
+          if (describe) draw();
+        });
+        row.appendChild(form);
+
+        const drop = document.createElement("button");
+        drop.className = "flat";
+        drop.title = this._t("delete");
+        drop.innerHTML = this._icon("mdi:delete-outline") || "\u2715";
+        drop.addEventListener("click", () => {
+          items.splice(at, 1);
+          this._touch();
+          draw();
+        });
+        row.appendChild(drop);
+        list.appendChild(row);
+      });
+
+      const adder = document.createElement("li");
+      adder.className = "add";
+      adder.innerHTML = `${this._icon("mdi:plus")}<span class="grow">${addLabel}</span>`;
+      adder.addEventListener("click", () => {
+        items.push({ ...blank });
+        this._touch();
+        draw();
+      });
+      list.appendChild(adder);
+    };
+    draw();
+  }
+
+  /**
+   * The sensors that ask for these lights, and the rules that say whether
+   * they may. Drawn on a room's Presence screen and inside a zone, because
+   * that is where somebody thinks about them.
+   */
+  _paintTriggerEditors(into, values) {
+    const triggers = (values.triggers || []).map((one) => ({ ...one }));
+    const rules = (values.rules || []).map((one) => ({ ...one }));
+    values.triggers = triggers;
+    values.rules = rules;
+
+    this._paintNestedList(into, {
+      title: this._t("triggers"),
+      hint: this._t("triggers_hint"),
+      formKey: "trigger",
+      items: triggers,
+      blank: { trigger_entity: null },
+      addLabel: this._t("add_trigger"),
+    });
+    this._paintNestedList(into, {
+      title: this._t("rules"),
+      hint: this._t("rules_hint"),
+      formKey: "condition",
+      items: rules,
+      blank: { check: "state_is", required_state: "on", unknown_blocks: true },
+      addLabel: this._t("add_rule"),
+      describe: (rule) => this._describeCondition(rule),
+    });
   }
 
   _paintPresets() {

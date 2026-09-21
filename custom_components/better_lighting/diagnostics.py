@@ -102,7 +102,7 @@ def _room_diagnostics(runtime: Any, room_id: str) -> dict[str, Any]:
         "adaptive_override": room.adaptive_override,
         "night_source": room.night_source_entity,
         "night_behavior": room.night_behavior.value,
-        "presence_entity": room.presence_entity,
+        "triggers": [t.entity_id for t in room.triggers],
         "presence_covers": list(room.presence_covers),
         "window_entities": list(room.window_entities),
         "restore_on_power_cycle": room.restore_on_power_cycle.value,
@@ -116,12 +116,9 @@ def _room_diagnostics(runtime: Any, room_id: str) -> dict[str, Any]:
         # a rule is blocking the automation, or a zone is standing apart.
         "held_by_hand": controller.held_by_hand,
         "zones_held_by_hand": sorted(controller.zones_held_by_hand),
-        "conditions": {
-            (rule.name or condition_id): bool(
-                controller.conditions_allow([condition_id])
-            )
-            for condition_id in room.presence_conditions
-            if (rule := runtime.hub.conditions.get(condition_id)) is not None
+        "rules": {
+            (rule.name or rule.kind.value): bool(controller.rules_allow([rule]))
+            for rule in room.rules
         },
         "detached_zones": sorted(controller.detached_zones),
         "mode": controller.mode.value,

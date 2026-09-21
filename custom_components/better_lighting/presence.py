@@ -38,6 +38,7 @@ from homeassistant.core import (
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .const import CoverCondition
+from .triggers import UNREADABLE, active_entities, any_active
 from .zones import Zone
 
 if TYPE_CHECKING:
@@ -80,12 +81,12 @@ class RoomPresence:
                 )
             )
 
-        entity_id = self.room.presence_entity
-        if not entity_id:
+        watched = active_entities(self.room.triggers)
+        if not watched:
             return
-        self._occupied = self._read(entity_id)
+        self._occupied = self._read_triggers()
         self._unsubscribers.append(
-            async_track_state_change_event(self.hass, [entity_id], self._handle_change)
+            async_track_state_change_event(self.hass, watched, self._handle_change)
         )
 
     @callback
@@ -99,7 +100,25 @@ class RoomPresence:
 
     @property
     def has_sensor(self) -> bool:
-        return bool(self.room.presence_entity)
+        return bool(active_entities(self.room.triggers))
+
+    def _read_triggers(self) -> bool | None:
+        """Whether any trigger is asking, or None if none can be read.
+
+        Held rather than guessed: every sensor being unavailable is not
+        evidence that a room is empty.
+        """
+        states = {
+            entity_id: (
+                state.state
+                if (state := self.hass.states.get(entity_id)) is not None
+                else None
+            )
+            for entity_id in active_entities(self.room.triggers)
+        }
+        if all(value in UNREADABLE for value in states.values()):
+            return None
+        return any_active(self.room.triggers, states)
 
     @property
     def occupied(self) -> bool | None:
@@ -153,14 +172,10 @@ class RoomPresence:
 
     @callback
     def _handle_change(self, event: Event[EventStateChangedData]) -> None:
-        new_state = event.data["new_state"]
-        if new_state is None or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            # An unavailable sensor tells us nothing. Holding the previous
-            # answer is safer than inventing a new one.
-            return
-
-        occupied = new_state.state in _OCCUPIED_STATES
-        if occupied == self._occupied:
+        # Asked of the whole set, not of the sensor that moved: with two
+        # triggers on one room, one going quiet is not the room going quiet.
+        occupied = self._read_triggers()
+        if occupied is None or occupied == self._occupied:
             return
         self._occupied = occupied
 
@@ -262,15 +277,32 @@ class ZoneOccupancy:
 
     @callback
     def async_setup(self) -> None:
-        entity_id = self.zone.presence_entity
-        if not entity_id:
+        watched = active_entities(self.zone.triggers)
+        if not watched:
             return
-        state = self.hass.states.get(entity_id)
-        if state is not None and state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            self._occupied = state.state in _OCCUPIED_STATES
+        self._occupied = self._read_triggers()
         self._unsubscribe = async_track_state_change_event(
-            self.hass, [entity_id], self._handle_change
+            self.hass, watched, self._handle_change
         )
+
+    def _read_triggers(self) -> bool | None:
+        """Whether any of this zone's triggers is asking.
+
+        None when not one of them can be read, which is held rather than
+        guessed: a sensor that has dropped out is not evidence of an empty
+        desk.
+        """
+        states = {
+            entity_id: (
+                state.state
+                if (state := self.hass.states.get(entity_id)) is not None
+                else None
+            )
+            for entity_id in active_entities(self.zone.triggers)
+        }
+        if all(value in UNREADABLE for value in states.values()):
+            return None
+        return any_active(self.zone.triggers, states)
 
     @callback
     def async_shutdown(self) -> None:
@@ -282,17 +314,14 @@ class ZoneOccupancy:
     @property
     def occupied(self) -> bool:
         """Whether somebody is here. A zone with no sensor never is."""
-        return bool(self.zone.presence_entity) and self._occupied is True
+        return bool(self.zone.triggers) and self._occupied is True
 
     @callback
     def _handle_change(self, event: Event[EventStateChangedData]) -> None:
-        new_state = event.data["new_state"]
-        if new_state is None or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            # An unavailable sensor tells us nothing; holding the previous
-            # answer is safer than inventing one.
-            return
-        occupied = new_state.state in _OCCUPIED_STATES
-        if occupied == self._occupied:
+        # Asked of the whole set: with a motion sensor and a door on one zone,
+        # the motion stopping is not the zone going quiet.
+        occupied = self._read_triggers()
+        if occupied is None or occupied == self._occupied:
             return
         self._occupied = occupied
 

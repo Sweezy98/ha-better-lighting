@@ -39,6 +39,7 @@ from .const import (
     ROOM_SCENE_SPECS,
     ROOM_SPECS,
     ROOM_ZONE_SPECS,
+    TRIGGER_SPECS,
     FieldSpec,
     Section,
     mode_rule_specs,
@@ -332,7 +333,10 @@ def schema(language: str = "en") -> dict[str, Any]:
         "scene": _table(ROOM_SCENE_SPECS),
         "preset": _table(COLOR_PRESET_SPECS),
         "effect": _table(EFFECT_SPECS),
+        # Both are edited inside the room or zone they belong to rather than
+        # on a screen of their own, so these are the fields of one row.
         "condition": _table(CONDITION_SPECS),
+        "trigger": _table(TRIGGER_SPECS),
         "effect_step": _table(EFFECT_STEP_SPECS),
         # Rules are built per mode, since their state picker depends on the
         # states that mode defines, and their scene picker on the room the

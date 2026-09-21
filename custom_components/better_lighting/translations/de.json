@@ -176,7 +176,7 @@
       "condition_form": {
         "title": "Bedingung",
         "data": {
-          "kind": "Was geprüft wird",
+          "check": "Was geprüft wird",
           "condition_entity": "Entität",
           "threshold": "Schwellwert",
           "required_state": "Erforderlicher Zustand",
@@ -185,7 +185,9 @@
           "unknown_blocks": "Sperren, solange nicht lesbar",
           "presence_conditions": "Bedingungen",
           "hold_when_set_by_hand": "Halten, wenn von Hand geschaltet",
-          "light_on_trigger": "Diese Zone beleuchten, solange der Sensor aktiv ist"
+          "light_on_trigger": "Diese Zone beleuchten, solange der Sensor aktiv ist",
+          "trigger_entity": "Sensor",
+          "active_state": "Gilt als aktiv bei"
         },
         "data_description": {
           "condition_entity": "Der Sensor oder Helfer, den diese Regel prüft. Ein Lux-Sensor für die Helligkeit, ein Helfer für einen Urlaubsschalter, sun.sun für Tageslicht.",
@@ -194,7 +196,9 @@
           "unknown_blocks": "An: ein nicht erreichbarer Sensor stoppt die Automatik — die ehrliche Lesart von „nur erlaubt, wenn jede Regel zutrifft“. Aus für einen wackeligen Sensor, der niemanden im Dunkeln stehen lassen soll.",
           "presence_conditions": "Regeln, die alle zutreffen müssen. Eine weitere Regel kann nur dafür sorgen, dass seltener geschaltet wird.",
           "hold_when_set_by_hand": "Jemand hat den Schalter benutzt, also tritt das automatische Ausschalten zurück, bis das Licht wieder von Hand ausgeschaltet wird.",
-          "light_on_trigger": "Solange der Sensor oben an ist, bleibt dieses Licht an. Geht er aus, wird nach der Verzögerung oben ausgeschaltet; ein neues Signal währenddessen startet die Wartezeit neu."
+          "light_on_trigger": "Solange der Sensor oben an ist, bleibt dieses Licht an. Geht er aus, wird nach der Verzögerung oben ausgeschaltet; ein neues Signal währenddessen startet die Wartezeit neu.",
+          "trigger_entity": "Ein Bewegungsmelder, eine Tür, ein Rollladen, ein Anwesenheitsschalter — alles, was sagt, dass hier etwas passiert.",
+          "active_state": "Leer lassen für die üblichen Werte: on, open, home oder detected. Einen Zustand angeben, wenn der Sensor etwas anderes meldet."
         }
       }
     },
@@ -924,6 +928,128 @@
           "data": {
             "room_zone": "Zone"
           }
+        },
+        "room_triggers": {
+          "title": "Auslöser",
+          "description": "Die Sensoren, die diesen Raum anfordern. Einer genügt:\n\n{room_triggers}",
+          "menu_options": {
+            "add_trigger": "Auslöser hinzufügen",
+            "edit_trigger": "Auslöser ändern",
+            "remove_trigger": "Auslöser entfernen",
+            "menu": "⬅️ Zurück"
+          }
+        },
+        "add_trigger": {
+          "title": "Auslöser",
+          "description": "Ein Sensor, der Licht für diesen Raum anfordert. Solange mindestens ein Auslöser aktiv ist, bleibt das Licht an; wird der letzte frei, geht es nach der Verzögerung auf der Anwesenheitsseite aus.",
+          "data": {
+            "trigger_entity": "Sensor",
+            "active_state": "Gilt als aktiv bei"
+          },
+          "data_description": {
+            "trigger_entity": "Ein Bewegungsmelder, eine Tür, ein Rollladen, ein Anwesenheitsschalter — alles, was sagt, dass hier etwas passiert.",
+            "active_state": "Leer lassen für die üblichen Werte: on, open, home oder detected. Einen Zustand angeben, wenn der Sensor etwas anderes meldet."
+          }
+        },
+        "trigger_form": {
+          "title": "Auslöser",
+          "description": "Ein Sensor, der Licht für diesen Raum anfordert. Solange mindestens ein Auslöser aktiv ist, bleibt das Licht an; wird der letzte frei, geht es nach der Verzögerung auf der Anwesenheitsseite aus.",
+          "data": {
+            "trigger_entity": "Sensor",
+            "active_state": "Gilt als aktiv bei"
+          },
+          "data_description": {
+            "trigger_entity": "Ein Bewegungsmelder, eine Tür, ein Rollladen, ein Anwesenheitsschalter — alles, was sagt, dass hier etwas passiert.",
+            "active_state": "Leer lassen für die üblichen Werte: on, open, home oder detected. Einen Zustand angeben, wenn der Sensor etwas anderes meldet."
+          }
+        },
+        "edit_trigger": {
+          "title": "Welcher Auslöser?",
+          "description": "{room_triggers}",
+          "data": {
+            "trigger": "Auslöser"
+          }
+        },
+        "remove_trigger": {
+          "title": "Welcher Auslöser?",
+          "description": "{room_triggers}",
+          "data": {
+            "trigger": "Auslöser"
+          }
+        },
+        "room_rules": {
+          "title": "Regeln",
+          "description": "Alle müssen zutreffen, bevor ein Auslöser schalten darf:\n\n{room_rules}",
+          "menu_options": {
+            "add_rule": "Regel hinzufügen",
+            "edit_rule": "Regel ändern",
+            "remove_rule": "Regel entfernen",
+            "menu": "⬅️ Zurück"
+          }
+        },
+        "add_rule": {
+          "title": "Regel",
+          "description": "Eine Bedingung, die zutreffen muss, bevor ein Auslöser schalten darf. Eine weitere Regel kann nur dafür sorgen, dass seltener geschaltet wird.",
+          "data": {
+            "check": "Was geprüft wird",
+            "condition_entity": "Entität",
+            "threshold": "Schwellwert",
+            "required_state": "Erforderlicher Zustand",
+            "window_start": "Von",
+            "window_end": "Bis",
+            "unknown_blocks": "Sperren, solange nicht lesbar",
+            "presence_conditions": "Bedingungen",
+            "hold_when_set_by_hand": "Halten, wenn von Hand geschaltet",
+            "light_on_trigger": "Diese Zone beleuchten, solange der Sensor aktiv ist"
+          },
+          "data_description": {
+            "condition_entity": "Der Sensor oder Helfer, den diese Regel prüft. Ein Lux-Sensor für die Helligkeit, ein Helfer für einen Urlaubsschalter, sun.sun für Tageslicht.",
+            "required_state": "Der Zustand, der die Automatik durchlässt. Meist on oder off, aber jeder mögliche Zustand — below_horizon bei sun.sun heißt „nach Einbruch der Dunkelheit“ ohne Lux-Sensor.",
+            "window_start": "Der Beginn des Zeitfensters. Ein Ende vor dem Beginn läuft über Mitternacht, 22:00 bis 06:00 ist also eine Nacht.",
+            "unknown_blocks": "An: ein nicht erreichbarer Sensor stoppt die Automatik — die ehrliche Lesart von „nur erlaubt, wenn jede Regel zutrifft“. Aus für einen wackeligen Sensor, der niemanden im Dunkeln stehen lassen soll.",
+            "presence_conditions": "Regeln, die alle zutreffen müssen. Eine weitere Regel kann nur dafür sorgen, dass seltener geschaltet wird.",
+            "hold_when_set_by_hand": "Jemand hat den Schalter benutzt, also tritt das automatische Ausschalten zurück, bis das Licht wieder von Hand ausgeschaltet wird.",
+            "light_on_trigger": "Solange der Sensor oben an ist, bleibt dieses Licht an. Geht er aus, wird nach der Verzögerung oben ausgeschaltet; ein neues Signal währenddessen startet die Wartezeit neu."
+          }
+        },
+        "rule_form": {
+          "title": "Regel",
+          "description": "Eine Bedingung, die zutreffen muss, bevor ein Auslöser schalten darf. Eine weitere Regel kann nur dafür sorgen, dass seltener geschaltet wird.",
+          "data": {
+            "check": "Was geprüft wird",
+            "condition_entity": "Entität",
+            "threshold": "Schwellwert",
+            "required_state": "Erforderlicher Zustand",
+            "window_start": "Von",
+            "window_end": "Bis",
+            "unknown_blocks": "Sperren, solange nicht lesbar",
+            "presence_conditions": "Bedingungen",
+            "hold_when_set_by_hand": "Halten, wenn von Hand geschaltet",
+            "light_on_trigger": "Diese Zone beleuchten, solange der Sensor aktiv ist"
+          },
+          "data_description": {
+            "condition_entity": "Der Sensor oder Helfer, den diese Regel prüft. Ein Lux-Sensor für die Helligkeit, ein Helfer für einen Urlaubsschalter, sun.sun für Tageslicht.",
+            "required_state": "Der Zustand, der die Automatik durchlässt. Meist on oder off, aber jeder mögliche Zustand — below_horizon bei sun.sun heißt „nach Einbruch der Dunkelheit“ ohne Lux-Sensor.",
+            "window_start": "Der Beginn des Zeitfensters. Ein Ende vor dem Beginn läuft über Mitternacht, 22:00 bis 06:00 ist also eine Nacht.",
+            "unknown_blocks": "An: ein nicht erreichbarer Sensor stoppt die Automatik — die ehrliche Lesart von „nur erlaubt, wenn jede Regel zutrifft“. Aus für einen wackeligen Sensor, der niemanden im Dunkeln stehen lassen soll.",
+            "presence_conditions": "Regeln, die alle zutreffen müssen. Eine weitere Regel kann nur dafür sorgen, dass seltener geschaltet wird.",
+            "hold_when_set_by_hand": "Jemand hat den Schalter benutzt, also tritt das automatische Ausschalten zurück, bis das Licht wieder von Hand ausgeschaltet wird.",
+            "light_on_trigger": "Solange der Sensor oben an ist, bleibt dieses Licht an. Geht er aus, wird nach der Verzögerung oben ausgeschaltet; ein neues Signal währenddessen startet die Wartezeit neu."
+          }
+        },
+        "edit_rule": {
+          "title": "Welche Regel?",
+          "description": "{room_rules}",
+          "data": {
+            "rule": "Regel"
+          }
+        },
+        "remove_rule": {
+          "title": "Welche Regel?",
+          "description": "{room_rules}",
+          "data": {
+            "rule": "Regel"
+          }
         }
       },
       "error": {
@@ -936,7 +1062,8 @@
         "profile_exists": "Für diese Lampe gibt es bereits einen Abgleich.",
         "binding_entity_required": "Die Entität auswählen, auf die der Schalter meldet.",
         "group_cycle": "Eine Gruppe kann sich nicht selbst enthalten, weder direkt noch über eine andere Gruppe.",
-        "light_in_two_zones": "Eine Lampe kann nur in einer Zone eines Raums sein."
+        "light_in_two_zones": "Eine Lampe kann nur in einer Zone eines Raums sein.",
+        "entity_required": "Ein Sensor ist erforderlich."
       },
       "abort": {
         "reconfigure_successful": "Raum aktualisiert."

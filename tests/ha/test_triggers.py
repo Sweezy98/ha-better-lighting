@@ -32,16 +32,14 @@ LUX = "sensor.drive_lux"
 HOLIDAY = "input_boolean.holiday"
 
 DARK_ENOUGH = {
-    "condition_id": "dark",
     "name": "Dark enough",
-    "kind": "below",
+    "check": "below",
     "condition_entity": LUX,
     "threshold": 10,
 }
 NOT_ON_HOLIDAY = {
-    "condition_id": "home",
     "name": "Not on holiday",
-    "kind": "state_is",
+    "check": "state_is",
     "condition_entity": HOLIDAY,
     "required_state": "off",
 }
@@ -51,17 +49,17 @@ async def _build(
     hass: HomeAssistant,
     *,
     sensor: str = MOTION,
+    sensors: list[str] | None = None,
     hold: int = 60,
-    conditions: list[str] | None = None,
-    hub_conditions: list[dict] | None = None,
+    rules: list[dict] | None = None,
     hold_by_hand: bool = True,
 ):
     """An outdoor room whose one zone is driven by a sensor."""
     await setup_members(hass, [MemberLight("Drive", is_on=False)])
-    hass.states.async_set(sensor, "off")
+    for one in sensors or [sensor]:
+        hass.states.async_set(one, "off")
 
     entry = hub_entry(
-        options={"conditions": hub_conditions or []},
         subentries_data=[
             room_subentry(
                 "Outside",
@@ -71,10 +69,12 @@ async def _build(
                         "zone_id": "drive",
                         "name": "Drive",
                         "lights": ["light.drive"],
-                        "presence_entity": sensor,
+                        "triggers": [
+                            {"trigger_entity": one} for one in sensors or [sensor]
+                        ],
                         "presence_clear_delay": hold,
                         "light_on_trigger": True,
-                        "presence_conditions": conditions or [],
+                        "rules": rules or [],
                         "hold_when_set_by_hand": hold_by_hand,
                     }
                 ],
@@ -301,7 +301,7 @@ class TestConditions:
     async def test_a_dark_enough_rule_lets_it_through(
         self, hass: HomeAssistant
     ) -> None:
-        await _build(hass, conditions=["dark"], hub_conditions=[DARK_ENOUGH])
+        await _build(hass, rules=[DARK_ENOUGH])
         await _set(hass, LUX, "4")
 
         await _set(hass, MOTION, "on")
@@ -309,7 +309,7 @@ class TestConditions:
         assert _lit(hass)
 
     async def test_a_bright_drive_is_left_alone(self, hass: HomeAssistant) -> None:
-        await _build(hass, conditions=["dark"], hub_conditions=[DARK_ENOUGH])
+        await _build(hass, rules=[DARK_ENOUGH])
         await _set(hass, LUX, "400")
 
         await _set(hass, MOTION, "on")
@@ -320,8 +320,7 @@ class TestConditions:
         """Implicitly ANDed: one more rule can only make it fire less often."""
         await _build(
             hass,
-            conditions=["dark", "home"],
-            hub_conditions=[DARK_ENOUGH, NOT_ON_HOLIDAY],
+            rules=[DARK_ENOUGH, NOT_ON_HOLIDAY],
         )
         await _set(hass, LUX, "4")
         await _set(hass, HOLIDAY, "on")
@@ -333,8 +332,7 @@ class TestConditions:
     async def test_both_holding_lets_it_through(self, hass: HomeAssistant) -> None:
         await _build(
             hass,
-            conditions=["dark", "home"],
-            hub_conditions=[DARK_ENOUGH, NOT_ON_HOLIDAY],
+            rules=[DARK_ENOUGH, NOT_ON_HOLIDAY],
         )
         await _set(hass, LUX, "4")
         await _set(hass, HOLIDAY, "off")
@@ -347,7 +345,7 @@ class TestConditions:
         self, hass: HomeAssistant
     ) -> None:
         """Allowed only if every rule passes, and this one has not passed."""
-        await _build(hass, conditions=["dark"], hub_conditions=[DARK_ENOUGH])
+        await _build(hass, rules=[DARK_ENOUGH])
         await _set(hass, LUX, "unavailable")
 
         await _set(hass, MOTION, "on")
@@ -359,24 +357,9 @@ class TestConditions:
     ) -> None:
         await _build(
             hass,
-            conditions=["dark"],
-            hub_conditions=[{**DARK_ENOUGH, "unknown_blocks": False}],
+            rules=[{**DARK_ENOUGH, "unknown_blocks": False}],
         )
         await _set(hass, LUX, "unavailable")
-
-        await _set(hass, MOTION, "on")
-
-        assert _lit(hass)
-
-    async def test_a_rule_named_but_not_defined_is_ignored(
-        self, hass: HomeAssistant
-    ) -> None:
-        """A deleted rule shortens the list rather than jamming the automation.
-
-        The same leniency a controller has about a deleted scene: dangling
-        references are a repair issue, not a reason to stop working.
-        """
-        await _build(hass, conditions=["gone"], hub_conditions=[])
 
         await _set(hass, MOTION, "on")
 
@@ -394,12 +377,11 @@ class TestAWholeRoomOnASensor:
         await setup_members(hass, [MemberLight("Garage Main", is_on=False)])
         hass.states.async_set(DOOR, "off")
         entry = hub_entry(
-            options={"conditions": [DARK_ENOUGH]},
             subentries_data=[
                 room_subentry(
                     "Garage",
                     ["light.garage_main"],
-                    presence_entity=DOOR,
+                    triggers=[{"trigger_entity": DOOR}],
                     presence_clear_delay=300,
                     presence_on_action="adaptive",
                     presence_off_action="turn_off",
@@ -435,7 +417,7 @@ class TestAWholeRoomOnASensor:
     async def test_a_condition_gates_the_whole_room_too(
         self, hass: HomeAssistant
     ) -> None:
-        await self._build(hass, presence_conditions=["dark"])
+        await self._build(hass, rules=[DARK_ENOUGH])
         await _set(hass, LUX, "400")
 
         await _set(hass, DOOR, "on")
@@ -443,7 +425,7 @@ class TestAWholeRoomOnASensor:
         assert not self._lit(hass)
 
     async def test_and_lets_it_through_when_it_holds(self, hass: HomeAssistant) -> None:
-        await self._build(hass, presence_conditions=["dark"])
+        await self._build(hass, rules=[DARK_ENOUGH])
         await _set(hass, LUX, "4")
 
         await _set(hass, DOOR, "on")
@@ -467,3 +449,74 @@ class TestAWholeRoomOnASensor:
         await _wait(hass, freezer, 301)
 
         assert self._lit(hass)
+
+
+class TestSeveralTriggersAtOnce:
+    """A porch with a motion sensor and a door: either is reason to light it."""
+
+    async def test_either_one_lights_it(self, hass: HomeAssistant) -> None:
+        await _build(hass, sensors=[MOTION, DOOR])
+
+        await _set(hass, DOOR, "on")
+
+        assert _lit(hass)
+
+    async def test_one_going_quiet_is_not_the_room_going_quiet(
+        self, hass: HomeAssistant, freezer: FrozenDateTimeFactory
+    ) -> None:
+        """The reason the whole set is read rather than the sensor that moved."""
+        await _build(hass, sensors=[MOTION, DOOR], hold=60)
+        await _set(hass, MOTION, "on")
+        await _set(hass, DOOR, "on")
+
+        await _set(hass, MOTION, "off")
+        await _wait(hass, freezer, 120)
+
+        assert _lit(hass)
+
+    async def test_the_timer_starts_when_the_last_one_clears(
+        self, hass: HomeAssistant, freezer: FrozenDateTimeFactory
+    ) -> None:
+        await _build(hass, sensors=[MOTION, DOOR], hold=60)
+        await _set(hass, MOTION, "on")
+        await _set(hass, DOOR, "on")
+        await _set(hass, MOTION, "off")
+
+        await _set(hass, DOOR, "off")
+        await _wait(hass, freezer, 61)
+
+        assert not _lit(hass)
+
+    async def test_a_cover_counts_as_open_without_being_told(
+        self, hass: HomeAssistant
+    ) -> None:
+        """A garage door is a cover, and "open" needs no configuring."""
+        await _build(hass, sensors=["cover.garage"])
+
+        await _set(hass, "cover.garage", "open")
+
+        assert _lit(hass)
+
+    async def test_a_room_stored_with_one_sensor_still_works(
+        self, hass: HomeAssistant
+    ) -> None:
+        """Triggers became a list; a room set up before that is not touched."""
+        await setup_members(hass, [MemberLight("Drive", is_on=False)])
+        hass.states.async_set(MOTION, "off")
+        entry = hub_entry(
+            subentries_data=[
+                room_subentry(
+                    "Outside",
+                    ["light.drive"],
+                    presence_entity=MOTION,
+                    presence_clear_delay=60,
+                    presence_on_action="adaptive",
+                    presence_off_action="turn_off",
+                )
+            ]
+        )
+        await setup_hub(hass, entry)
+
+        await _set(hass, MOTION, "on")
+
+        assert _lit(hass)

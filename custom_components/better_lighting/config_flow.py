@@ -28,12 +28,14 @@ from .const import (
     COLOR_FORMAT_NONE,
     COLOR_FORMAT_PRESET,
     COLOR_PRESET_SPECS,
+    CONDITION_SPECS,
     CONF_BRIGHTNESS_OFFSET_PCT,
     CONF_BRIGHTNESS_PCT,
     CONF_COLOR_FORMAT,
     CONF_COLOR_PRESETS,
     CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
+    CONF_CONDITION_KIND,
     CONF_GROUP_GROUPS,
     CONF_GROUP_ID,
     CONF_GROUP_LIGHTS,
@@ -73,6 +75,9 @@ from .const import (
     CONF_STATES,
     CONF_SWITCH_ID,
     CONF_TRANSITION,
+    CONF_TRIGGER_ACTIVE_STATE,
+    CONF_TRIGGER_ENTITY,
+    CONF_TRIGGERS,
     CONF_WINDOW_ENTITIES,
     CONF_ZONE_DETACH_ON_MODE,
     CONF_ZONE_ID,
@@ -86,6 +91,7 @@ from .const import (
     ROOM_SCENE_SPECS,
     ROOM_SPECS,
     ROOM_ZONE_SPECS,
+    TRIGGER_SPECS,
     FieldSpec,
     RestoreOnPowerCycle,
     Section,
@@ -458,6 +464,10 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         self._editing_light_group: int | None = None
         self._room_zones: list[dict[str, Any]] = []
         self._editing_room_zone: int | None = None
+        self._room_triggers: list[dict[str, Any]] = []
+        self._editing_trigger: int | None = None
+        self._room_rules: list[dict[str, Any]] = []
+        self._editing_rule: int | None = None
         self._switches: list[dict[str, Any]] = []
         self._switch: dict[str, Any] = {}
         self._editing_switch: int | None = None
@@ -502,6 +512,10 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             dict(s) for s in (subentry.data.get(CONF_ROOM_GROUPS) or [])
         ]
         self._room_zones = [dict(s) for s in (subentry.data.get(CONF_ROOM_ZONES) or [])]
+        self._room_triggers = [
+            dict(s) for s in (subentry.data.get(CONF_TRIGGERS) or [])
+        ]
+        self._room_rules = [dict(s) for s in (subentry.data.get(CONF_RULES) or [])]
 
     async def _async_essentials(
         self, user_input: dict[str, Any] | None, *, subentry: Any
@@ -680,6 +694,8 @@ class RoomSubentryFlow(ConfigSubentryFlow):
                 "power",
                 # What it does about people and windows.
                 "presence",
+                "room_triggers",
+                "room_rules",
                 "insect",
                 # What belongs to it.
                 "scenes",
@@ -1285,6 +1301,220 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             description_placeholders={"calibrations": self._calibrations_summary()},
         )
 
+    # -- the sensors that ask for this room, and the rules that let them ----
+    #
+    # Two menu loops of the same shape. They are separate rather than one
+    # screen because they combine differently: any trigger is enough, every
+    # rule has to hold.
+
+    async def async_step_room_triggers(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_trigger"]
+        if self._room_triggers:
+            options += ["edit_trigger", "remove_trigger"]
+        options.append("menu")
+        return self.async_show_menu(
+            step_id="room_triggers",
+            menu_options=options,
+            description_placeholders={"room_triggers": self._triggers_summary()},
+        )
+
+    def _triggers_summary(self) -> str:
+        if not self._room_triggers:
+            return "\u2014"
+        return "\n".join(
+            f"{one.get(CONF_TRIGGER_ENTITY)}"
+            + (
+                f" (when {one[CONF_TRIGGER_ACTIVE_STATE]})"
+                if one.get(CONF_TRIGGER_ACTIVE_STATE)
+                else ""
+            )
+            for one in self._room_triggers
+        )
+
+    def _trigger_picker(self) -> vol.Schema:
+        return self._index_picker(
+            "trigger",
+            [str(one.get(CONF_TRIGGER_ENTITY) or "?") for one in self._room_triggers],
+        )
+
+    async def async_step_add_trigger(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_trigger_form("add_trigger", user_input, index=None)
+
+    async def async_step_edit_trigger(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            self._editing_trigger = int(user_input["trigger"])
+            return await self.async_step_trigger_form()
+        return self.async_show_form(
+            step_id="edit_trigger",
+            data_schema=self._trigger_picker(),
+            description_placeholders={"room_triggers": self._triggers_summary()},
+        )
+
+    async def async_step_trigger_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_trigger_form(
+            "trigger_form", user_input, index=self._editing_trigger
+        )
+
+    async def _async_trigger_form(
+        self, step_id: str, user_input: dict[str, Any] | None, *, index: int | None
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors = post_validate(
+                TRIGGER_SPECS, flatten_sections(TRIGGER_SPECS, user_input)
+            )
+            if not cleaned.get(CONF_TRIGGER_ENTITY):
+                errors[CONF_TRIGGER_ENTITY] = "entity_required"
+            if not errors:
+                if index is None:
+                    self._room_triggers.append(cleaned)
+                else:
+                    self._room_triggers[index] = cleaned
+                self._editing_trigger = None
+                return await self.async_step_room_triggers()
+
+        current = user_input
+        if current is None and index is not None:
+            current = dict(self._room_triggers[index])
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=build_schema(TRIGGER_SPECS, current),
+            errors=errors,
+        )
+
+    async def async_step_remove_trigger(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            position = int(user_input["trigger"])
+            if 0 <= position < len(self._room_triggers):
+                self._room_triggers.pop(position)
+            return await self.async_step_room_triggers()
+        return self.async_show_form(
+            step_id="remove_trigger",
+            data_schema=self._trigger_picker(),
+            description_placeholders={"room_triggers": self._triggers_summary()},
+        )
+
+    async def async_step_room_rules(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        options = ["add_rule"]
+        if self._room_rules:
+            options += ["edit_rule", "remove_rule"]
+        options.append("menu")
+        return self.async_show_menu(
+            step_id="room_rules",
+            menu_options=options,
+            description_placeholders={"room_rules": self._rules_summary()},
+        )
+
+    def _rules_summary(self) -> str:
+        if not self._room_rules:
+            return "\u2014"
+        return "\n".join(
+            str(one.get(CONF_NAME) or one.get(CONF_CONDITION_KIND) or "?")
+            for one in self._room_rules
+        )
+
+    def _rule_picker(self) -> vol.Schema:
+        return self._index_picker(
+            "rule",
+            [
+                str(one.get(CONF_NAME) or one.get(CONF_CONDITION_KIND) or "?")
+                for one in self._room_rules
+            ],
+        )
+
+    async def async_step_add_rule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_rule_form("add_rule", user_input, index=None)
+
+    async def async_step_edit_rule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            self._editing_rule = int(user_input["rule"])
+            return await self.async_step_rule_form()
+        return self.async_show_form(
+            step_id="edit_rule",
+            data_schema=self._rule_picker(),
+            description_placeholders={"room_rules": self._rules_summary()},
+        )
+
+    async def async_step_rule_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        return await self._async_rule_form(
+            "rule_form", user_input, index=self._editing_rule
+        )
+
+    async def _async_rule_form(
+        self, step_id: str, user_input: dict[str, Any] | None, *, index: int | None
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cleaned, errors = post_validate(
+                CONDITION_SPECS, flatten_sections(CONDITION_SPECS, user_input)
+            )
+            if not errors:
+                if index is None:
+                    self._room_rules.append(cleaned)
+                else:
+                    self._room_rules[index] = cleaned
+                self._editing_rule = None
+                return await self.async_step_room_rules()
+
+        current = user_input
+        if current is None and index is not None:
+            current = dict(self._room_rules[index])
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=build_schema(CONDITION_SPECS, current),
+            errors=errors,
+        )
+
+    async def async_step_remove_rule(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        if user_input is not None:
+            position = int(user_input["rule"])
+            if 0 <= position < len(self._room_rules):
+                self._room_rules.pop(position)
+            return await self.async_step_room_rules()
+        return self.async_show_form(
+            step_id="remove_rule",
+            data_schema=self._rule_picker(),
+            description_placeholders={"room_rules": self._rules_summary()},
+        )
+
+    @staticmethod
+    def _index_picker(field: str, labels: list[str]) -> vol.Schema:
+        """Pick one row of a list by position."""
+        return vol.Schema(
+            {
+                vol.Required(field): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"value": str(index), "label": label}
+                            for index, label in enumerate(labels)
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        sort=False,
+                    )
+                )
+            }
+        )
+
     # -- parts of this room that can be told something different ------------
 
     async def async_step_room_zones(
@@ -1883,6 +2113,8 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             CONF_ROOM_PROFILES: self._profiles,
             CONF_ROOM_GROUPS: self._light_groups,
             CONF_ROOM_ZONES: self._room_zones,
+            CONF_TRIGGERS: self._room_triggers,
+            CONF_RULES: self._room_rules,
             CONF_ROOM_SWITCHES: self._switches,
         }
         title = data[CONF_NAME]

@@ -61,7 +61,6 @@ from .const import (
     CONF_CONDITION_STATE,
     CONF_CONDITION_THRESHOLD,
     CONF_CONDITION_UNKNOWN_BLOCKS,
-    CONF_CONDITIONS,
     CONF_COVER_CONDITION,
     CONF_COVER_UNKNOWN_BLOCKS,
     CONF_DEFERRED_TTL_MIN,
@@ -132,7 +131,6 @@ from .const import (
     CONF_OVERRIDE_MODE,
     CONF_PREFER_RGB_COLOR,
     CONF_PRESENCE_CLEAR_DELAY,
-    CONF_PRESENCE_CONDITIONS,
     CONF_PRESENCE_COVERS,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_OFF_ACTION,
@@ -188,6 +186,9 @@ from .const import (
     CONF_TIME_DARK,
     CONF_TIME_LIGHT,
     CONF_TRANSITION,
+    CONF_TRIGGER_ACTIVE_STATE,
+    CONF_TRIGGER_ENTITY,
+    CONF_TRIGGERS,
     CONF_WARM_WHITE,
     CONF_WINDOW_ENTITIES,
     CONF_WRAP_AROUND,
@@ -237,6 +238,7 @@ from .scenes import (
     SceneOverride,
     UnsupportedColorPolicy,
 )
+from .triggers import SensorTrigger
 from .zones import Zone
 
 if TYPE_CHECKING:
@@ -272,9 +274,6 @@ class HubConfig:
     # Effects the user has written, by id. The built-in ones are not here:
     # they are the same for every house and live in code.
     effects: Mapping[str, Effect]
-    # Named rules, by id. What gates an automation rather than what it
-    # does, so a room or a zone names the ones that apply to it.
-    conditions: Mapping[str, Condition]
     time_dark: int
     time_light: int
     sunrise_offset: int
@@ -308,11 +307,6 @@ class HubConfig:
                 str(entry.get(CONF_EFFECT_ID) or ""): effect_from_mapping(entry)
                 for entry in (raw.get(CONF_EFFECTS) or ())
                 if entry.get(CONF_EFFECT_ID)
-            },
-            conditions={
-                str(entry[CONF_CONDITION_ID]): hub_condition(entry)
-                for entry in (raw.get(CONF_CONDITIONS) or ())
-                if entry.get(CONF_CONDITION_ID)
             },
             time_dark=int(raw[CONF_TIME_DARK]),
             time_light=int(raw[CONF_TIME_LIGHT]),
@@ -380,7 +374,10 @@ class RoomConfig:
     resume_max_age_minutes: int
 
     # Only the occupancy input here; what presence *does* is milestone 5.
-    presence_entity: str | None
+    # The sensors that ask for this room, ORed: a porch with a motion
+    # sensor and a door is lit by either. Stored as a list, and read from
+    # the single sensor a room used to hold when there is no list yet.
+    triggers: tuple[SensorTrigger, ...]
     presence_clear_delay: int
     presence_covers: tuple[str, ...]
     cover_condition: CoverCondition
@@ -390,9 +387,9 @@ class RoomConfig:
     presence_on_only_when_off: bool
     presence_off_action: PresenceOffAction
     presence_respects_manual: bool
-    # Named house-wide rules, ANDed, that have to hold before presence acts at
-    # all: after dark, dark enough, the holiday switch is off.
-    presence_conditions: tuple[str, ...]
+    # The rules that say whether those sensors may act, ANDed and read where
+    # they are set rather than named from a list somewhere else.
+    rules: tuple[Condition, ...]
     # Somebody reached for the switch. The automatic turn-off stands down
     # until the lights are off again, and then takes over as before.
     hold_when_set_by_hand: bool
@@ -557,7 +554,7 @@ class RoomConfig:
                 raw[CONF_RESTORE_ON_POWER_CYCLE]
             ),
             resume_max_age_minutes=int(raw[CONF_RESUME_MAX_AGE_MIN]),
-            presence_entity=raw.get(CONF_PRESENCE_ENTITY) or None,
+            triggers=_triggers(raw),
             presence_clear_delay=int(raw[CONF_PRESENCE_CLEAR_DELAY]),
             presence_covers=tuple(raw.get(CONF_PRESENCE_COVERS) or ()),
             cover_condition=CoverCondition(raw[CONF_COVER_CONDITION]),
@@ -567,7 +564,7 @@ class RoomConfig:
             presence_on_only_when_off=bool(raw[CONF_PRESENCE_ON_ONLY_WHEN_OFF]),
             presence_off_action=PresenceOffAction(raw[CONF_PRESENCE_OFF_ACTION]),
             presence_respects_manual=bool(raw[CONF_PRESENCE_RESPECTS_MANUAL]),
-            presence_conditions=tuple(raw.get(CONF_PRESENCE_CONDITIONS) or ()),
+            rules=_rules(raw),
             hold_when_set_by_hand=bool(raw.get(CONF_HOLD_WHEN_SET_BY_HAND, True)),
             window_entities=tuple(raw.get(CONF_WINDOW_ENTITIES) or ()),
             insect_action=InsectAction(
@@ -1169,8 +1166,34 @@ def room_light_group(raw: dict[str, Any]) -> LightGroup:
     )
 
 
-def hub_condition(raw: dict[str, Any]) -> Condition:
-    """One named rule, as stored on the hub."""
+def _triggers(raw: dict[str, Any]) -> tuple[SensorTrigger, ...]:
+    """The sensors that ask for these lights.
+
+    A single ``presence_entity`` is read as one trigger, so a room set up
+    before triggers were a list carries on working without being touched.
+    """
+    stored = [
+        SensorTrigger(
+            entity_id=str(entry.get(CONF_TRIGGER_ENTITY) or ""),
+            active_state=str(entry.get(CONF_TRIGGER_ACTIVE_STATE) or ""),
+        )
+        for entry in (raw.get(CONF_TRIGGERS) or ())
+        if entry.get(CONF_TRIGGER_ENTITY)
+    ]
+    if stored:
+        return tuple(stored)
+    if legacy := raw.get(CONF_PRESENCE_ENTITY):
+        return (SensorTrigger(str(legacy)),)
+    return ()
+
+
+def _rules(raw: dict[str, Any]) -> tuple[Condition, ...]:
+    """The rules that say whether those sensors may act."""
+    return tuple(condition_from(entry) for entry in (raw.get(CONF_RULES) or ()))
+
+
+def condition_from(raw: dict[str, Any]) -> Condition:
+    """One rule, as stored inside the room or zone it gates."""
     return Condition(
         condition_id=str(raw.get(CONF_CONDITION_ID) or ""),
         name=str(raw.get(CONF_NAME) or ""),
@@ -1191,12 +1214,12 @@ def room_zone(raw: dict[str, Any]) -> Zone:
         name=str(raw.get(CONF_NAME) or ""),
         icon=str(raw.get(CONF_ICON) or "mdi:sofa-outline"),
         lights=tuple(raw.get(CONF_ZONE_LIGHTS) or ()),
-        presence_entity=str(raw.get(CONF_PRESENCE_ENTITY) or "") or None,
+        triggers=_triggers(raw),
         presence_clear_delay=int(raw.get(CONF_PRESENCE_CLEAR_DELAY, 120)),
         detach_on_mode=bool(raw.get(CONF_ZONE_DETACH_ON_MODE, False)),
         detached_scene_id=str(raw.get(CONF_ZONE_DETACHED_SCENE) or "") or None,
         light_on_trigger=bool(raw.get(CONF_ZONE_LIGHT_ON_TRIGGER, False)),
-        conditions=tuple(raw.get(CONF_PRESENCE_CONDITIONS) or ()),
+        rules=_rules(raw),
         hold_when_set_by_hand=bool(raw.get(CONF_HOLD_WHEN_SET_BY_HAND, True)),
         overrides=frozenset(raw.get(CONF_ZONE_OVERRIDES) or ()),
         settings={

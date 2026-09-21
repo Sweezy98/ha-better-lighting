@@ -176,7 +176,7 @@
       "condition_form": {
         "title": "Condition",
         "data": {
-          "kind": "What to check",
+          "check": "What to check",
           "condition_entity": "Entity",
           "threshold": "Threshold",
           "required_state": "Required state",
@@ -185,7 +185,9 @@
           "unknown_blocks": "Block while it cannot be read",
           "presence_conditions": "Conditions",
           "hold_when_set_by_hand": "Hold when set by hand",
-          "light_on_trigger": "Light this zone while the sensor is active"
+          "light_on_trigger": "Light this zone while the sensor is active",
+          "trigger_entity": "Sensor",
+          "active_state": "Counts as active when"
         },
         "data_description": {
           "condition_entity": "The sensor or helper this rule looks at. A lux sensor for brightness, a helper for a holiday switch, sun.sun for daylight.",
@@ -194,7 +196,9 @@
           "unknown_blocks": "On, an unavailable sensor stops the automation, which is the honest reading of \"allowed only if every rule passes\". Off for a flaky sensor that should not leave somebody on an unlit path.",
           "presence_conditions": "Rules that all have to hold before this may act. Adding another can only ever make it happen less often.",
           "hold_when_set_by_hand": "Somebody reached for the switch, so the automatic turn-off stands down until the lights are turned off again by hand.",
-          "light_on_trigger": "While the sensor above is on, these lights stay on. When it clears they go off after the delay above, and a fresh trigger during that wait starts it again."
+          "light_on_trigger": "While the sensor above is on, these lights stay on. When it clears they go off after the delay above, and a fresh trigger during that wait starts it again.",
+          "trigger_entity": "A motion sensor, a door, a cover, a presence toggle — anything that says something is happening here.",
+          "active_state": "Leave empty for the usual: on, open, home or detected. Name a state for a sensor that reports something else."
         }
       }
     },
@@ -924,6 +928,128 @@
           "data": {
             "room_zone": "Zone"
           }
+        },
+        "room_triggers": {
+          "title": "Triggers",
+          "description": "The sensors that ask for this room. Any one of them is enough:\n\n{room_triggers}",
+          "menu_options": {
+            "add_trigger": "Add a trigger",
+            "edit_trigger": "Change a trigger",
+            "remove_trigger": "Remove a trigger",
+            "menu": "⬅️ Back"
+          }
+        },
+        "add_trigger": {
+          "title": "Trigger",
+          "description": "A sensor that asks for this room to be lit. While at least one trigger is active the lights stay on; when the last one clears they go off after the delay on the Presence screen.",
+          "data": {
+            "trigger_entity": "Sensor",
+            "active_state": "Counts as active when"
+          },
+          "data_description": {
+            "trigger_entity": "A motion sensor, a door, a cover, a presence toggle — anything that says something is happening here.",
+            "active_state": "Leave empty for the usual: on, open, home or detected. Name a state for a sensor that reports something else."
+          }
+        },
+        "trigger_form": {
+          "title": "Trigger",
+          "description": "A sensor that asks for this room to be lit. While at least one trigger is active the lights stay on; when the last one clears they go off after the delay on the Presence screen.",
+          "data": {
+            "trigger_entity": "Sensor",
+            "active_state": "Counts as active when"
+          },
+          "data_description": {
+            "trigger_entity": "A motion sensor, a door, a cover, a presence toggle — anything that says something is happening here.",
+            "active_state": "Leave empty for the usual: on, open, home or detected. Name a state for a sensor that reports something else."
+          }
+        },
+        "edit_trigger": {
+          "title": "Which trigger?",
+          "description": "{room_triggers}",
+          "data": {
+            "trigger": "Trigger"
+          }
+        },
+        "remove_trigger": {
+          "title": "Which trigger?",
+          "description": "{room_triggers}",
+          "data": {
+            "trigger": "Trigger"
+          }
+        },
+        "room_rules": {
+          "title": "Rules",
+          "description": "All of these have to hold before a trigger may fire:\n\n{room_rules}",
+          "menu_options": {
+            "add_rule": "Add a rule",
+            "edit_rule": "Change a rule",
+            "remove_rule": "Remove a rule",
+            "menu": "⬅️ Back"
+          }
+        },
+        "add_rule": {
+          "title": "Rule",
+          "description": "A condition that has to hold before a trigger may fire. Adding another can only ever make the automation happen less often.",
+          "data": {
+            "check": "What to check",
+            "condition_entity": "Entity",
+            "threshold": "Threshold",
+            "required_state": "Required state",
+            "window_start": "From",
+            "window_end": "Until",
+            "unknown_blocks": "Block while it cannot be read",
+            "presence_conditions": "Conditions",
+            "hold_when_set_by_hand": "Hold when set by hand",
+            "light_on_trigger": "Light this zone while the sensor is active"
+          },
+          "data_description": {
+            "condition_entity": "The sensor or helper this rule looks at. A lux sensor for brightness, a helper for a holiday switch, sun.sun for daylight.",
+            "required_state": "The state that lets the automation through. Usually on or off, but anything a state can be — below_horizon for sun.sun is how to say \"after dark\" without a lux sensor.",
+            "window_start": "The start of the window. An end earlier than the start runs through midnight, so 22:00 until 06:00 is one night.",
+            "unknown_blocks": "On, an unavailable sensor stops the automation, which is the honest reading of \"allowed only if every rule passes\". Off for a flaky sensor that should not leave somebody on an unlit path.",
+            "presence_conditions": "Rules that all have to hold before this may act. Adding another can only ever make it happen less often.",
+            "hold_when_set_by_hand": "Somebody reached for the switch, so the automatic turn-off stands down until the lights are turned off again by hand.",
+            "light_on_trigger": "While the sensor above is on, these lights stay on. When it clears they go off after the delay above, and a fresh trigger during that wait starts it again."
+          }
+        },
+        "rule_form": {
+          "title": "Rule",
+          "description": "A condition that has to hold before a trigger may fire. Adding another can only ever make the automation happen less often.",
+          "data": {
+            "check": "What to check",
+            "condition_entity": "Entity",
+            "threshold": "Threshold",
+            "required_state": "Required state",
+            "window_start": "From",
+            "window_end": "Until",
+            "unknown_blocks": "Block while it cannot be read",
+            "presence_conditions": "Conditions",
+            "hold_when_set_by_hand": "Hold when set by hand",
+            "light_on_trigger": "Light this zone while the sensor is active"
+          },
+          "data_description": {
+            "condition_entity": "The sensor or helper this rule looks at. A lux sensor for brightness, a helper for a holiday switch, sun.sun for daylight.",
+            "required_state": "The state that lets the automation through. Usually on or off, but anything a state can be — below_horizon for sun.sun is how to say \"after dark\" without a lux sensor.",
+            "window_start": "The start of the window. An end earlier than the start runs through midnight, so 22:00 until 06:00 is one night.",
+            "unknown_blocks": "On, an unavailable sensor stops the automation, which is the honest reading of \"allowed only if every rule passes\". Off for a flaky sensor that should not leave somebody on an unlit path.",
+            "presence_conditions": "Rules that all have to hold before this may act. Adding another can only ever make it happen less often.",
+            "hold_when_set_by_hand": "Somebody reached for the switch, so the automatic turn-off stands down until the lights are turned off again by hand.",
+            "light_on_trigger": "While the sensor above is on, these lights stay on. When it clears they go off after the delay above, and a fresh trigger during that wait starts it again."
+          }
+        },
+        "edit_rule": {
+          "title": "Which rule?",
+          "description": "{room_rules}",
+          "data": {
+            "rule": "Rule"
+          }
+        },
+        "remove_rule": {
+          "title": "Which rule?",
+          "description": "{room_rules}",
+          "data": {
+            "rule": "Rule"
+          }
         }
       },
       "error": {
@@ -936,7 +1062,8 @@
         "profile_exists": "This light already has a calibration.",
         "binding_entity_required": "Pick the entity your switch publishes to.",
         "group_cycle": "A group cannot contain itself, directly or through another group.",
-        "light_in_two_zones": "A light can only be in one zone of a room."
+        "light_in_two_zones": "A light can only be in one zone of a room.",
+        "entity_required": "A sensor is required."
       },
       "abort": {
         "reconfigure_successful": "Room updated."

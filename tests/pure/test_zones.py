@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from custom_components.better_lighting.triggers import SensorTrigger
 from custom_components.better_lighting.zones import (
     Zone,
     overlapping_lights,
@@ -14,7 +15,7 @@ DESK = Zone(
     "desk",
     "Desk",
     lights=("light.desk",),
-    presence_entity="binary_sensor.desk",
+    triggers=(SensorTrigger("binary_sensor.desk"),),
     detach_on_mode=True,
 )
 LIVING_ROOM = ["light.lamp", "light.strip", "light.desk", "light.ceiling"]

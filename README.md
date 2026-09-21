@@ -88,6 +88,8 @@ Inside a room:
 | **Scene** | A list of this room's lights and what each should look like — brightness, colour, off, or left alone. Nothing is house-wide: a reading scene for the living room and one for the bedroom are different lists of different lights. Build one by hand, or **capture the room as it is now**. |
 | **Light switch** | A switch on this room's wall, with its own ordered list of this room's scenes. Understands rockers: the lower half gets its own actions, and holding either end dims or brightens. |
 | **Light calibration** | Per-light minimum, maximum and offsets, to match a mismatched bulb to its neighbours. |
+| **Triggers** | The sensors that ask for this room's lights — motion, a door, a cover. Any one of them is enough. |
+| **Rules** | What has to hold before a trigger may fire — after dark, dark enough, not on holiday. All of them have to hold. |
 | **Light group** | Several of this room's lights under one name — the three bulbs in one fitting, a row of ceiling spots. Given a Zigbee group entity, the whole group changes in one command instead of arriving one bulb at a time. Groups can hold groups, so a 3×3 of spots is three rows. |
 | **Zone** | A part of this room that may be told something different — the couch and the desk of one living room. A zone follows its room until it has a reason not to. |
 
@@ -96,7 +98,6 @@ In the global config:
 | Global | What it is |
 |---|---|
 | **Colour presets** | The house's named colours — "TV orange", "candle" — so a colour used in several scenes is described once and picked by name. |
-| **Conditions** | Named rules an automation is allowed to act under — "after dark", "dark enough", "not on holiday". A room or a zone names the ones that apply to it, and they are ANDed. |
 | **Night mode helper** | The one helper that says the house is asleep. Each room decides for itself whether that dims it, darkens it, applies a scene, or does nothing. |
 
 ### Zones: the desk that does not go dark for the film
@@ -131,26 +132,30 @@ room, and saving is refused if two zones claim the same bulb.
 
 ### Motion and door sensors
 
-A motion sensor on a drive and a garage door are the same shape, and both are a
-sensor plus a hold:
+Every room and every zone has its own **Triggers** and its own **Rules**, set
+where you are already looking at that room.
 
-- **While the sensor is on**, the lights stay on. A garage door works because
-  "open" is `on`.
-- **When it clears**, they go off after the hold you set. A fresh trigger during
-  that wait starts the wait again, because the timer is cancelled the moment the
-  sensor comes back.
-- **If somebody reached for the switch** — before the sensor ever fired or half
-  way through the hold — the clock stops. The lights stay on until they are
-  turned off by hand, and then the automation has them back. Turn *Hold when set
-  by hand* off if you would rather the timer always won.
+**Triggers** are the sensors that ask for the lights. A drive has motion, a
+garage has a door, a porch may have both — so they are **ORed**:
 
-A whole room does this with its **Presence** settings; a single zone does it with
-*Light this zone while the sensor is active*, which is how one motion sensor
-lights the drive without touching the rest of the outside.
+- **While any trigger is active**, the lights stay on.
+- **When the last one clears**, they go off after the delay you set. A fresh
+  trigger during that wait starts the wait again.
+- **If somebody reached for the switch** — before a sensor ever fired or half way
+  through the wait — the clock stops. The lights stay on until they are turned
+  off by hand, and then the automation has them back. Turn *Hold when set by
+  hand* off if you would rather the timer always won.
 
-**Conditions** decide whether any of it is allowed to happen. They are named,
-house-wide and reusable — "after dark" is one rule wanted by every outdoor
-trigger — and a room or a zone names the ones that apply to it:
+"Active" needs no configuring for the usual sensors: `on`, `open`, `home` and
+`detected` all count, so a binary sensor, a cover and a device tracker are each a
+trigger as they are. Name a state outright for anything that reports something
+else.
+
+A whole room lights from its triggers through its **Presence** settings; a zone
+does it with *Light this zone while the sensor is active*, which is how one
+motion sensor lights the drive without touching the rest of the outside.
+
+**Rules** decide whether a trigger may fire, and belong to the same room or zone:
 
 | Rule | Checks |
 |---|---|
@@ -158,11 +163,12 @@ trigger — and a room or a zone names the ones that apply to it:
 | A number below / above a threshold | A lux sensor, a temperature, anything numeric. |
 | An entity in a particular state | A helper that arms the automation, a presence toggle that disarms it, or `sun.sun` being `below_horizon` — which is "after dark" without owning a lux sensor. |
 
-They are **ANDed**: every rule named has to hold, so adding one can only ever
-make an automation fire less often, never more. A rule whose sensor cannot be
-read blocks by default — "allowed only if every rule passes", and a rule nobody
-can evaluate has not passed — and each rule can be told to let it through
-instead, for a flaky sensor that should not leave somebody on an unlit path.
+They are **ANDed**: every rule has to hold, so adding one can only ever make an
+automation fire less often, never more — which is the opposite of triggers, where
+one more can only make it fire more. A rule whose sensor cannot be read blocks by
+default — "allowed only if every rule passes", and a rule nobody can evaluate has
+not passed — and each rule can be told to let it through instead, for a flaky
+sensor that should not leave somebody on an unlit path.
 
 ### Light groups: three bulbs, told once
 

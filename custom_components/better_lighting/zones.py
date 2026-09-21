@@ -28,6 +28,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 
+from .conditions import Condition
+from .triggers import SensorTrigger
+
 __all__ = ["Zone", "ZonePlan", "plan_units"]
 
 
@@ -43,8 +46,9 @@ class Zone:
     lights: tuple[str, ...] = ()
 
     # -- when this zone stops following the room ---------------------------
-    # Occupancy. A desk with somebody at it is the case this exists for.
-    presence_entity: str | None = None
+    # The sensors that speak for this zone, ORed. A desk with somebody at it,
+    # a drive with motion on it, a garage with its door open.
+    triggers: tuple[SensorTrigger, ...] = ()
     # Seconds of no occupancy before the zone rejoins the room, so standing up
     # to fetch a coffee does not put the desk back into the film.
     presence_clear_delay: int = 120
@@ -60,9 +64,9 @@ class Zone:
     # lights stay on; when it clears they go off after `presence_clear_delay`,
     # and a fresh trigger during that wait starts the wait again.
     light_on_trigger: bool = False
-    # Named house-wide rules, ANDed, that have to hold before any of that
-    # happens. Ids rather than the rules themselves: they are the hub's.
-    conditions: tuple[str, ...] = ()
+    # The rules that say whether those sensors may act, ANDed and read where
+    # they are set rather than named from a list somewhere else.
+    rules: tuple[Condition, ...] = ()
     # Somebody reached for the switch. The automatic turn-off stands down
     # until the lights are off again, and then takes over as before.
     hold_when_set_by_hand: bool = True

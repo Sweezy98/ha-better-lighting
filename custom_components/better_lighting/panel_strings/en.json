@@ -39,7 +39,7 @@
   "room_zones": "Zones",
   "room_zone": "Zone",
   "zone_overlap": "A light can only be in one zone of a room.",
-  "rules": "Actions",
+  "rules": "Rules",
   "what_it_cycles": "Scenes it cycles",
   "cycle_hint": "Each press moves one place down, then wraps.",
   "all_scenes_used": "Every scene in this room is already in the list.",
@@ -123,8 +123,6 @@
   "discard_changes_hint": "What was changed on this screen will be lost.",
   "discard": "Discard",
   "effects": "Effects",
-  "conditions": "Conditions",
-  "condition": "Condition",
   "n_steps": "{count} steps",
   "effect_solid": "Solid",
   "effect_flash": "Flash",
@@ -138,5 +136,10 @@
   "try_it": "Try it",
   "stop_it": "Stop",
   "enable": "Switch on",
-  "disable": "Switch off"
+  "disable": "Switch off",
+  "triggers": "Triggers",
+  "triggers_hint": "Any one of these turns the lights on. While at least one is active they stay on; when the last one clears they go off after the delay above.",
+  "add_trigger": "Add a trigger",
+  "rules_hint": "All of these have to hold before a trigger may fire. Adding another can only ever make it happen less often.",
+  "add_rule": "Add a rule"
 }

@@ -123,6 +123,8 @@
   "discard_changes_hint": "What was changed on this screen will be lost.",
   "discard": "Discard",
   "effects": "Effects",
+  "conditions": "Conditions",
+  "condition": "Condition",
   "n_steps": "{count} steps",
   "effect_solid": "Solid",
   "effect_flash": "Flash",

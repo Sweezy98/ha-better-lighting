@@ -23,6 +23,7 @@ from typing import Any
 
 from .const import (
     COLOR_PRESET_SPECS,
+    CONDITION_SPECS,
     CONF_GROUP_GROUPS,
     CONF_ROOM_ID,
     CONF_RULE_STATES,
@@ -331,6 +332,7 @@ def schema(language: str = "en") -> dict[str, Any]:
         "scene": _table(ROOM_SCENE_SPECS),
         "preset": _table(COLOR_PRESET_SPECS),
         "effect": _table(EFFECT_SPECS),
+        "condition": _table(CONDITION_SPECS),
         "effect_step": _table(EFFECT_STEP_SPECS),
         # Rules are built per mode, since their state picker depends on the
         # states that mode defines, and their scene picker on the room the

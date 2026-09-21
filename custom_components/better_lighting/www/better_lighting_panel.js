@@ -1688,6 +1688,15 @@ class BetterLightingPanel extends HTMLElement {
         const preset = (this._hub.color_presets || [])[view.index];
         return [top, { label: preset?.name || this._t("add") }];
       }
+      case "conditions": {
+        const top = {
+          label: this._t("conditions"),
+          go: to({ kind: "conditions" }),
+        };
+        const item = (this._hub.conditions || [])[view.index];
+        if (view.index === undefined) return [top];
+        return [top, { label: item?.name || this._t("condition") }];
+      }
       case "effects": {
         const top = { label: this._t("effects"), go: to({ kind: "effects" }) };
         if (view.index === undefined) return [top];
@@ -1867,6 +1876,10 @@ class BetterLightingPanel extends HTMLElement {
       light_groups: (room?.data.light_groups || []).map((group) => ({
         value: group.group_id,
         label: group.name || group.group_id,
+      })),
+      conditions: (this._hub.conditions || []).map((condition) => ({
+        value: condition.condition_id,
+        label: condition.name || condition.condition_id,
       })),
       room_zones: (room?.data.zones || []).map((zone) => ({
         value: zone.zone_id,
@@ -3161,6 +3174,11 @@ class BetterLightingPanel extends HTMLElement {
           }">${icon("mdi:flare")}<span class="grow">${this._t(
             "effects"
           )}</span></li>
+          <li class="section" data-conditions="1" aria-selected="${
+            this._view.kind === "conditions"
+          }">${icon("mdi:filter-check")}<span class="grow">${this._t(
+            "conditions"
+          )}</span></li>
           <li class="section" data-diagnostics="1" aria-selected="${
             this._view.kind === "diagnostics"
           }">${icon("mdi:stethoscope")}<span class="grow">${this._t(
@@ -3340,6 +3358,10 @@ class BetterLightingPanel extends HTMLElement {
       this._view = { kind: "effects" };
       this._paint();
     });
+    go(nav.querySelector("li[data-conditions]"), () => {
+      this._view = { kind: "conditions" };
+      this._paint();
+    });
     go(nav.querySelector("li[data-diagnostics]"), () => {
       this._view = { kind: "diagnostics" };
       this._paint();
@@ -3426,6 +3448,8 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintPresets();
       case "effects":
         return this._paintEffects();
+      case "conditions":
+        return this._paintConditions();
       case "hub":
         return this._paintSettings({
           form: this._schema?.forms.hub || [],
@@ -4277,6 +4301,47 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /** The house's named colours, stored with the global settings. */
+  _paintConditions() {
+    const conditions = this._hub.conditions || [];
+    this._paintListEditor({
+      items: conditions,
+      formKey: "condition",
+      choices: {},
+      describe: (condition) =>
+        `${this._icon("mdi:filter-check")}<span>${
+          condition.name || "—"
+        }<div class="muted">${this._describeCondition(condition)}</div></span>`,
+      onSave: (next) =>
+        this._call("save_hub", {
+          options: {
+            ...this._hub,
+            conditions: next.map((condition) => ({
+              ...condition,
+              condition_id:
+                condition.condition_id || `condition_${Date.now()}`,
+            })),
+          },
+        }),
+    });
+  }
+
+  /** A rule in one line, so the list says what each one actually checks. */
+  _describeCondition(condition) {
+    const where = condition.condition_entity || "—";
+    switch (condition.kind) {
+      case "time_window":
+        return `${(condition.window_start || "00:00:00").slice(0, 5)} – ${(
+          condition.window_end || "00:00:00"
+        ).slice(0, 5)}`;
+      case "below":
+        return `${where} < ${condition.threshold}`;
+      case "above":
+        return `${where} > ${condition.threshold}`;
+      default:
+        return `${where} = ${condition.required_state || "on"}`;
+    }
+  }
+
   _paintPresets() {
     const presets = this._hub.color_presets || [];
     this._paintListEditor({

@@ -55,6 +55,18 @@ class Zone:
     # which is the sensible answer for a desk somebody is working at.
     detached_scene_id: str | None = None
 
+    # -- when this zone's own sensor drives its own lights -----------------
+    # The motion-sensor and garage-door case. While the sensor is active these
+    # lights stay on; when it clears they go off after `presence_clear_delay`,
+    # and a fresh trigger during that wait starts the wait again.
+    light_on_trigger: bool = False
+    # Named house-wide rules, ANDed, that have to hold before any of that
+    # happens. Ids rather than the rules themselves: they are the hub's.
+    conditions: tuple[str, ...] = ()
+    # Somebody reached for the switch. The automatic turn-off stands down
+    # until the lights are off again, and then takes over as before.
+    hold_when_set_by_hand: bool = True
+
     # -- what this zone answers for itself ---------------------------------
     # Sections the zone overrides rather than inherits. Everything not named
     # here follows the room, which is the point of a zone rather than a room.

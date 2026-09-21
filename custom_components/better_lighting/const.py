@@ -17,6 +17,7 @@ from typing import Any
 from homeassistant.components.light import VALID_TRANSITION
 from homeassistant.helpers import selector
 
+from .conditions import ConditionKind
 from .session import OptedOutOnExit, RestoreMode, RoomAction
 
 DOMAIN = "better_lighting"
@@ -801,6 +802,7 @@ CONF_ZONE_LIGHTS = "lights"
 CONF_ZONE_DETACH_ON_MODE = "detach_on_mode"
 CONF_ZONE_DETACHED_SCENE = "detached_scene_id"
 CONF_ZONE_OVERRIDES = "overrides"
+CONF_ZONE_LIGHT_ON_TRIGGER = "light_on_trigger"
 CONF_GROUP_ID = "group_id"
 CONF_GROUP_LIGHTS = "lights"
 CONF_GROUP_GROUPS = "groups"
@@ -851,6 +853,100 @@ LIGHT_GROUP_SPECS: tuple[FieldSpec, ...] = (
 # Effects the user has written, kept beside the colour presets: both are
 # house-wide vocabularies that scenes and services pick from by name.
 CONF_EFFECTS = "effects"
+# Named rules an automation can be gated on: "after dark", "nobody home", "the
+# drive is actually dark". House-wide and reusable for the same reason colour
+# presets are -- one rule wanted by every outdoor trigger, described once.
+CONF_CONDITIONS = "conditions"
+CONF_CONDITION_ID = "condition_id"
+CONF_CONDITION_KIND = "kind"
+CONF_CONDITION_ENTITY = "condition_entity"
+CONF_CONDITION_THRESHOLD = "threshold"
+CONF_CONDITION_START = "window_start"
+CONF_CONDITION_END = "window_end"
+CONF_CONDITION_STATE = "required_state"
+CONF_CONDITION_UNKNOWN_BLOCKS = "unknown_blocks"
+
+_NEEDS_ENTITY = (
+    CONF_CONDITION_KIND,
+    (
+        ConditionKind.BELOW.value,
+        ConditionKind.ABOVE.value,
+        ConditionKind.STATE_IS.value,
+    ),
+)
+_NEEDS_NUMBER = (
+    CONF_CONDITION_KIND,
+    (ConditionKind.BELOW.value, ConditionKind.ABOVE.value),
+)
+
+CONDITION_SPECS: tuple[FieldSpec, ...] = (
+    FieldSpec(
+        CONF_NAME,
+        None,
+        selector.TextSelector(selector.TextSelectorConfig()),
+        required=True,
+    ),
+    FieldSpec(
+        CONF_CONDITION_KIND,
+        ConditionKind.STATE_IS.value,
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[kind.value for kind in ConditionKind],
+                mode="dropdown",
+                translation_key="condition_kind",
+            )
+        ),
+    ),
+    FieldSpec(
+        CONF_CONDITION_ENTITY,
+        None,
+        selector.EntitySelector(selector.EntitySelectorConfig()),
+        depends_on=_NEEDS_ENTITY,
+    ),
+    FieldSpec(
+        CONF_CONDITION_THRESHOLD,
+        10,
+        selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0, max=100000, step="any", mode=selector.NumberSelectorMode.BOX
+            )
+        ),
+        depends_on=_NEEDS_NUMBER,
+    ),
+    # Free text rather than on/off, because the useful answers are not always
+    # either: naming `sun.sun` and "below_horizon" is how to say "after dark"
+    # without owning a lux sensor.
+    FieldSpec(
+        CONF_CONDITION_STATE,
+        "on",
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=["on", "off", "home", "not_home", "below_horizon"],
+                mode="dropdown",
+                custom_value=True,
+            )
+        ),
+        depends_on=(CONF_CONDITION_KIND, (ConditionKind.STATE_IS.value,)),
+    ),
+    FieldSpec(
+        CONF_CONDITION_START,
+        "00:00:00",
+        selector.TimeSelector(selector.TimeSelectorConfig()),
+        depends_on=(CONF_CONDITION_KIND, (ConditionKind.TIME_WINDOW.value,)),
+    ),
+    FieldSpec(
+        CONF_CONDITION_END,
+        "00:00:00",
+        selector.TimeSelector(selector.TimeSelectorConfig()),
+        depends_on=(CONF_CONDITION_KIND, (ConditionKind.TIME_WINDOW.value,)),
+    ),
+    FieldSpec(
+        CONF_CONDITION_UNKNOWN_BLOCKS,
+        True,
+        _boolean(),
+        depends_on=_NEEDS_ENTITY,
+    ),
+)
 CONF_EFFECT_ID = "effect_id"
 CONF_EFFECT_STEPS = "steps"
 CONF_EFFECT_REPEAT = "repeat"
@@ -1448,6 +1544,9 @@ ROOM_INSECT_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(CONF_INSECT_OVERRIDABLE, True, _boolean(), section=Section.INSECT),
 )
 
+CONF_PRESENCE_CONDITIONS = "presence_conditions"
+CONF_HOLD_WHEN_SET_BY_HAND = "hold_when_set_by_hand"
+
 ROOM_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_PRESENCE_ENTITY,
@@ -1510,6 +1609,31 @@ ROOM_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
 )
 
 
+_PRESENCE_GATE_SPECS: tuple[FieldSpec, ...] = (
+    # Named rules, ANDed. Another rule can only ever make the automation fire
+    # less often, which is what makes a list of them safe to add to.
+    FieldSpec(
+        CONF_PRESENCE_CONDITIONS,
+        [],
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(options=[], multiple=True)
+        ),
+        options_key="conditions",
+        section=Section.PRESENCE,
+    ),
+    # Somebody reached for the switch. The automatic turn-off stands down
+    # until they turn the lights off again, at which point it takes over.
+    FieldSpec(
+        CONF_HOLD_WHEN_SET_BY_HAND,
+        True,
+        _boolean(),
+        section=Section.PRESENCE,
+    ),
+)
+
+ROOM_PRESENCE_SPECS = (*ROOM_PRESENCE_SPECS, *_PRESENCE_GATE_SPECS)
+
+
 ROOM_ZONE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(
         CONF_NAME,
@@ -1566,6 +1690,17 @@ ROOM_ZONE_SPECS: tuple[FieldSpec, ...] = (
         section=Section.PRESENCE,
         depends_on=(CONF_ZONE_DETACH_ON_MODE, (True,)),
     ),
+    # The motion-sensor and garage-door case, one level down: while the
+    # sensor above is active these lights stay on, and when it clears they go
+    # off after the delay above. Re-triggering while the delay runs starts it
+    # again, because the timer is cancelled the moment the sensor comes back.
+    FieldSpec(
+        CONF_ZONE_LIGHT_ON_TRIGGER,
+        False,
+        _boolean(),
+        section=Section.PRESENCE,
+    ),
+    *_PRESENCE_GATE_SPECS,
     # A zone may answer for its own curve, the same way a room may answer for
     # its own rather than the hub's: the switch is `adaptive_override`, and
     # with it off every value below is ignored and the room's curve applies.

@@ -231,6 +231,7 @@ class TestEverySettingIsReachable:
             "preset",
             "effect",
             "effect_step",
+            "condition",
             "rule",
         }
         # Every field the config flow has, the panel can draw.

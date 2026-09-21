@@ -172,6 +172,30 @@
           "level": "Ein Anteil der Helligkeit, die dem Effekt übergeben wird — so passt dieselbe Form für eine Benachrichtigung und für eine gedimmte Szene.",
           "repeat": "An für eine Form, die die vorgegebene Zeit füllt; aus für eine, die einmal abläuft und dann stehen bleibt."
         }
+      },
+      "condition_form": {
+        "title": "Bedingung",
+        "data": {
+          "kind": "Was geprüft wird",
+          "condition_entity": "Entität",
+          "threshold": "Schwellwert",
+          "required_state": "Erforderlicher Zustand",
+          "window_start": "Von",
+          "window_end": "Bis",
+          "unknown_blocks": "Sperren, solange nicht lesbar",
+          "presence_conditions": "Bedingungen",
+          "hold_when_set_by_hand": "Halten, wenn von Hand geschaltet",
+          "light_on_trigger": "Diese Zone beleuchten, solange der Sensor aktiv ist"
+        },
+        "data_description": {
+          "condition_entity": "Der Sensor oder Helfer, den diese Regel prüft. Ein Lux-Sensor für die Helligkeit, ein Helfer für einen Urlaubsschalter, sun.sun für Tageslicht.",
+          "required_state": "Der Zustand, der die Automatik durchlässt. Meist on oder off, aber jeder mögliche Zustand — below_horizon bei sun.sun heißt „nach Einbruch der Dunkelheit“ ohne Lux-Sensor.",
+          "window_start": "Der Beginn des Zeitfensters. Ein Ende vor dem Beginn läuft über Mitternacht, 22:00 bis 06:00 ist also eine Nacht.",
+          "unknown_blocks": "An: ein nicht erreichbarer Sensor stoppt die Automatik — die ehrliche Lesart von „nur erlaubt, wenn jede Regel zutrifft“. Aus für einen wackeligen Sensor, der niemanden im Dunkeln stehen lassen soll.",
+          "presence_conditions": "Regeln, die alle zutreffen müssen. Eine weitere Regel kann nur dafür sorgen, dass seltener geschaltet wird.",
+          "hold_when_set_by_hand": "Jemand hat den Schalter benutzt, also tritt das automatische Ausschalten zurück, bis das Licht wieder von Hand ausgeschaltet wird.",
+          "light_on_trigger": "Solange der Sensor oben an ist, bleibt dieses Licht an. Geht er aus, wird nach der Verzögerung oben ausgeschaltet; ein neues Signal währenddessen startet die Wartezeit neu."
+        }
       }
     },
     "error": {
@@ -1258,6 +1282,14 @@
     },
     "effect": {
       "options": {}
+    },
+    "condition_kind": {
+      "options": {
+        "time_window": "Zwischen zwei Uhrzeiten",
+        "below": "Ein Wert unter einem Schwellwert",
+        "above": "Ein Wert über einem Schwellwert",
+        "state_is": "Eine Entität in einem bestimmten Zustand"
+      }
     }
   },
   "entity": {

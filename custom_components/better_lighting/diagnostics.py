@@ -111,6 +111,19 @@ def _room_diagnostics(runtime: Any, room_id: str) -> dict[str, Any]:
         return data
 
     data |= {
+        # "Why did my light not go off?" is the question this page exists for,
+        # and these three hold every answer to it: somebody is holding it on,
+        # a rule is blocking the automation, or a zone is standing apart.
+        "held_by_hand": controller.held_by_hand,
+        "zones_held_by_hand": sorted(controller.zones_held_by_hand),
+        "conditions": {
+            (rule.name or condition_id): bool(
+                controller.conditions_allow([condition_id])
+            )
+            for condition_id in room.presence_conditions
+            if (rule := runtime.hub.conditions.get(condition_id)) is not None
+        },
+        "detached_zones": sorted(controller.detached_zones),
         "mode": controller.mode.value,
         "effective_mode": controller.effective_mode.value,
         "active_scene_id": controller.active_scene_id,

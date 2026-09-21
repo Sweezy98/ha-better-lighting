@@ -20,7 +20,7 @@ import datetime
 import hashlib
 import logging
 import zoneinfo
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -57,6 +57,7 @@ from homeassistant.helpers.sun import get_astral_location
 from homeassistant.util import dt as dt_util
 
 from .adaptive import AdaptiveConfig, SunEventOrderError, compute_for_transition
+from .conditions import Verdict, evaluate
 from .const import (
     DOMAIN,
     NightBehavior,
@@ -163,6 +164,11 @@ class RoomController:
         # the room. Present only for zones somebody has pressed a switch for;
         # an empty dict is the normal case.
         self._zone_intent: dict[str, tuple[RoomMode, str | None]] = {}
+        # Somebody reached for the switch, so the automatic turn-off stands
+        # down until the lights are off again. The room, and each zone that
+        # has its own trigger.
+        self._held_by_hand = False
+        self._zone_held: set[str] = set()
 
         # Tracked per axis: a room can follow the sun's colour while its
         # brightness stays put, or the other way round.
@@ -325,46 +331,106 @@ class RoomController:
         self._detached.clear()
 
     def _zone_occupied(self, zone_id: str) -> Callable[[], None]:
-        """Somebody is at this part of the room.
+        """Somebody is here, or the door has just opened.
 
-        Only a room being driven by a cross-room mode has anything to step out
-        of. Occupancy at other times is the room's own business -- that is what
-        the room's presence settings are for -- and detaching then would mean
-        a zone quietly ignoring its own room.
+        Two quite different things hang off the same signal. **Detaching** only
+        matters while a cross-room mode is driving the room -- occupancy at
+        other times is the room's own business, and detaching then would be a
+        zone quietly ignoring its own room. **Lighting** is the motion-sensor
+        and garage-door case, and applies whenever the zone was asked for it.
         """
 
         @callback
         def _occupied() -> None:
-            if self.session_owner is None or zone_id in self._detached:
-                return
-            self._detached.add(zone_id)
-            self.async_notify()
-            self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
+            changed = False
+            if self.session_owner is not None and zone_id not in self._detached:
+                self._detached.add(zone_id)
+                changed = True
+
+            # While the sensor is active these lights stay on. The clear timer
+            # was cancelled by the watcher the moment it came back, which is
+            # what makes a fresh trigger start the wait again.
+            zone = self._zone_by_id(zone_id)
+            lit = (RoomMode.ADAPTIVE, None)
+            if (
+                zone is not None
+                and zone.light_on_trigger
+                and self._zone_intent.get(zone_id) != lit
+                and self._may_trigger(zone)
+            ):
+                self._zone_intent[zone_id] = lit
+                changed = True
+
+            if changed:
+                self.async_notify()
+                self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
 
         return _occupied
 
     def _zone_cleared(self, zone_id: str) -> Callable[[], None]:
-        """Nobody has been at this part of the room for a while.
+        """Nobody has been here for a while, or the door has been shut for one.
 
-        Rejoining is the default, so this needs no memory of what the zone was
-        doing: it goes back to whatever the room is being told, which is the
-        film it was standing apart from.
+        Rejoining the room needs no memory of what the zone was doing: it goes
+        back to whatever the room is being told. Switching off after a trigger
+        does, because the room may well be lit -- so the zone stands apart,
+        dark, until a room-wide command gathers it back in.
         """
 
         @callback
         def _cleared() -> None:
-            if zone_id not in self._detached:
-                return
-            self._detached.discard(zone_id)
-            self.async_notify()
-            self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
+            changed = False
+            if zone_id in self._detached:
+                self._detached.discard(zone_id)
+                changed = True
+
+            zone = self._zone_by_id(zone_id)
+            if (
+                zone is not None
+                and zone.light_on_trigger
+                and self._zone_intent.get(zone_id) is not None
+            ):
+                if zone.hold_when_set_by_hand and zone_id in self._zone_held:
+                    # Somebody reached for the switch. The timer stands down
+                    # until they turn these lights off themselves.
+                    _LOGGER.debug("%s: held on by hand; not switching off", zone.name)
+                else:
+                    self._zone_intent[zone_id] = (RoomMode.OFF, None)
+                    changed = True
+
+            if changed:
+                self.async_notify()
+                self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
 
         return _cleared
+
+    def _zone_by_id(self, zone_id: str) -> Zone | None:
+        return next((z for z in self.room.zones if z.zone_id == zone_id), None)
+
+    def _may_trigger(self, zone: Zone) -> bool:
+        """Whether this zone's sensor is allowed to light it right now."""
+        if zone.hold_when_set_by_hand and zone.zone_id in self._zone_held:
+            # Already on by hand. Nothing to do, and nothing to take over.
+            return False
+        verdict = self.conditions_allow(zone.conditions)
+        if not verdict:
+            _LOGGER.debug("%s: trigger blocked by %s", zone.name, verdict.blocked_by)
+            return False
+        return True
 
     @property
     def detached_zones(self) -> frozenset[str]:
         """Zones currently standing apart from what the room is being told."""
         return frozenset(self._detached)
+
+    @property
+    def held_by_hand(self) -> bool:
+        """Whether somebody reached for the switch and the timer stood down."""
+        return self._held_by_hand
+
+    @property
+    def zones_held_by_hand(self) -> frozenset[str]:
+        """The same, for zones driven by their own switch."""
+        return frozenset(self._zone_held)
 
     @callback
     def attach_light(self, light: RoomLight) -> None:
@@ -549,6 +615,17 @@ class RoomController:
                 self.mode,
             )
             return
+        if mode is RoomMode.OFF:
+            # However the room went dark -- the switch, a mode ending, every
+            # bulb turned off by hand -- the automation has its lights back.
+            self._held_by_hand = False
+        # A room-wide command is the most recent deliberate thing anybody has
+        # said, so the zones driven by their own switch or their own trigger
+        # rejoin it. Zones detached by occupancy are not touched: that is a
+        # fact about somebody standing there, not an instruction.
+        self._zone_intent.clear()
+        self._zone_held.clear()
+
         previous_mode = self.mode
         previous_scene_id = self.active_scene_id
         self.mode = mode
@@ -932,6 +1009,17 @@ class RoomController:
             )
 
         assert result is not None
+        # Somebody asked for this. Landing anywhere but off holds the lights
+        # against the automatic turn-off; landing on off hands them back.
+        held = result.step.kind is not StepKind.OFF
+        if zone is not None:
+            self._zone_held = (
+                (self._zone_held | {zone.zone_id})
+                if held
+                else (self._zone_held - {zone.zone_id})
+            )
+        else:
+            self._held_by_hand = held
         self._last_index[controller.subentry_id] = result.index
         _LOGGER.debug(
             "%s: %s x%d -> %s (%s)",
@@ -988,6 +1076,31 @@ class RoomController:
 
     # -- presence and windows ---------------------------------------------
 
+    def conditions_allow(self, condition_ids: Sequence[str]) -> Verdict:
+        """Whether every named rule holds right now.
+
+        The rules are the hub's, named here by id, and ANDed: another rule can
+        only ever make an automation fire less often. An empty list is a
+        verdict of yes, which is what makes this safe to call unconditionally.
+        """
+        rules = [
+            rule
+            for condition_id in condition_ids
+            if (rule := self.hub.conditions.get(condition_id)) is not None
+        ]
+        if not rules:
+            return Verdict(True)
+        states = {
+            rule.entity_id: (
+                state.state
+                if (state := self.hass.states.get(rule.entity_id)) is not None
+                else None
+            )
+            for rule in rules
+            if rule.entity_id
+        }
+        return evaluate(rules, dt_util.now(), states)
+
     def _presence_allowed(self) -> bool:
         """Whether presence has any say in this room right now.
 
@@ -999,6 +1112,11 @@ class RoomController:
             # A mode is driving this room; its own presence rules apply there.
             return False
         if self.is_night and self.room.night_ignore_presence:
+            return False
+        if not (verdict := self.conditions_allow(self.room.presence_conditions)):
+            _LOGGER.debug(
+                "%s: presence blocked by %s", self.room.name, verdict.blocked_by
+            )
             return False
         scene = self.active_scene()
         return not (scene is not None and scene.ignore_presence)
@@ -1044,6 +1162,11 @@ class RoomController:
         if self.room.presence_respects_manual and self.manual:
             # Somebody set this room by hand. Switching it off behind them
             # would be the rudest possible reading of an empty room.
+            return
+        if self.room.hold_when_set_by_hand and self._held_by_hand:
+            # Somebody reached for the switch. The timer stands down until
+            # they turn the lights off themselves, and then takes over again.
+            _LOGGER.debug("%s: held on by hand; not switching off", self.room.name)
             return
         if self.room.presence_off_action is PresenceOffAction.ADAPTIVE:
             await self.async_set_adaptive()

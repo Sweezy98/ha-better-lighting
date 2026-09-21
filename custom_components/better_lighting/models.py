@@ -23,6 +23,7 @@ from homeassistant.util import slugify
 
 from .adaptive import AdaptiveConfig
 from .brightness import BrightnessStrategy
+from .conditions import Condition, ConditionKind, minutes_from_text
 from .const import (
     COLOR_FORMAT_INHERIT,
     COLOR_FORMAT_NONE,
@@ -52,6 +53,15 @@ from .const import (
     CONF_COLOR_NAME,
     CONF_COLOR_TEMP_KELVIN,
     CONF_COLOR_TEMP_OFFSET_K,
+    CONF_CONDITION_END,
+    CONF_CONDITION_ENTITY,
+    CONF_CONDITION_ID,
+    CONF_CONDITION_KIND,
+    CONF_CONDITION_START,
+    CONF_CONDITION_STATE,
+    CONF_CONDITION_THRESHOLD,
+    CONF_CONDITION_UNKNOWN_BLOCKS,
+    CONF_CONDITIONS,
     CONF_COVER_CONDITION,
     CONF_COVER_UNKNOWN_BLOCKS,
     CONF_DEFERRED_TTL_MIN,
@@ -79,6 +89,7 @@ from .const import (
     CONF_HIDE_MEMBERS,
     CONF_HOLD_INTERVAL_MS,
     CONF_HOLD_RAMP,
+    CONF_HOLD_WHEN_SET_BY_HAND,
     CONF_ICON,
     CONF_IGNORE_PRESENCE,
     CONF_INITIAL_TRANSITION,
@@ -121,6 +132,7 @@ from .const import (
     CONF_OVERRIDE_MODE,
     CONF_PREFER_RGB_COLOR,
     CONF_PRESENCE_CLEAR_DELAY,
+    CONF_PRESENCE_CONDITIONS,
     CONF_PRESENCE_COVERS,
     CONF_PRESENCE_ENTITY,
     CONF_PRESENCE_OFF_ACTION,
@@ -182,6 +194,7 @@ from .const import (
     CONF_ZONE_DETACH_ON_MODE,
     CONF_ZONE_DETACHED_SCENE,
     CONF_ZONE_ID,
+    CONF_ZONE_LIGHT_ON_TRIGGER,
     CONF_ZONE_LIGHTS,
     CONF_ZONE_OVERRIDES,
     CONTROLLER_SPECS,
@@ -259,6 +272,9 @@ class HubConfig:
     # Effects the user has written, by id. The built-in ones are not here:
     # they are the same for every house and live in code.
     effects: Mapping[str, Effect]
+    # Named rules, by id. What gates an automation rather than what it
+    # does, so a room or a zone names the ones that apply to it.
+    conditions: Mapping[str, Condition]
     time_dark: int
     time_light: int
     sunrise_offset: int
@@ -292,6 +308,11 @@ class HubConfig:
                 str(entry.get(CONF_EFFECT_ID) or ""): effect_from_mapping(entry)
                 for entry in (raw.get(CONF_EFFECTS) or ())
                 if entry.get(CONF_EFFECT_ID)
+            },
+            conditions={
+                str(entry[CONF_CONDITION_ID]): hub_condition(entry)
+                for entry in (raw.get(CONF_CONDITIONS) or ())
+                if entry.get(CONF_CONDITION_ID)
             },
             time_dark=int(raw[CONF_TIME_DARK]),
             time_light=int(raw[CONF_TIME_LIGHT]),
@@ -369,6 +390,12 @@ class RoomConfig:
     presence_on_only_when_off: bool
     presence_off_action: PresenceOffAction
     presence_respects_manual: bool
+    # Named house-wide rules, ANDed, that have to hold before presence acts at
+    # all: after dark, dark enough, the holiday switch is off.
+    presence_conditions: tuple[str, ...]
+    # Somebody reached for the switch. The automatic turn-off stands down
+    # until the lights are off again, and then takes over as before.
+    hold_when_set_by_hand: bool
 
     # This room's own scenes, in the order they were defined. A scene belongs
     # to exactly one room now: a reading scene for the living room and one for
@@ -540,6 +567,8 @@ class RoomConfig:
             presence_on_only_when_off=bool(raw[CONF_PRESENCE_ON_ONLY_WHEN_OFF]),
             presence_off_action=PresenceOffAction(raw[CONF_PRESENCE_OFF_ACTION]),
             presence_respects_manual=bool(raw[CONF_PRESENCE_RESPECTS_MANUAL]),
+            presence_conditions=tuple(raw.get(CONF_PRESENCE_CONDITIONS) or ()),
+            hold_when_set_by_hand=bool(raw.get(CONF_HOLD_WHEN_SET_BY_HAND, True)),
             window_entities=tuple(raw.get(CONF_WINDOW_ENTITIES) or ()),
             insect_action=InsectAction(
                 raw.get(CONF_INSECT_ACTION, InsectAction.COLOR_TEMP.value)
@@ -1140,6 +1169,21 @@ def room_light_group(raw: dict[str, Any]) -> LightGroup:
     )
 
 
+def hub_condition(raw: dict[str, Any]) -> Condition:
+    """One named rule, as stored on the hub."""
+    return Condition(
+        condition_id=str(raw.get(CONF_CONDITION_ID) or ""),
+        name=str(raw.get(CONF_NAME) or ""),
+        kind=ConditionKind(raw.get(CONF_CONDITION_KIND, ConditionKind.STATE_IS.value)),
+        entity_id=str(raw.get(CONF_CONDITION_ENTITY) or "") or None,
+        threshold=float(raw.get(CONF_CONDITION_THRESHOLD, 0) or 0),
+        start_minute=minutes_from_text(raw.get(CONF_CONDITION_START)),
+        end_minute=minutes_from_text(raw.get(CONF_CONDITION_END)),
+        state=str(raw.get(CONF_CONDITION_STATE) or "on"),
+        unknown_blocks=bool(raw.get(CONF_CONDITION_UNKNOWN_BLOCKS, True)),
+    )
+
+
 def room_zone(raw: dict[str, Any]) -> Zone:
     """One part of a room, as stored inside the room."""
     return Zone(
@@ -1151,6 +1195,9 @@ def room_zone(raw: dict[str, Any]) -> Zone:
         presence_clear_delay=int(raw.get(CONF_PRESENCE_CLEAR_DELAY, 120)),
         detach_on_mode=bool(raw.get(CONF_ZONE_DETACH_ON_MODE, False)),
         detached_scene_id=str(raw.get(CONF_ZONE_DETACHED_SCENE) or "") or None,
+        light_on_trigger=bool(raw.get(CONF_ZONE_LIGHT_ON_TRIGGER, False)),
+        conditions=tuple(raw.get(CONF_PRESENCE_CONDITIONS) or ()),
+        hold_when_set_by_hand=bool(raw.get(CONF_HOLD_WHEN_SET_BY_HAND, True)),
         overrides=frozenset(raw.get(CONF_ZONE_OVERRIDES) or ()),
         settings={
             key: value for key, value in raw.items() if key not in _ZONE_OWN_KEYS

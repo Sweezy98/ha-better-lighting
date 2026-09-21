@@ -123,6 +123,8 @@
   "discard_changes_hint": "Was auf dieser Seite geändert wurde, geht verloren.",
   "discard": "Verwerfen",
   "effects": "Effekte",
+  "conditions": "Bedingungen",
+  "condition": "Bedingung",
   "n_steps": "{count} Schritte",
   "effect_solid": "Durchgehend",
   "effect_flash": "Blinken",

@@ -96,6 +96,7 @@ In the global config:
 | Global | What it is |
 |---|---|
 | **Colour presets** | The house's named colours — "TV orange", "candle" — so a colour used in several scenes is described once and picked by name. |
+| **Conditions** | Named rules an automation is allowed to act under — "after dark", "dark enough", "not on holiday". A room or a zone names the ones that apply to it, and they are ANDed. |
 | **Night mode helper** | The one helper that says the house is asleep. Each room decides for itself whether that dims it, darkens it, applies a scene, or does nothing. |
 
 ### Zones: the desk that does not go dark for the film
@@ -127,6 +128,41 @@ Occupancy on its own detaches nothing: with no mode driving the room, a busy des
 is the room's own business, which is what the room's presence settings are for.
 A light may be in at most one zone, for the same reason it is in at most one
 room, and saving is refused if two zones claim the same bulb.
+
+### Motion and door sensors
+
+A motion sensor on a drive and a garage door are the same shape, and both are a
+sensor plus a hold:
+
+- **While the sensor is on**, the lights stay on. A garage door works because
+  "open" is `on`.
+- **When it clears**, they go off after the hold you set. A fresh trigger during
+  that wait starts the wait again, because the timer is cancelled the moment the
+  sensor comes back.
+- **If somebody reached for the switch** — before the sensor ever fired or half
+  way through the hold — the clock stops. The lights stay on until they are
+  turned off by hand, and then the automation has them back. Turn *Hold when set
+  by hand* off if you would rather the timer always won.
+
+A whole room does this with its **Presence** settings; a single zone does it with
+*Light this zone while the sensor is active*, which is how one motion sensor
+lights the drive without touching the rest of the outside.
+
+**Conditions** decide whether any of it is allowed to happen. They are named,
+house-wide and reusable — "after dark" is one rule wanted by every outdoor
+trigger — and a room or a zone names the ones that apply to it:
+
+| Rule | Checks |
+|---|---|
+| Between two times | The local clock. An end earlier than the start runs through midnight, so 22:00 until 06:00 is one night. |
+| A number below / above a threshold | A lux sensor, a temperature, anything numeric. |
+| An entity in a particular state | A helper that arms the automation, a presence toggle that disarms it, or `sun.sun` being `below_horizon` — which is "after dark" without owning a lux sensor. |
+
+They are **ANDed**: every rule named has to hold, so adding one can only ever
+make an automation fire less often, never more. A rule whose sensor cannot be
+read blocks by default — "allowed only if every rule passes", and a rule nobody
+can evaluate has not passed — and each rule can be told to let it through
+instead, for a flaky sensor that should not leave somebody on an unlit path.
 
 ### Light groups: three bulbs, told once
 

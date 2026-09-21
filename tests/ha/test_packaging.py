@@ -1001,3 +1001,31 @@ def test_the_brightness_bar_works_on_a_dark_room() -> None:
     card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
 
     assert "aria-disabled" not in card
+
+
+def test_the_menu_opens_above_everything() -> None:
+    """Three separate things had to be true, and each failed on its own.
+
+    Fixed, so no ancestor's overflow clips it or grows its scroll area; the
+    top layer, because fixed still paints in the host's place in the stacking
+    order and went under the cards below; and its position measured from
+    where its own zero lands, because a transformed ancestor makes `fixed`
+    resolve against that ancestor rather than the viewport.
+    """
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+    at = card.index("_place(menu) {")
+    place = card[at : card.index("\n  _close()", at)]
+
+    assert "position: fixed" in card
+    assert "showPopover" in card
+    assert "getBoundingClientRect()" in place
+    assert "origin.left" in place and "origin.top" in place
+
+
+def test_an_option_with_no_icon_keeps_its_label_wide() -> None:
+    """The row is a two-column grid. An empty icon cell let the label slide
+    into the icon's twenty pixels, which is how a list of modes rendered as
+    "p." while the card's icon-bearing scenes looked fine."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    assert '<span class="ico">' in card, "the icon column must always be filled"

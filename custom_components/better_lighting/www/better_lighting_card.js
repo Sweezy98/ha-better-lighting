@@ -202,6 +202,11 @@ class BlDropdown extends HTMLElement {
           --bl-gutter: 20px;
           --bl-pad: 18px;
         }
+        /* While open, the host outranks whatever is drawn after it. A fixed
+           menu escapes an ancestor's *clipping*, but it is still painted in
+           its host's place in the stacking order -- so without this it went
+           underneath every section further down the page. */
+        :host([open]) { z-index: 999; }
         /* Three columns rather than a row: equal gutters either side are the
            only way the label between them is centred rather than merely
            looking it. */
@@ -223,10 +228,19 @@ class BlDropdown extends HTMLElement {
         .trail { display: inline-flex; justify-content: flex-end; }
         ha-icon { --mdc-icon-size: 20px; color: var(--secondary-text-color); }
 
-        /* As wide as the control it drops from, and no wider: a menu that
-           spans more than that does not look attached to what opened it. */
+/* As wide as the control it drops from, and no wider: a menu that
+           spans more than that does not look attached to what opened it.
+
+           Fixed rather than absolute, which is about escape rather than
+           placement: absolutely positioned, it was clipped by whatever
+           scrolling container it happened to sit in and added its own height
+           to that container's scroll area -- so on a page of stacked rows it
+           stretched the row it belonged to instead of covering it. Fixed is
+           laid out against the viewport, so no ancestor's overflow can reach
+           it. The cost is that it does not follow a scroll, which is why it
+           closes on one. */
         .menu {
-          position: absolute; left: 0; right: 0; box-sizing: border-box;
+          position: fixed; box-sizing: border-box; margin: 0;
           z-index: 9; border-radius: 16px; padding: 6px;
           background: var(--card-background-color, #1c1c1c);
           border: 1px solid var(--divider-color);
@@ -246,6 +260,10 @@ class BlDropdown extends HTMLElement {
           background: var(--secondary-background-color); outline: none;
         }
         .menu button[aria-selected="true"] { color: var(--primary-color); }
+        /* Always there, even for an option with no icon: the column has to
+           be occupied or the label slides into it and gets the icon's width
+           -- which is how a list of modes came out as "p." */
+        .menu button .ico { display: inline-flex; justify-content: flex-start; }
         .menu button .text {
           min-width: 0; padding: 0 8px; text-align: left;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -303,11 +321,11 @@ class BlDropdown extends HTMLElement {
       .map(
         (option) => `<button role="option" data-value="${option.value}"
            aria-selected="${option.value === this._value}">
-           ${this._icon(
+           <span class="ico">${this._icon(
              // The tick takes the icon's place on the current row: which one
              // is chosen is already said by the icon on the trigger.
              option.value === this._value ? "mdi:check" : option.icon
-           )}<span class="text">${option.label}</span></button>`
+           )}</span><span class="text">${option.label}</span></button>`
       )
       .join("");
     menu.querySelectorAll("button").forEach((row) =>
@@ -331,16 +349,46 @@ class BlDropdown extends HTMLElement {
   _show() {
     if (!this._options.length) return;
     this._open = true;
+    this.setAttribute("open", "");
     const menu = this.shadowRoot.getElementById("menu");
-    menu.hidden = false;
     this._fill();
+
+    // The top layer, where the browser puts anything that is meant to be
+    // over everything else. Being fixed only escapes an ancestor's
+    // *clipping*; it is still painted in this element's place in the
+    // stacking order, which put the menu underneath the cards further down
+    // the page. A popover has no place in that order at all.
+    if (typeof menu.showPopover === "function") {
+      menu.hidden = false;
+      menu.popover = "manual";
+      menu.showPopover();
+    } else {
+      menu.hidden = false;
+    }
     this._place(menu);
 
     this._outside = (event) => {
       if (!event.composedPath().includes(this)) this._close();
     };
     document.addEventListener("pointerdown", this._outside, true);
-    menu.querySelector('[aria-selected="true"], button')?.focus();
+
+    // `preventScroll`, because moving focus into the menu will otherwise
+    // scroll whatever contains it -- and the listener below reads a scroll
+    // as a reason to close, so the menu shut itself the instant it opened.
+    menu
+      .querySelector('[aria-selected="true"], button')
+      ?.focus({ preventScroll: true });
+
+    // A fixed menu stays where it was put, so a scroll would leave it
+    // hanging over whatever slid underneath. Closing is both simpler and
+    // what every other menu on the page does. Armed on the next frame, so
+    // nothing the opening itself did can trip it.
+    this._moved = () => this._close();
+    requestAnimationFrame(() => {
+      if (!this._open) return;
+      window.addEventListener("scroll", this._moved, true);
+      window.addEventListener("resize", this._moved);
+    });
   }
 
   /**
@@ -376,24 +424,51 @@ class BlDropdown extends HTMLElement {
       Math.max(1, fits(room))
     );
 
-    menu.style.maxHeight = `${rows * rowHeight + chrome}px`;
-    if (downwards) {
-      menu.style.top = `${box.height + 8}px`;
-      menu.style.bottom = "auto";
-    } else {
-      menu.style.bottom = `${box.height + 8}px`;
-      menu.style.top = "auto";
-    }
+    const height = rows * rowHeight + chrome;
+    menu.style.maxHeight = `${height}px`;
+    menu.style.width = `${box.width}px`;
+
+    // Where this menu's own zero actually is.
+    //
+    // A fixed element is normally laid out against the viewport -- but an
+    // ancestor with a transform becomes its containing block instead, and
+    // the panel animates whole screens that way. Feeding viewport
+    // coordinates to a menu anchored somewhere else put it off the side of
+    // the window. Rather than guess which case applies, park it at zero and
+    // measure where zero landed.
+    menu.style.top = "0px";
+    menu.style.left = "0px";
+    menu.style.bottom = "auto";
+    const origin = menu.getBoundingClientRect();
+
+    menu.style.left = `${box.left - origin.left}px`;
+    menu.style.top = `${
+      (downwards ? box.bottom + 8 : box.top - 8 - height) - origin.top
+    }px`;
   }
 
   _close() {
     this._open = false;
+    this.removeAttribute("open");
     if (this._outside) {
       document.removeEventListener("pointerdown", this._outside, true);
       this._outside = null;
     }
+    if (this._moved) {
+      window.removeEventListener("scroll", this._moved, true);
+      window.removeEventListener("resize", this._moved);
+      this._moved = null;
+    }
     const menu = this.shadowRoot?.getElementById("menu");
-    if (menu) menu.hidden = true;
+    if (!menu) return;
+    if (menu.popover) {
+      try {
+        menu.hidePopover();
+      } catch {
+        // Already closed, which is the state we wanted anyway.
+      }
+    }
+    menu.hidden = true;
   }
 }
 

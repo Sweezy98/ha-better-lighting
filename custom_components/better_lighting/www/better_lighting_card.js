@@ -79,6 +79,12 @@ const WORDS = {
     hidden_scenes: "Hidden scenes",
     hidden_scenes_hint: "Ticked scenes are left out of this card's menu and skipped by the arrows.",
     no_scenes: "This room has no scenes yet.",
+    extra_button: "Extra header button",
+    extra_button_hint:
+      "An entity to put beside the power button -- a house mode, a helper, " +
+      "anything worth reaching from this room.",
+    extra_button_icon: "Button icon",
+    extra_button_icon_hint: "Left empty, the entity's own icon is used.",
   },
   de: {
     choose_room: "Raum auswählen.",
@@ -98,6 +104,12 @@ const WORDS = {
     hidden_scenes: "Ausgeblendete Szenen",
     hidden_scenes_hint: "Angehakte Szenen fehlen im Menü dieser Karte und werden von den Pfeilen übersprungen.",
     no_scenes: "Dieser Raum hat noch keine Szenen.",
+    extra_button: "Zusätzliche Kopfzeilen-Schaltfläche",
+    extra_button_hint:
+      "Eine Entität neben der Ein-/Aus-Schaltfläche -- ein Hausmodus, ein " +
+      "Helfer, alles, was aus diesem Raum erreichbar sein soll.",
+    extra_button_icon: "Symbol der Schaltfläche",
+    extra_button_icon_hint: "Leer gelassen, wird das Symbol der Entität verwendet.",
   },
 };
 
@@ -123,6 +135,61 @@ function words(hass) {
   const language = hass?.locale?.language || hass?.language || "en";
   return WORDS[language] || WORDS[language.split("-")[0]] || WORDS.en;
 }
+
+/**
+ * What pressing an arbitrary entity ought to mean.
+ *
+ * The extra header button takes whatever entity somebody points it at, so it
+ * cannot assume a toggle. Buttons are pressed, scenes and scripts are
+ * started, anything with two states is toggled -- and anything else, a mode
+ * select or a sensor, opens its own dialog, which is the only honest thing a
+ * single tap can do with it.
+ */
+const PRESS = {
+  button: ["button", "press"],
+  input_button: ["input_button", "press"],
+  scene: ["scene", "turn_on"],
+  script: ["script", "turn_on"],
+};
+const TOGGLES = new Set([
+  "automation",
+  "cover",
+  "fan",
+  "humidifier",
+  "input_boolean",
+  "light",
+  "media_player",
+  "remote",
+  "siren",
+  "switch",
+  "vacuum",
+]);
+
+/** A stand-in for the icon Home Assistant would pick from the domain. */
+const DOMAIN_ICONS = {
+  automation: "mdi:robot",
+  binary_sensor: "mdi:radiobox-blank",
+  button: "mdi:gesture-tap-button",
+  climate: "mdi:thermostat",
+  cover: "mdi:window-shutter",
+  fan: "mdi:fan",
+  input_boolean: "mdi:toggle-switch-variant",
+  input_button: "mdi:gesture-tap-button",
+  input_select: "mdi:format-list-bulleted",
+  light: "mdi:lightbulb",
+  media_player: "mdi:cast",
+  scene: "mdi:palette",
+  script: "mdi:script-text",
+  select: "mdi:format-list-bulleted",
+  sensor: "mdi:eye",
+  switch: "mdi:toggle-switch-variant",
+  vacuum: "mdi:robot-vacuum",
+};
+
+// States that mean the thing is not doing anything. Everything else counts
+// as active, so a cover that is `open` and a player that is `playing` both
+// light the button up without either needing a rule of its own.
+const RESTING = new Set(["off", "closed", "idle", "unavailable", "unknown", ""]);
 
 /**
  * The dropdown this integration uses wherever it needs one.
@@ -262,8 +329,16 @@ class BlDropdown extends HTMLElement {
         .menu button[aria-selected="true"] { color: var(--primary-color); }
         /* Always there, even for an option with no icon: the column has to
            be occupied or the label slides into it and gets the icon's width
-           -- which is how a list of modes came out as "p." */
-        .menu button .ico { display: inline-flex; justify-content: flex-start; }
+           -- which is how a list of modes came out as "p." The height is
+           given rather than left to the contents for the same reason one
+           step further on: an empty cell is zero tall, so a list whose rows
+           mostly have no icon had one taller row -- the chosen one, which
+           carries the tick -- and every row sized from that one came out
+           wrong. */
+        .menu button .ico {
+          display: inline-flex; justify-content: flex-start;
+          align-items: center; height: 20px;
+        }
         .menu button .text {
           min-width: 0; padding: 0 8px; text-align: left;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -395,10 +470,18 @@ class BlDropdown extends HTMLElement {
    * Below the trigger unless there is no room below, and always a whole
    * number of rows.
    *
-   * The height is rows plus the menu's own padding and border, measured from
-   * the element rather than assumed -- two pixels short of the truth is a
-   * scrollbar for the sake of the last row's bottom edge, which is exactly
-   * what a guessed constant produced.
+   * Everything here is measured off the menu rather than assumed, because
+   * every assumption tried has been wrong by just enough to put a scrollbar
+   * there for the sake of a few pixels of the row below:
+   *
+   * * the padding and border are read from the element -- a guessed constant
+   *   was two pixels short;
+   * * the rows are added up one by one instead of one row's height times a
+   *   count -- rows are not all the same height, and it takes very little to
+   *   make them differ;
+   * * the total is rounded up, because a box asked for a fractional height
+   *   is laid out at the whole pixel below it while its contents keep the
+   *   fraction.
    */
   _place(menu) {
     const style = getComputedStyle(menu);
@@ -408,23 +491,30 @@ class BlDropdown extends HTMLElement {
       parseFloat(style.borderTopWidth) +
       parseFloat(style.borderBottomWidth);
 
-    const first = menu.querySelector("button");
-    const rowHeight = first ? first.getBoundingClientRect().height : 44;
+    const heights = [...menu.querySelectorAll("button")].map(
+      (row) => row.getBoundingClientRect().height
+    );
+    if (!heights.length) heights.push(44);
+    // How tall the first n rows are, so every height offered below lands on
+    // a boundary between rows rather than through one.
+    const upTo = (n) => heights.slice(0, n).reduce((sum, row) => sum + row, 0);
+
     const box = this.getBoundingClientRect();
     const below = window.innerHeight - box.bottom - 16;
     const above = box.top - 16;
 
-    const fits = (room) =>
-      Math.max(1, Math.floor((room - chrome) / rowHeight));
-    const downwards = below >= above || fits(below) >= this._options.length;
+    const fits = (room) => {
+      let count = 0;
+      while (count < heights.length && upTo(count + 1) + chrome <= room) {
+        count += 1;
+      }
+      return Math.max(1, count);
+    };
+    const downwards = below >= above || fits(below) >= heights.length;
     const room = downwards ? below : above;
-    const rows = Math.min(
-      this._options.length,
-      BlDropdown.ROWS,
-      Math.max(1, fits(room))
-    );
+    const rows = Math.min(heights.length, BlDropdown.ROWS, fits(room));
 
-    const height = rows * rowHeight + chrome;
+    const height = Math.ceil(upTo(rows) + chrome);
     menu.style.maxHeight = `${height}px`;
     menu.style.width = `${box.width}px`;
 
@@ -507,7 +597,14 @@ class BetterLightingCard extends HTMLElement {
     if (entity && !entity.startsWith("light.")) {
       throw new Error("A Better Lighting card needs a room's light entity");
     }
-    this._config = { name: null, hidden_scenes: [], ...config, entity };
+    this._config = {
+      name: null,
+      hidden_scenes: [],
+      button_entity: "",
+      button_icon: "",
+      ...config,
+      entity,
+    };
     this._selectId = null;
     this._drawn = false;
   }
@@ -628,7 +725,7 @@ class BetterLightingCard extends HTMLElement {
         button.round.adaptive {
           background: rgba(255, 199, 104, .16); color: var(--bl-warm);
         }
-        button.round.power[aria-pressed="true"] {
+        button.round[aria-pressed="true"] {
           background: rgba(var(--rgb-primary-color, 3, 169, 244), .18);
           color: var(--primary-color);
         }
@@ -693,6 +790,7 @@ class BetterLightingCard extends HTMLElement {
             <span class="name" id="name"></span>
           </button>
           <div class="badges" id="badges"></div>
+          <button class="round extra" id="extra" hidden></button>
           <button class="round adaptive" id="adaptive"></button>
           <button class="round power" id="power"></button>
         </div>
@@ -718,6 +816,7 @@ class BetterLightingCard extends HTMLElement {
     // reach something used twice a year is a bad trade.
     $("more").addEventListener("click", () => this._openMoreInfo());
     $("power").addEventListener("click", () => this._toggle());
+    $("extra").addEventListener("click", () => this._pressExtra());
     $("adaptive").addEventListener("click", () => this._backToAdaptive());
     $("prev").addEventListener("click", () => this._step(-1));
     $("next").addEventListener("click", () => this._step(1));
@@ -837,9 +936,42 @@ class BetterLightingCard extends HTMLElement {
     power.setAttribute("aria-pressed", String(on));
     power.title = on ? this._words.turn_off : this._words.turn_on;
 
+    this._paintExtra();
     this._paintBar();
     this._paintScenes();
     this._watchCountdown(attrs.bl_off_at);
+  }
+
+  /**
+   * The one button on this card that is not about the room.
+   *
+   * It carries no label, only an icon -- the header has a room name in it
+   * already, and a word beside it would be the widest thing in the row. What
+   * it is shows in its tooltip and in its state: lit when the entity is
+   * doing something, plain when it is not.
+   */
+  _paintExtra() {
+    const button = this.shadowRoot.getElementById("extra");
+    const entityId = this._config.button_entity;
+    const state = entityId ? this._hass?.states?.[entityId] : null;
+    // Hidden rather than empty when there is nothing behind it: an unset
+    // option should cost nothing, and an entity that has gone away should
+    // not leave a button that does nothing when pressed.
+    button.hidden = !state;
+    if (!state) return;
+
+    const domain = entityId.split(".")[0];
+    button.innerHTML = this._icon(
+      this._config.button_icon ||
+        state.attributes.icon ||
+        DOMAIN_ICONS[domain] ||
+        "mdi:tune"
+    );
+    button.setAttribute(
+      "aria-pressed",
+      String(!RESTING.has(String(state.state).toLowerCase()))
+    );
+    button.title = state.attributes.friendly_name || entityId;
   }
 
   _paintBadges(attrs, on) {
@@ -1047,10 +1179,27 @@ class BetterLightingCard extends HTMLElement {
     });
   }
 
-  _openMoreInfo() {
+  _pressExtra() {
+    const entityId = this._config.button_entity;
+    if (!entityId || !this._hass?.states?.[entityId]) return;
+    const domain = entityId.split(".")[0];
+
+    const press = PRESS[domain];
+    if (press) {
+      this._call(press[0], press[1], { entity_id: entityId });
+      return;
+    }
+    if (TOGGLES.has(domain)) {
+      this._call("homeassistant", "toggle", { entity_id: entityId });
+      return;
+    }
+    this._openMoreInfo(entityId);
+  }
+
+  _openMoreInfo(entityId = this._config.entity) {
     this.dispatchEvent(
       new CustomEvent("hass-more-info", {
-        detail: { entityId: this._config.entity },
+        detail: { entityId },
         bubbles: true,
         composed: true,
       })
@@ -1061,15 +1210,17 @@ class BetterLightingCard extends HTMLElement {
 /**
  * The visual editor.
  *
- * Two questions. The room, answered with only the rooms this integration
- * publishes -- a list of every light in the house would be a list of mostly
- * wrong answers, since the card reads attributes only a Better Lighting room
- * has. Then which of that room's scenes to leave out, which cannot be asked
- * until the first is answered and means nothing once it changes.
+ * The room first, answered with only the rooms this integration publishes --
+ * a list of every light in the house would be a list of mostly wrong
+ * answers, since the card reads attributes only a Better Lighting room has.
+ * Then which of that room's scenes to leave out, which cannot be asked until
+ * the first is answered and means nothing once it changes. Last, the extra
+ * header button, which is about the house rather than the room and so is
+ * asked of every entity there is.
  */
 class BetterLightingCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = { hidden_scenes: [], ...config };
+    this._config = { hidden_scenes: [], button_entity: "", button_icon: "", ...config };
     this._render();
   }
 
@@ -1117,6 +1268,11 @@ class BetterLightingCardEditor extends HTMLElement {
         <div class="bl-editor">
           <div id="bl-room"></div>
           <div id="bl-hidden"></div>
+          <h4>${text.extra_button}</h4>
+          <div class="hint">${text.extra_button_hint}</div>
+          <div id="bl-button"></div>
+          <div id="bl-button-icon"></div>
+          <div class="hint">${text.extra_button_icon_hint}</div>
         </div>`;
       this._picker = document.createElement("ha-entity-picker");
       this._picker.allowCustomEntity = false;
@@ -1135,11 +1291,48 @@ class BetterLightingCardEditor extends HTMLElement {
         this._render();
       });
       this.querySelector("#bl-room").appendChild(this._picker);
+
+      // Anything at all: what belongs beside a room's power button is a
+      // question about the house, and narrowing it here would only be
+      // guessing which half of the answers to throw away.
+      this._button = document.createElement("ha-entity-picker");
+      this._button.allowCustomEntity = false;
+      this._button.addEventListener("value-changed", (event) => {
+        const chosen = event.detail.value || "";
+        if (chosen === this._config?.button_entity) return;
+        this._emit({ ...this._config, button_entity: chosen });
+      });
+      this.querySelector("#bl-button").appendChild(this._button);
+
+      // The icon is an override, so it starts empty and the entity's own is
+      // used. A plain field is the fallback because `ha-icon-picker` is not
+      // guaranteed to be defined on a dashboard that has never needed one.
+      this._buttonIcon = customElements.get("ha-icon-picker")
+        ? document.createElement("ha-icon-picker")
+        : document.createElement("input");
+      this._buttonIcon.addEventListener("value-changed", (event) =>
+        this._emit({ ...this._config, button_icon: event.detail.value || "" })
+      );
+      this._buttonIcon.addEventListener("change", (event) => {
+        if (event.detail) return;
+        this._emit({ ...this._config, button_icon: event.target.value || "" });
+      });
+      this.querySelector("#bl-button-icon").appendChild(this._buttonIcon);
     }
 
     this._picker.hass = this._hass;
     this._picker.label = text.room;
     this._picker.value = this._config?.entity || "";
+
+    this._button.hass = this._hass;
+    this._button.label = text.extra_button;
+    this._button.value = this._config?.button_entity || "";
+
+    this._buttonIcon.hass = this._hass;
+    this._buttonIcon.label = text.extra_button_icon;
+    this._buttonIcon.placeholder = text.extra_button_icon;
+    this._buttonIcon.value = this._config?.button_icon || "";
+
     this._renderHidden(text);
   }
 

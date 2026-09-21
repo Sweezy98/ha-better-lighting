@@ -175,10 +175,19 @@ One row of controls each, and nothing that gets used twice a year:
   the dropdown — it just never appears in the list.
 - **A countdown** whenever the room is due to switch itself off, so a trigger's
   remaining hold is visible rather than something you wait out.
+- **One extra button**, optional, for something that is not about this room at
+  all — a house mode, a helper, the home cinema. Pick any entity in the card's
+  settings; it wears that entity's own icon unless you choose another, and it
+  carries no label, because the header already has the room's name in it. A
+  press toggles what can be toggled, presses a button, starts a scene or a
+  script, and opens the dialog for anything a single tap cannot answer — a mode
+  select, say. It lights up while the entity is doing something.
 
 ```yaml
 type: custom:better-lighting-card
 entity: light.living_room
+button_entity: input_boolean.home_cinema
+button_icon: mdi:movie-open   # optional; the entity's own icon otherwise
 ```
 
 ### Motion and door sensors

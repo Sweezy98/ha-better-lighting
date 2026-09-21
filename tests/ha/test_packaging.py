@@ -695,6 +695,42 @@ def test_the_card_is_served_and_loaded() -> None:
     assert "CARD_FILE" in source.split("StaticPathConfig")[1]
 
 
+def test_the_extra_header_button_is_configurable_and_wordless() -> None:
+    """Any entity, the entity's own icon by default, and no label.
+
+    The label is the part worth pinning down: the header already carries the
+    room's name, and a word beside it would be the widest thing in the row --
+    so the button is drawn from an icon and a tooltip only.
+    """
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+
+    at = card.index("_paintExtra() {")
+    paint = card[at : card.index("\n  _paintBar()", at)]
+    # The configured icon first, then the entity's own, then the domain's.
+    assert "this._config.button_icon ||" in paint
+    assert "state.attributes.icon ||" in paint
+    assert "textContent" not in paint, "the button carries no label"
+
+    # Offered in the visual editor, not only in YAML.
+    editor = card[card.index("class BetterLightingCardEditor") :]
+    assert "button_entity" in editor
+    assert "button_icon" in editor
+    assert 'createElement("ha-entity-picker")' in editor
+
+
+def test_the_extra_button_does_something_sensible_with_any_entity() -> None:
+    """It takes whatever entity it is pointed at, so every domain needs an
+    answer -- and for the ones a single tap cannot answer, the honest answer
+    is to open the entity's own dialog rather than to do nothing."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+    at = card.index("_pressExtra() {")
+    press = card[at : card.index("\n  _openMoreInfo(", at)]
+
+    assert '"press"' in card[: card.index("class BlDropdown")], "buttons press"
+    assert '"homeassistant", "toggle"' in press
+    assert "this._openMoreInfo(entityId)" in press
+
+
 def test_the_card_only_uses_entities_the_integration_publishes() -> None:
     """The card has no private channel to the backend, and should keep none.
 
@@ -979,19 +1015,34 @@ def test_one_dropdown_serves_the_card_and_the_panel() -> None:
 
 
 def test_the_menu_is_a_whole_number_of_rows() -> None:
-    """A menu two pixels short of its last row is a scrollbar over nothing.
+    """A menu a few pixels short of its last row is a scrollbar over nothing.
 
-    Both parts matter: the height is rows times a *measured* row, and the
-    padding and border are measured too rather than assumed -- a guessed
-    constant is what left the last item just barely clipped.
+    Three separate assumptions produced that scrollbar, so all three are
+    measured instead: the menu's own padding and border, the height of each
+    row rather than the first row's height times a count, and a whole pixel
+    rather than the fraction the sum lands on.
     """
     card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
     at = card.index("_place(menu) {")
     place = card[at : card.index("\n  _close()", at)]
 
-    assert "getBoundingClientRect().height" in place, "measure the row"
     assert "borderTopWidth" in place, "measure the menu's own chrome"
-    assert "rows * rowHeight + chrome" in place
+    assert 'querySelectorAll("button")' in place, "measure every row"
+    assert "Math.ceil(upTo(rows) + chrome)" in place
+    # The bug this replaced: one row's height, multiplied out.
+    assert "rowHeight" not in place
+
+
+def test_a_row_with_no_icon_is_as_tall_as_one_with() -> None:
+    """Rows of unequal height are what made the count wrong in the first
+    place, and the tick on the chosen row is enough to cause it: an empty
+    icon cell is zero tall, so a list of plain options had exactly one taller
+    row. Giving the cell a height keeps every row the same."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+    at = card.index(".menu button .ico {")
+    rule = card[at : card.index("}", at)]
+
+    assert "height: 20px" in rule
 
 
 def test_the_brightness_bar_works_on_a_dark_room() -> None:

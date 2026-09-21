@@ -746,3 +746,50 @@ def test_the_card_survives_being_drawn_without_a_room() -> None:
     assert "if (entity && !entity.startsWith" in body, (
         "an empty entity must be allowed through setConfig"
     )
+
+
+def test_the_icon_ships_and_is_served() -> None:
+    """The About box shows it before the brands registry has heard of us.
+
+    Three things again: the file exists, at the size Home Assistant's brands
+    repository asks for, and the static route serves it.
+    """
+    from custom_components.better_lighting import panel
+
+    icon = COMPONENT / "www" / panel.ICON_FILE
+    assert icon.is_file()
+
+    from PIL import Image
+
+    with Image.open(icon) as image:
+        assert image.size == (256, 256), "brands wants icon.png at 256x256"
+
+    source = (COMPONENT / "panel.py").read_text()
+    assert "ICON_FILE" in source.split("_async_serve(hass")[1].split(")")[0]
+
+
+def test_the_brand_assets_are_the_sizes_brands_asks_for() -> None:
+    """Wrong sizes are a rejected pull request against somebody else's repo,
+    found days later. They are cheap to check here."""
+    from PIL import Image
+
+    brands = COMPONENT.parents[1] / "images" / "brands" / "custom_integrations"
+    folder = brands / "better_lighting"
+    assert folder.is_dir(), "brand assets are not where the submission expects"
+
+    def size(name: str) -> tuple[int, int]:
+        with Image.open(folder / name) as image:
+            assert image.mode == "RGBA", f"{name} should keep its transparency"
+            return image.size
+
+    assert size("icon.png") == (256, 256)
+    assert size("icon@2x.png") == (512, 512)
+    for name, floor, ceiling in (
+        ("logo.png", 128, 256),
+        ("dark_logo.png", 128, 256),
+        ("logo@2x.png", 256, 512),
+        ("dark_logo@2x.png", 256, 512),
+    ):
+        width, height = size(name)
+        assert width > height, f"{name} should be landscape"
+        assert floor <= height <= ceiling, f"{name} shortest side is {height}"

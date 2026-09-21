@@ -91,6 +91,9 @@ PANEL_FILE = "better_lighting_panel.js"
 # frontend for everybody, so nobody has to add a Lovelace resource by
 # hand to use a card their own integration ships.
 CARD_FILE = "better_lighting_card.js"
+# Our own copy of the icon, so the About box has something to show before the
+# integration is listed in Home Assistant's brands registry.
+ICON_FILE = "icon.png"
 ELEMENT = "better-lighting-panel"
 
 # The id a draft is applied under while it is being edited. Reserved: a scene
@@ -145,7 +148,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     # integration rather than restarting Home Assistant skipped it entirely.
     # That is exactly how somebody receives an update -- and how the card
     # shipped unreachable.
-    await _async_serve(hass, PANEL_FILE, CARD_FILE)
+    await _async_serve(hass, PANEL_FILE, CARD_FILE, ICON_FILE)
     # Idempotent, and deliberately before the early return below: whether the
     # sidebar needs rebuilding says nothing about whether the card is loaded.
     await _async_register_card(hass)

@@ -811,6 +811,22 @@ state we own rather than guessed by matching light attributes.
 Please check each project's own licence before reusing what came from it; this repository's
 licence covers this repository's work.
 
+## The icon
+
+`images/brands/custom_integrations/better_lighting/` holds the icon and logo at
+the sizes [home-assistant/brands] asks for. Until they are submitted there, Home
+Assistant and HACS show a generic placeholder — the integration's own About box
+falls back to the copy shipped inside it, so the icon is visible either way.
+
+To submit: fork [home-assistant/brands], copy that folder to
+`custom_integrations/better_lighting/` in the fork, and open a pull request.
+Nothing here needs releasing afterwards; the registry is read live.
+
+`images/icon.html` and `images/logo.html` are the sources, rendered to PNG
+rather than retouched.
+
+[home-assistant/brands]: https://github.com/home-assistant/brands
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).

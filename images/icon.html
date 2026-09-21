@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow: hidden; }
+  body { width: 512px; height: 512px; }
+</style>
+</head>
+<body>
+<!--
+  The header image's language, at 256 pixels: a dark squircle, a cool ring, a
+  bulb whose light runs from the blue end of the day to the warm one.
+
+  Drawn for the small size rather than shrunk to it. Everything is a thick
+  stroke or a solid shape, and there is one idea in it -- a bulb, lit across
+  the day -- because a favicon-sized mark that tries to say three things says
+  none of them.
+-->
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="plate" gradientUnits="userSpaceOnUse"
+                    x1="0" y1="0" x2="512" y2="512">
+      <stop offset="0"   stop-color="#122534"/>
+      <stop offset="0.55" stop-color="#0d1b2a"/>
+      <stop offset="1"   stop-color="#0f141c"/>
+    </linearGradient>
+
+    <!-- The day, left to right: night, evening, noon. The same five stops as
+         the header's curve, so the two are recognisably one family. -->
+    <linearGradient id="day" gradientUnits="userSpaceOnUse"
+                    x1="150" y1="330" x2="362" y2="150">
+      <stop offset="0"    stop-color="#4aa8e0"/>
+      <stop offset="0.42" stop-color="#ffd27a"/>
+      <stop offset="1"    stop-color="#ffb43c"/>
+    </linearGradient>
+
+    <radialGradient id="bloom" cx="0.5" cy="0.42" r="0.5">
+      <stop offset="0"   stop-color="#ffc768" stop-opacity=".55"/>
+      <stop offset="0.6" stop-color="#ff9c2e" stop-opacity=".14"/>
+      <stop offset="1"   stop-color="#ff9c2e" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="ring" gradientUnits="userSpaceOnUse"
+                    x1="40" y1="40" x2="472" y2="472">
+      <stop offset="0"   stop-color="#5bc8ff" stop-opacity=".62"/>
+      <stop offset="0.6" stop-color="#5bc8ff" stop-opacity=".18"/>
+      <stop offset="1"   stop-color="#ffb43c" stop-opacity=".38"/>
+    </linearGradient>
+  </defs>
+
+  <!-- The plate. A squircle rather than a circle: it sits in a grid of
+       rounded tiles in both Home Assistant and HACS. -->
+  <rect x="16" y="16" width="480" height="480" rx="126" fill="url(#plate)"/>
+  <rect x="16" y="16" width="480" height="480" rx="126"
+        fill="none" stroke="url(#ring)" stroke-width="8"/>
+
+  <!-- The light it casts, before the thing casting it. -->
+  <circle cx="256" cy="236" r="150" fill="url(#bloom)"/>
+
+  <!-- The bulb. One closed shape, stroked in the colour of the day, so the
+       mark reads at 32 pixels as a lit bulb and at 512 as the curve. -->
+  <path d="M256 110
+           c -62 0 -112 49 -112 110
+           0 39 20 68 44 88
+           12 10 19 24 21 39
+           l 2 15 h 90 l 2 -15
+           c 2 -15 9 -29 21 -39
+           24 -20 44 -49 44 -88
+           0 -61 -50 -110 -112 -110 Z"
+        fill="#0b141d" fill-opacity=".55"
+        stroke="url(#day)" stroke-width="22" stroke-linejoin="round"/>
+
+  <!-- The filament as the curve itself: up through the morning, level at
+       noon, down again. The one flourish, and the thing the integration
+       actually computes. -->
+  <path d="M196 268 C 214 268, 218 216, 256 216 C 294 216, 298 268, 316 268"
+        stroke="#ffe6b0" stroke-width="15" stroke-linecap="round" fill="none"/>
+
+  <!-- The cap: three bands, because that is what makes a bulb a bulb. -->
+  <g stroke="#7fd2ff" stroke-width="20" stroke-linecap="round" opacity=".92">
+    <path d="M214 400 h 84"/>
+    <path d="M222 434 h 68"/>
+  </g>
+</svg>
+</body>
+</html>

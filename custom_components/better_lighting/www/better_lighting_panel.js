@@ -76,6 +76,10 @@ const BUILT_IN_EFFECTS = [
 // here -- and until this integration is listed, nothing loads and the
 // panel's own icon is shown instead.
 const BRAND_ICON = "https://brands.home-assistant.io/better_lighting/icon.png";
+// Ours, served beside this script. Used when the registry has nothing yet --
+// which is every install until the brands pull request lands, and every
+// install with no way out to the internet.
+const OWN_ICON = new URL("icon.png", import.meta.url).href;
 
 // The fingerprint this copy was served under, taken from its own URL. The
 // backend stamps the URL with a hash of the file, so comparing the two is how
@@ -2634,14 +2638,18 @@ class BetterLightingPanel extends HTMLElement {
     backdrop.innerHTML = `
       <div class="modal-card">
         <div class="about-head">
-          <!-- Linked rather than shipped, from the registry Home Assistant
-               draws every integration's icon from: a new icon there is a new
-               icon here, with nothing to release. Until this integration is
-               listed the image will not load, and the panel's own icon
-               stands in. -->
-          <img class="about-icon" alt="" src="${
-            BRAND_ICON
-          }" onerror="this.replaceWith(this.nextElementSibling)">
+          <!-- The registry first, because a new icon there is a new icon
+               here with nothing to release; then our own copy, which is what
+               every install sees until the brands pull request lands; then a
+               plain glyph, for a browser that will load neither. -->
+          <img class="about-icon" alt="" src="${BRAND_ICON}"
+               data-fallback="${OWN_ICON}"
+               onerror="if (this.dataset.fallback) {
+                          this.src = this.dataset.fallback;
+                          this.dataset.fallback = '';
+                        } else {
+                          this.replaceWith(this.nextElementSibling);
+                        }">
           ${this._icon("mdi:lightbulb-group")}
           <h2>${about.name || "Better Lighting"}</h2>
         </div>

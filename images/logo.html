@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { background: transparent; overflow: hidden; }
+  body { width: 1280px; height: 320px; display: flex; align-items: center;
+         gap: 40px; padding: 0 8px; font-family: Inter, system-ui, sans-serif; }
+  .mark { flex: 0 0 auto; }
+  .words { display: flex; flex-direction: column; justify-content: center; }
+  .name { font-size: 108px; font-weight: 800; letter-spacing: -.022em;
+          line-height: 1; color: #e9f2f8; white-space: nowrap; }
+  .name .warm { color: #ffb43c; }
+</style></head>
+<body>
+  <div class="mark"></div>
+  <div class="words"><div class="name">Better <span class="warm">Lighting</span></div></div>
+<script>
+// The same mark, inlined from the icon so the two cannot drift apart.
+fetch("index.html").then((r) => r.text()).then((html) => {
+  const svg = html.slice(html.indexOf("<svg"), html.indexOf("</svg>") + 6);
+  const el = document.querySelector(".mark");
+  el.innerHTML = svg;
+  const drawn = el.querySelector("svg");
+  drawn.setAttribute("width", "280");
+  drawn.setAttribute("height", "280");
+});
+</script>
+</body></html>

@@ -748,34 +748,17 @@ def test_the_card_survives_being_drawn_without_a_room() -> None:
     )
 
 
-def test_the_icon_ships_and_is_served() -> None:
-    """The About box shows it before the brands registry has heard of us.
+def test_the_brand_images_are_where_home_assistant_looks() -> None:
+    """Since 2026.3 a custom integration ships its own brand images.
 
-    Three things again: the file exists, at the size Home Assistant's brands
-    repository asks for, and the static route serves it.
+    In ``brand/`` beside the manifest, picked up with no configuration and no
+    pull request against anybody else's repository. The sizes are still the
+    brands repository's, which is what the proxy and the CDN both expect.
     """
-    from custom_components.better_lighting import panel
-
-    icon = COMPONENT / "www" / panel.ICON_FILE
-    assert icon.is_file()
-
     from PIL import Image
 
-    with Image.open(icon) as image:
-        assert image.size == (256, 256), "brands wants icon.png at 256x256"
-
-    source = (COMPONENT / "panel.py").read_text()
-    assert "ICON_FILE" in source.split("_async_serve(hass")[1].split(")")[0]
-
-
-def test_the_brand_assets_are_the_sizes_brands_asks_for() -> None:
-    """Wrong sizes are a rejected pull request against somebody else's repo,
-    found days later. They are cheap to check here."""
-    from PIL import Image
-
-    brands = COMPONENT.parents[1] / "images" / "brands" / "custom_integrations"
-    folder = brands / "better_lighting"
-    assert folder.is_dir(), "brand assets are not where the submission expects"
+    folder = COMPONENT / "brand"
+    assert folder.is_dir(), "brand images are not where Home Assistant reads them"
 
     def size(name: str) -> tuple[int, int]:
         with Image.open(folder / name) as image:
@@ -793,6 +776,16 @@ def test_the_brand_assets_are_the_sizes_brands_asks_for() -> None:
         width, height = size(name)
         assert width > height, f"{name} should be landscape"
         assert floor <= height <= ceiling, f"{name} shortest side is {height}"
+
+
+def test_the_icon_is_served_for_older_cores_too() -> None:
+    """The brand folder means nothing before 2026.3, and the About box still
+    wants an icon. The same file, served by us."""
+    from custom_components.better_lighting import panel
+
+    assert (COMPONENT / panel.ICON_FILE).is_file()
+    source = (COMPONENT / "panel.py").read_text()
+    assert "ICON_FILE" in source.split("_async_serve(hass")[1].split(")")[0]
 
 
 def test_the_card_owns_its_controls() -> None:

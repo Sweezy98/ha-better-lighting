@@ -817,14 +817,26 @@ licence covers this repository's work.
 
 ## The icon
 
-`images/brands/custom_integrations/better_lighting/` holds the icon and logo at
-the sizes [home-assistant/brands] asks for. Until they are submitted there, Home
-Assistant and HACS show a generic placeholder — the integration's own About box
-falls back to the copy shipped inside it, so the icon is visible either way.
+It ships with the integration. Since **Home Assistant 2026.3** a custom
+integration carries its own brand images in a `brand/` folder beside its
+manifest, and Home Assistant and HACS read them from there — no configuration,
+and no pull request against [home-assistant/brands].
 
-To submit: fork [home-assistant/brands], copy that folder to
-`custom_integrations/better_lighting/` in the fork, and open a pull request.
-Nothing here needs releasing afterwards; the registry is read live.
+```
+custom_components/better_lighting/brand/
+├── icon.png          256×256
+├── icon@2x.png       512×512
+├── logo.png          596×150     ← shown on light backgrounds
+├── logo@2x.png       1191×300
+├── dark_logo.png     596×150     ← shown on dark ones
+└── dark_logo@2x.png  1191×300
+```
+
+On a core older than 2026.3 that folder means nothing, and HACS falls back to a
+placeholder; the integration's own About box serves the same file itself, so the
+icon is visible there either way. Submitting to [home-assistant/brands] is still
+possible if those older installs matter to you — the same six files go in
+`custom_integrations/better_lighting/`.
 
 `images/icon.html` and `images/logo.html` are the sources, rendered to PNG
 rather than retouched.

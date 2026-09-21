@@ -91,9 +91,10 @@ PANEL_FILE = "better_lighting_panel.js"
 # frontend for everybody, so nobody has to add a Lovelace resource by
 # hand to use a card their own integration ships.
 CARD_FILE = "better_lighting_card.js"
-# Our own copy of the icon, so the About box has something to show before the
-# integration is listed in Home Assistant's brands registry.
-ICON_FILE = "icon.png"
+# The icon, from the folder Home Assistant reads brand images out of since
+# 2026.3. Served here as well so the About box can show it on an older core,
+# where that folder means nothing -- one file, two readers.
+ICON_FILE = "brand/icon.png"
 ELEMENT = "better-lighting-panel"
 
 # The id a draft is applied under while it is being edited. Reserved: a scene
@@ -119,9 +120,8 @@ def _fingerprint(name: str = PANEL_FILE) -> str:
     than using the version means it is right even when the same version is
     installed twice, which is what happens to anybody tracking main.
     """
-    path = Path(__file__).parent / "www" / name
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+        return hashlib.sha256(_asset(name).read_bytes()).hexdigest()[:12]
     except OSError:  # pragma: no cover - the file ships with the integration
         return "dev"
 
@@ -191,8 +191,11 @@ async def _async_serve(hass: HomeAssistant, *names: str) -> None:
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
-                f"{PANEL_URL}/{name}",
-                str(Path(__file__).parent / "www" / name),
+                # Served under its basename, wherever it lives on disk: the
+                # icon is in the brand folder and the scripts are in www, and
+                # neither of those is the browser's business.
+                f"{PANEL_URL}/{Path(name).name}",
+                str(_asset(name)),
                 # Safe to cache hard: the URL carries the file's fingerprint,
                 # so a changed file is a different URL.
                 True,
@@ -200,6 +203,12 @@ async def _async_serve(hass: HomeAssistant, *names: str) -> None:
             for name in wanted
         ]
     )
+
+
+def _asset(name: str) -> Path:
+    """One of our files on disk. Bare names live in ``www``."""
+    path = Path(__file__).parent / name
+    return path if "/" in name else path.parent / "www" / name
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:

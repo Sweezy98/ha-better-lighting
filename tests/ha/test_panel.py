@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import pathlib
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
@@ -22,6 +23,10 @@ from tests.conftest import (
 from tests.ha.test_scenes import light_spec, room_scene
 
 pytestmark = pytest.mark.usefixtures("socket_enabled")
+
+COMPONENT_DIR = (
+    pathlib.Path(__file__).parents[2] / "custom_components" / "better_lighting"
+)
 
 
 async def _setup(hass: HomeAssistant, ws_client):
@@ -291,6 +296,41 @@ class TestTheDashboardCard:
         }
         assert len(after) == 1, sorted(after)
         assert after != before
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_the_url_it_hands_out_is_one_home_assistant_serves(
+        self, hass: HomeAssistant, hass_client
+    ) -> None:
+        """The whole question, asked of the running server rather than argued.
+
+        Ours is not under /hacsfiles/, which is HACS's own route for the
+        repositories it copies; this is our route for the files we ship. What
+        matters is not which prefix it is but that a browser asking for it
+        gets the script -- so the test fetches it.
+        """
+        from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+
+        from custom_components.better_lighting import panel
+
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+
+        url = next(
+            url
+            for url in hass.data[DATA_EXTRA_MODULE_URL].urls
+            if panel.CARD_FILE in url
+        )
+        response = await (await hass_client()).get(url)
+
+        assert response.status == 200, url
+        body = await response.text()
+        assert 'customElements.define("better-lighting-card"' in body
+        assert body == (COMPONENT_DIR / "www" / panel.CARD_FILE).read_text(
+            encoding="utf-8"
+        )
 
     @pytest.mark.skipif(
         not importlib.util.find_spec("hass_frontend"),

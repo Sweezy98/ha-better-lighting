@@ -1067,13 +1067,71 @@ class BetterLightingPanel extends HTMLElement {
           dismissable: false,
           action: {
             text: this._t("reload_now"),
-            action: () => location.reload(),
+            action: () => this._hardReload({ confirm: false }),
           },
         },
         bubbles: true,
         composed: true,
       })
     );
+  }
+
+  /**
+   * Throw away the cached frontend and fetch it again.
+   *
+   * A plain reload is not enough and never was. Home Assistant installs a
+   * service worker, which answers from its own cache before the network is
+   * asked -- so a browser that has the old page keeps being handed the old
+   * page, however many times it is reloaded. On a desktop there is a hard
+   * refresh to reach past it. On a phone there is not, which is the whole
+   * reason this button exists.
+   *
+   * So the worker is unregistered and its caches emptied before reloading:
+   * nothing is left to answer from, and the next request has to go to Home
+   * Assistant. It costs one slower page load, once.
+   */
+  async _hardReload({ confirm = true } = {}) {
+    if (
+      confirm &&
+      !(await this._ask({
+        title: this._t("reload_frontend"),
+        text: this._t("reload_frontend_hint"),
+        confirm: this._t("reload_now"),
+      }))
+    ) {
+      return;
+    }
+
+    // Said before the work rather than after it: emptying a cache on a phone
+    // takes a noticeable moment, and the reload wipes the toast anyway.
+    this.dispatchEvent(
+      new CustomEvent("hass-notification", {
+        detail: { message: this._t("reload_frontend_done") },
+        bubbles: true,
+        composed: true,
+      })
+    );
+
+    // Each step guarded on its own: an older browser, or a page served over
+    // plain http, may have neither API -- and failing to clear a cache is no
+    // reason not to reload.
+    try {
+      const workers =
+        (await navigator.serviceWorker?.getRegistrations?.()) || [];
+      await Promise.all(workers.map((worker) => worker.unregister()));
+    } catch {
+      // Nothing registered, or not allowed to ask.
+    }
+    try {
+      const names = (await window.caches?.keys?.()) || [];
+      await Promise.all(names.map((name) => window.caches.delete(name)));
+    } catch {
+      // No Cache Storage here.
+    }
+
+    // `reload` rather than a new URL: the address bar should still say where
+    // we were once the page comes back.
+    location.reload();
   }
 
   async _load() {
@@ -1203,6 +1261,11 @@ class BetterLightingPanel extends HTMLElement {
       `<button class="flat" id="refresh">${this._icon(
          "mdi:refresh"
        )}<span>${this._t("refresh")}</span></button>
+       <button class="flat" id="reload-frontend" title="${this._t(
+         "reload_frontend_hint"
+       )}">${this._icon("mdi:cached")}<span>${this._t(
+         "reload_frontend"
+       )}</span></button>
        <button class="flat" id="clear-log">${this._icon(
          "mdi:notification-clear-all"
        )}<span>${this._t("clear_log")}</span></button>`
@@ -1210,6 +1273,9 @@ class BetterLightingPanel extends HTMLElement {
 
     main.querySelector("#refresh").addEventListener("click", () =>
       this._refreshDiagnostics()
+    );
+    main.querySelector("#reload-frontend").addEventListener("click", () =>
+      this._hardReload()
     );
     main.querySelector("#clear-log").addEventListener("click", async () => {
       if (!(await this._confirm(this._t("clear_log")))) return;

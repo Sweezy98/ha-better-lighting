@@ -85,6 +85,11 @@ const OWN_ICON = new URL("icon.png", import.meta.url).href;
 // backend stamps the URL with a hash of the file, so comparing the two is how
 // an open page learns it has been superseded.
 const OWN_VERSION = new URL(import.meta.url).searchParams.get("v");
+// The route the integration serves its own files from, taken from where this
+// script was loaded rather than written down: it is registered by us, and the
+// two must agree even if the name ever changes.
+const OWN_ROUTE = new URL(".", import.meta.url).pathname;
+const CARD_URL = new URL("better_lighting_card.js", import.meta.url).href;
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
@@ -1077,18 +1082,23 @@ class BetterLightingPanel extends HTMLElement {
   }
 
   /**
-   * Throw away the cached frontend and fetch it again.
+   * Fetch the frontend again, without throwing away what cannot be stale.
    *
    * A plain reload is not enough and never was. Home Assistant installs a
    * service worker, which answers from its own cache before the network is
    * asked -- so a browser that has the old page keeps being handed the old
    * page, however many times it is reloaded. On a desktop there is a hard
    * refresh to reach past it. On a phone there is not, which is the whole
-   * reason this button exists.
+   * reason this exists.
    *
-   * So the worker is unregistered and its caches emptied before reloading:
-   * nothing is left to answer from, and the next request has to go to Home
-   * Assistant. It costs one slower page load, once.
+   * What it does *not* do any more is empty every cache and unregister the
+   * worker. That took away Home Assistant's whole precached frontend --
+   * megabytes, over mobile data, for nothing, since every file in it is named
+   * after its own contents and so cannot be stale -- and it reloaded the page
+   * through a worker whose cache had just been pulled out from under it,
+   * which is a good way to arrive at a frontend with pieces missing. Only the
+   * two things that *can* be stale are dropped: our own scripts, and the
+   * pages that carry the tags loading them.
    */
   async _hardReload({ confirm = true } = {}) {
     if (
@@ -1102,36 +1112,84 @@ class BetterLightingPanel extends HTMLElement {
       return;
     }
 
-    // Said before the work rather than after it: emptying a cache on a phone
-    // takes a noticeable moment, and the reload wipes the toast anyway.
-    this.dispatchEvent(
-      new CustomEvent("hass-notification", {
-        detail: { message: this._t("reload_frontend_done") },
-        bubbles: true,
-        composed: true,
-      })
-    );
+    // Asked before anything is thrown away, and answered by the server
+    // rather than by a cache. If the card is not being served then no amount
+    // of reloading will conjure it, and saying so is worth more than a
+    // refresh that changes nothing.
+    const reachable = await this._reachable(CARD_URL);
+    if (reachable !== true) {
+      this._notify(
+        this._t("reload_frontend_missing").replace("{reason}", reachable)
+      );
+      return;
+    }
 
-    // Each step guarded on its own: an older browser, or a page served over
-    // plain http, may have neither API -- and failing to clear a cache is no
-    // reason not to reload.
+    // Said before the work rather than after it: clearing on a phone takes a
+    // noticeable moment, and the reload wipes the toast anyway.
+    this._notify(this._t("reload_frontend_done"));
+    await this._purgeCaches();
+
+    // Told to look for a new worker rather than taken away: unregistering
+    // leaves the page it is running in uncontrolled halfway through.
     try {
       const workers =
         (await navigator.serviceWorker?.getRegistrations?.()) || [];
-      await Promise.all(workers.map((worker) => worker.unregister()));
+      await Promise.all(workers.map((worker) => worker.update()));
     } catch {
-      // Nothing registered, or not allowed to ask.
-    }
-    try {
-      const names = (await window.caches?.keys?.()) || [];
-      await Promise.all(names.map((name) => window.caches.delete(name)));
-    } catch {
-      // No Cache Storage here.
+      // No worker, or not allowed to ask. Neither stops the reload.
     }
 
     // `reload` rather than a new URL: the address bar should still say where
     // we were once the page comes back.
     location.reload();
+  }
+
+  /** Whether the server will actually hand over a URL, cache bypassed. */
+  async _reachable(url) {
+    try {
+      const response = await fetch(url, { cache: "reload" });
+      return response.ok ? true : `HTTP ${response.status}`;
+    } catch (error) {
+      return error?.message || "unreachable";
+    }
+  }
+
+  /**
+   * Drop the cached copies of the only two things that go out of date.
+   *
+   * Our own scripts, which are cached hard under a URL that changes with the
+   * file; and any document -- `/`, `/lovelace/0`, this page -- because the
+   * tags that load those scripts are written into it when it is served.
+   * Everything else Home Assistant caches is named after its own contents
+   * and is left exactly where it is.
+   */
+  async _purgeCaches() {
+    let dropped = 0;
+    try {
+      for (const name of (await window.caches?.keys?.()) || []) {
+        const cache = await window.caches.open(name);
+        for (const request of await cache.keys()) {
+          const path = new URL(request.url).pathname;
+          const stale =
+            path.startsWith(OWN_ROUTE) || !/\.[a-z0-9]+$/i.test(path);
+          if (stale && (await cache.delete(request))) dropped += 1;
+        }
+      }
+    } catch {
+      // No Cache Storage here, or nothing we are allowed to touch.
+    }
+    return dropped;
+  }
+
+  /** Home Assistant's own toast. */
+  _notify(message) {
+    this.dispatchEvent(
+      new CustomEvent("hass-notification", {
+        detail: { message },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   async _load() {
@@ -1261,11 +1319,6 @@ class BetterLightingPanel extends HTMLElement {
       `<button class="flat" id="refresh">${this._icon(
          "mdi:refresh"
        )}<span>${this._t("refresh")}</span></button>
-       <button class="flat" id="reload-frontend" title="${this._t(
-         "reload_frontend_hint"
-       )}">${this._icon("mdi:cached")}<span>${this._t(
-         "reload_frontend"
-       )}</span></button>
        <button class="flat" id="clear-log">${this._icon(
          "mdi:notification-clear-all"
        )}<span>${this._t("clear_log")}</span></button>`
@@ -1273,9 +1326,6 @@ class BetterLightingPanel extends HTMLElement {
 
     main.querySelector("#refresh").addEventListener("click", () =>
       this._refreshDiagnostics()
-    );
-    main.querySelector("#reload-frontend").addEventListener("click", () =>
-      this._hardReload()
     );
     main.querySelector("#clear-log").addEventListener("click", async () => {
       if (!(await this._confirm(this._t("clear_log")))) return;
@@ -1893,6 +1943,9 @@ class BetterLightingPanel extends HTMLElement {
     this.shadowRoot.getElementById("go-import").innerHTML = `${this._icon(
       "mdi:download"
     )}<span class="grow">${this._t("import_scenes")}</span>`;
+    this.shadowRoot.getElementById("go-reload").innerHTML = `${this._icon(
+      "mdi:cached"
+    )}<span class="grow">${this._t("reload_frontend")}</span>`;
     this.shadowRoot.getElementById("go-about").innerHTML = `${this._icon(
       "mdi:information-outline"
     )}<span class="grow">${this._t("about")}</span>`;
@@ -2498,6 +2551,7 @@ class BetterLightingPanel extends HTMLElement {
           <button class="icon-btn" id="more"></button>
           <div class="menu" id="more-menu" hidden>
             <button class="menu-item" id="go-import"></button>
+            <button class="menu-item" id="go-reload"></button>
             <button class="menu-item" id="go-about"></button>
           </div>
         </div>
@@ -2544,6 +2598,10 @@ class BetterLightingPanel extends HTMLElement {
     this.shadowRoot.getElementById("more").addEventListener("click", (event) => {
       event.stopPropagation();
       overflow.hidden = !overflow.hidden;
+    });
+    this.shadowRoot.getElementById("go-reload").addEventListener("click", () => {
+      overflow.hidden = true;
+      this._hardReload();
     });
     this.shadowRoot.getElementById("go-about").addEventListener("click", () => {
       overflow.hidden = true;

@@ -691,13 +691,19 @@ ended up; the log tells you which press or which film put it there.
 It is the same dump the diagnostics download produces, so what you read on the
 page and what you attach to a bug report cannot disagree.
 
-**Reload the frontend** is on the same page. Home Assistant installs a service
-worker, which answers from its own cache before the network is asked, so a
-browser holding the old page keeps being handed the old page however often you
-reload it. On a desktop a hard refresh reaches past that. On a phone there is
-no hard refresh — which is what this button is for: it unregisters the worker,
-empties its caches and loads the page again, so the next request has to go to
-Home Assistant. It costs one slower page load, once.
+**Reload the frontend** is in the panel's three-dot menu, so it is there
+wherever you happen to be. Home Assistant installs a service worker, which
+answers from its own cache before the network is asked, so a browser holding
+the old page keeps being handed the old page however often you reload it. On a
+desktop a hard refresh reaches past that; on a phone there is no hard refresh,
+which is what this is for.
+
+It drops only the two things that can be out of date — this integration's own
+scripts, and the page carrying the tags that load them — and leaves Home
+Assistant's cached frontend alone, since every file in it is named after its
+own contents and so cannot be stale. It also checks that the card is actually
+being served before clearing anything, and says so if it is not, because then
+reloading is not the answer.
 
 It also **draws the adaptive curve** for the selected room across today: a line
 for brightness, a band behind it painted with the colour temperature at each

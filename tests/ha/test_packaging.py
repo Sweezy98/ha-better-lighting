@@ -342,6 +342,44 @@ def test_the_panel_strings_are_translated_as_completely_as_the_forms() -> None:
     assert not untranslated, f"still English in German: {untranslated}"
 
 
+def test_the_reload_keeps_what_cannot_go_out_of_date() -> None:
+    """Emptying every cache was worse than the problem it solved.
+
+    It took Home Assistant's whole precached frontend -- megabytes, over
+    mobile data, for files named after their own contents and so incapable
+    of being stale -- and it reloaded the page through a worker whose cache
+    had just been pulled out from under it, which is how the frontend came
+    back with pieces missing. Only the two things that can be stale go: our
+    own scripts, and the pages carrying the tags that load them.
+    """
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    at = panel_js.index("  async _purgeCaches() {")
+    purge = panel_js[at : panel_js.index("\n  /** Home Assistant", at)]
+
+    assert "OWN_ROUTE" in purge, "our own scripts go"
+    assert "cache.delete(request)" in purge, "by entry, not by whole cache"
+    assert "caches.delete(" not in purge, "never a whole cache"
+
+    at = panel_js.index("  async _hardReload(")
+    reload = panel_js[at : panel_js.index("\n  /** Whether the server", at)]
+    assert ".unregister()" not in reload, "the worker is updated, not removed"
+    assert "worker.update()" in reload
+    # And it says so rather than reloading into the same nothing.
+    assert "this._reachable(CARD_URL)" in reload
+    assert "reload_frontend_missing" in reload
+
+
+def test_the_reload_is_in_the_overflow_menu() -> None:
+    """Beside About and Import scenes: it belongs to the page, not to the
+    diagnostics screen, and is wanted from wherever somebody happens to be."""
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+
+    at = panel_js.index('<div class="menu" id="more-menu"')
+    assert 'id="go-reload"' in panel_js[at : at + 300]
+    assert 'getElementById("go-reload").addEventListener' in panel_js
+    assert "reload-frontend" not in panel_js, "and no longer on the page it left"
+
+
 def test_home_assistants_controls_are_used_but_not_relied_on() -> None:
     """They are lazily registered and were never promised to a custom panel.
 

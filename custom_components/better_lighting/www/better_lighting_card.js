@@ -314,35 +314,43 @@ class BlDropdown extends HTMLElement {
           box-shadow: 0 8px 28px rgba(0, 0, 0, .5);
           overflow-y: auto; overscroll-behavior: contain;
         }
-        /* The icon column sits on the same line as the trigger's: one border
-           and this padding come off the trigger's own. */
+        /* The same three columns as the trigger, so a row lines up with the
+           control it dropped out of: the option's icon under the trigger's,
+           the tick under the chevron. One border and this padding come off
+           the trigger's own, which is what puts them on the same line. */
         .menu button {
-          display: grid; grid-template-columns: var(--bl-gutter) 1fr;
+          display: grid;
+          grid-template-columns: var(--bl-gutter) 1fr var(--bl-gutter);
           align-items: center; width: 100%; box-sizing: border-box;
-          padding: 11px 12px 11px calc(var(--bl-pad) - 6px);
+          padding: 11px calc(var(--bl-pad) - 6px);
           border: 0; background: none; cursor: pointer; border-radius: 10px;
           color: var(--primary-text-color); font: inherit; text-align: left;
         }
+        /* Nothing in the list has an icon, so there is no column for the
+           labels to line up against and the gutter would be indentation for
+           its own sake. */
+        .menu.plain button { grid-template-columns: 1fr var(--bl-gutter); }
         .menu button:hover, .menu button:focus-visible {
           background: var(--secondary-background-color); outline: none;
         }
         .menu button[aria-selected="true"] { color: var(--primary-color); }
-        /* Always there, even for an option with no icon: the column has to
-           be occupied or the label slides into it and gets the icon's width
-           -- which is how a list of modes came out as "p." The height is
-           given rather than left to the contents for the same reason one
-           step further on: an empty cell is zero tall, so a list whose rows
-           mostly have no icon had one taller row -- the chosen one, which
-           carries the tick -- and every row sized from that one came out
-           wrong. */
-        .menu button .ico {
-          display: inline-flex; justify-content: flex-start;
-          align-items: center; height: 20px;
+        /* Both cells are always occupied, even when empty. Two reasons, and
+           both were bugs: an empty *element* still holds the column, where
+           no element at all lets the label slide into it and take the icon's
+           width -- which is how a list of modes came out as "p." -- and a
+           given height keeps every row the same, where a cell sized by its
+           contents made the chosen row, the one carrying the tick, taller
+           than the rest and every count of rows wrong. */
+        .menu button .ico, .menu button .tick {
+          display: inline-flex; align-items: center; height: 20px;
         }
+        .menu button .ico { justify-content: flex-start; }
+        .menu button .tick { justify-content: flex-end; }
         .menu button .text {
           min-width: 0; padding: 0 8px; text-align: left;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
+        .menu.plain button .text { padding-left: 0; }
         [hidden] { display: none !important; }
       </style>
       <button class="trigger" part="trigger" aria-haspopup="listbox">
@@ -392,15 +400,22 @@ class BlDropdown extends HTMLElement {
 
   _fill() {
     const menu = this.shadowRoot.getElementById("menu");
+    // An option's own icon always shows -- it is what the row is recognised
+    // by, and the tick has a column of its own on the right, under the
+    // trigger's chevron. Where no option has one there is nothing to line
+    // the labels up against, so that column goes rather than standing empty.
+    const illustrated = this._options.some((option) => option.icon);
+    menu.classList.toggle("plain", !illustrated);
     menu.innerHTML = this._options
       .map(
         (option) => `<button role="option" data-value="${option.value}"
-           aria-selected="${option.value === this._value}">
-           <span class="ico">${this._icon(
-             // The tick takes the icon's place on the current row: which one
-             // is chosen is already said by the icon on the trigger.
-             option.value === this._value ? "mdi:check" : option.icon
-           )}</span><span class="text">${option.label}</span></button>`
+           aria-selected="${option.value === this._value}">${
+             illustrated
+               ? `<span class="ico">${this._icon(option.icon)}</span>`
+               : ""
+           }<span class="text">${option.label}</span><span class="tick">${
+             option.value === this._value ? this._icon("mdi:check") : ""
+           }</span></button>`
       )
       .join("");
     menu.querySelectorAll("button").forEach((row) =>

@@ -150,8 +150,15 @@ same custom card, instantiated there: one implementation, two places it shows.
 
 ### The dashboard card
 
-The integration ships a card, loaded for you — there is no Lovelace resource to
-add. Pick **Better Lighting room** in the card picker and choose a room's light.
+The integration ships a card and loads it for you — there is nothing to add by
+hand. It is registered two ways on purpose: as a frontend module, which is what
+the sidebar's icon needs, and as a Lovelace resource, which is what a dashboard
+asks for every time it is opened. A page served before the integration was set
+up never carries the first, which is why a card can be there one moment and
+"custom element doesn't exist" the next; the second has no such window. Both are
+rewritten when the file changes and taken away when the integration is.
+
+Pick **Better Lighting room** in the card picker and choose a room's light.
 
 One row of controls each, and nothing that gets used twice a year:
 

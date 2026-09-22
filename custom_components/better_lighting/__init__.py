@@ -52,6 +52,7 @@ from .openings import WindowWatcher
 from .panel import (
     async_register_commands,
     async_remove_panel,
+    async_remove_resources,
     async_setup_panel,
 )
 from .presence import RoomPresence
@@ -524,6 +525,10 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     ours: the session file, and any repair issues we raised.
     """
     async_remove_services(hass)
+    # The card's Lovelace resource outlives an unload on purpose, so this is
+    # the only place it is taken away: a row pointing at a file nobody serves
+    # any more would break every dashboard that still had the card on it.
+    await async_remove_resources(hass)
 
     store = SessionStore(hass)
     await store.async_remove()

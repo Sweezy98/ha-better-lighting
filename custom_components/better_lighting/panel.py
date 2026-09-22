@@ -27,6 +27,7 @@ from homeassistant.components import frontend, panel_custom, websocket_api
 from homeassistant.components import scene as scene_component
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigSubentry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
@@ -113,6 +114,13 @@ _CURVE_STEPS = 96
 
 # Where we note that the panel's route is already on the HTTP app.
 _STATIC_REGISTERED = f"{DOMAIN}_panel_static"
+# The card URLs we have handed the frontend, so the next run can take back
+# the ones an upgrade made stale rather than leaving two copies loaded.
+_CARD_URLS = f"{DOMAIN}_card_urls"
+# Home Assistant's own key for the Lovelace data, read rather than imported:
+# lovelace is not a dependency of ours and a house that does not have it
+# should lose a belt, not a lighting integration.
+_LOVELACE = "lovelace"
 
 
 def _fingerprint(name: str = PANEL_FILE) -> str:
@@ -218,14 +226,132 @@ def _asset(name: str) -> Path:
 async def _async_register_card(hass: HomeAssistant) -> None:
     """Load the dashboard card and our icon set into the frontend.
 
-    As an extra module URL rather than a Lovelace resource: a resource is a
-    row in the user's own configuration that we would then have to own the
-    lifetime of, and removing the integration would leave it pointing at a
-    file that is no longer served. This is ours, and it goes when we do.
+    Both ways, because the two fail in different places and neither is
+    enough on its own.
+
+    ``add_extra_js_url`` writes a script tag into the page Home Assistant
+    serves. That is the only way to reach the app shell -- the sidebar's icon
+    comes from there -- but the tag is only in pages served *after* we were
+    set up, and a browser that already had the page open, or was handed a
+    cached one, never sees it. That is the "custom element doesn't exist"
+    that comes and goes: the card is fine, the page it was asked for simply
+    never loaded it.
+
+    A dashboard asks for its resource list over the websocket every time it
+    is opened, so a Lovelace resource has no such window. The objection to
+    one was that it is a row in the user's configuration whose lifetime we
+    would have to own -- so we own it: it is rewritten when the file changes,
+    any duplicate pointing at our path is taken away, and it is deleted when
+    the integration is.
     """
+    urls = []
     for name in (CARD_FILE, ICONS_FILE):
         fingerprint = await hass.async_add_executor_job(_fingerprint, name)
-        frontend.add_extra_js_url(hass, f"{PANEL_URL}/{name}?v={fingerprint}")
+        urls.append(f"{PANEL_URL}/{name}?v={fingerprint}")
+
+    _async_refresh_extra_modules(hass, urls)
+    await _async_refresh_resources(hass, urls)
+
+
+@callback
+def _async_refresh_extra_modules(hass: HomeAssistant, urls: list[str]) -> None:
+    """Hand the frontend today's URLs and take back yesterday's.
+
+    An upgrade changes the fingerprint, so a reload -- which is how most
+    people take an upgrade -- used to leave the old URL in the list beside
+    the new one. The browser then fetched and ran two versions of the card,
+    and which one defined the element was a matter of which arrived first.
+    """
+    stale: set[str] = hass.data.get(_CARD_URLS, set()) - set(urls)
+    for url in stale:
+        frontend.remove_extra_js_url(hass, url)
+    hass.data[_CARD_URLS] = set(urls)
+    for url in urls:
+        frontend.add_extra_js_url(hass, url)
+
+
+def _resources(hass: HomeAssistant) -> Any | None:
+    """Lovelace's resource collection, if there is one we may write to.
+
+    There is not, in two cases that are both fine: an install with no
+    Lovelace at all, and one whose resources come from YAML, where the list
+    is the user's file and not ours to edit.
+    """
+    resources = getattr(hass.data.get(_LOVELACE), "resources", None)
+    if resources is None or not hasattr(resources, "async_create_item"):
+        return None
+    return resources
+
+
+async def _async_refresh_resources(hass: HomeAssistant, urls: list[str]) -> None:
+    """Keep exactly one Lovelace resource per script of ours."""
+    if (resources := _resources(hass)) is None:
+        # Lovelace is set up during startup, and so are we. Missing now says
+        # nothing about missing in a moment.
+        if not hass.is_running:
+            hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED,
+                lambda _event: hass.async_create_task(
+                    _async_refresh_resources(hass, urls)
+                ),
+            )
+        return
+
+    try:
+        await resources.async_get_info()  # Loads the store on first use.
+        existing = list(resources.async_items())
+    except Exception:  # pragma: no cover - a broken store is not ours to fix
+        _LOGGER.debug("Could not read the Lovelace resources", exc_info=True)
+        return
+
+    wanted = {url.split("?")[0]: url for url in urls}
+    seen: set[str] = set()
+    for item in existing:
+        path = str(item.get("url", "")).split("?")[0]
+        if not path.startswith(f"{PANEL_URL}/"):
+            continue
+        try:
+            if path in wanted and path not in seen:
+                seen.add(path)
+                if item["url"] != wanted[path]:
+                    await resources.async_update_item(item["id"], {"url": wanted[path]})
+            else:
+                # A second row for the same file -- added by hand, most
+                # likely, when the card would not appear -- or one for a
+                # script we no longer ship.
+                await resources.async_delete_item(item["id"])
+        except Exception:  # pragma: no cover - a rejected write is not fatal
+            _LOGGER.debug("Could not tidy the Lovelace resource %s", path)
+
+    for path, url in wanted.items():
+        if path in seen:
+            continue
+        try:
+            await resources.async_create_item({"res_type": "module", "url": url})
+        except Exception:  # pragma: no cover - as above
+            _LOGGER.debug("Could not add the Lovelace resource %s", url)
+
+
+async def async_remove_resources(hass: HomeAssistant) -> None:
+    """Take our Lovelace resources away for good.
+
+    Only when the integration is being removed, not when it is unloaded: a
+    reload would otherwise delete and recreate the row on every restart, and
+    a resource pointing at a file that is still served is not litter.
+    """
+    if (resources := _resources(hass)) is None:
+        return
+    try:
+        await resources.async_get_info()
+        ours = [
+            item
+            for item in resources.async_items()
+            if str(item.get("url", "")).startswith(f"{PANEL_URL}/")
+        ]
+        for item in ours:
+            await resources.async_delete_item(item["id"])
+    except Exception:  # pragma: no cover - nothing here is worth failing on
+        _LOGGER.debug("Could not remove the Lovelace resources", exc_info=True)
 
 
 @callback

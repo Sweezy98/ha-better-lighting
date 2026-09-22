@@ -1035,14 +1035,33 @@ def test_the_menu_is_a_whole_number_of_rows() -> None:
 
 def test_a_row_with_no_icon_is_as_tall_as_one_with() -> None:
     """Rows of unequal height are what made the count wrong in the first
-    place, and the tick on the chosen row is enough to cause it: an empty
-    icon cell is zero tall, so a list of plain options had exactly one taller
-    row. Giving the cell a height keeps every row the same."""
+    place, and the tick on the chosen row is enough to cause it: a cell
+    sized by its contents is zero tall when empty, so a list of plain options
+    had exactly one taller row. A given height keeps every row the same."""
     card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
-    at = card.index(".menu button .ico {")
+    at = card.index(".menu button .ico, .menu button .tick {")
     rule = card[at : card.index("}", at)]
 
     assert "height: 20px" in rule
+
+
+def test_the_tick_has_a_column_of_its_own() -> None:
+    """Both were asked for and neither is decoration: the option keeps its
+    own icon, because that is what the row is recognised by, and the tick
+    goes under the trigger's chevron. A list where no option has an icon
+    drops the leading column rather than indenting every label past it."""
+    card = (COMPONENT / "www" / "better_lighting_card.js").read_text()
+    at = card.index("_fill() {")
+    fill = card[at : card.index("\n  _show()", at)]
+
+    assert 'class="tick"' in fill
+    assert '"mdi:check"' in fill
+    # The option's icon is drawn from the option, never swapped for the tick.
+    assert "this._icon(option.icon)" in fill
+    assert 'classList.toggle("plain"' in fill
+
+    at = card.index(".menu.plain button {")
+    assert "grid-template-columns: 1fr var(--bl-gutter)" in card[at : at + 120]
 
 
 def test_the_brightness_bar_works_on_a_dark_room() -> None:

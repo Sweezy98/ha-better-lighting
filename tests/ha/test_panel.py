@@ -255,6 +255,133 @@ class TestTheDashboardCard:
 
         assert any(panel.CARD_FILE in url for url in served), served
 
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_an_upgrade_does_not_leave_the_old_url_loaded(
+        self, hass: HomeAssistant, monkeypatch
+    ) -> None:
+        """Two copies of the card, and whichever landed first won.
+
+        The URL carries the file's fingerprint, so an upgrade produces a new
+        one -- and a reload, which is how most people take an upgrade, used
+        to add it beside the old one rather than in its place.
+        """
+        from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+
+        from custom_components.better_lighting import panel
+
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+        before = {
+            url
+            for url in hass.data[DATA_EXTRA_MODULE_URL].urls
+            if panel.CARD_FILE in url
+        }
+        assert len(before) == 1
+
+        monkeypatch.setattr(panel, "_fingerprint", lambda name=None: "deadbeefcafe")
+        await panel.async_setup_panel(hass)
+
+        after = {
+            url
+            for url in hass.data[DATA_EXTRA_MODULE_URL].urls
+            if panel.CARD_FILE in url
+        }
+        assert len(after) == 1, sorted(after)
+        assert after != before
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_it_is_a_lovelace_resource_as_well(self, hass: HomeAssistant) -> None:
+        """The script tag is only in pages served after we were set up.
+
+        A dashboard asks for its resources every time it is opened, which is
+        why the card comes and goes without one: same integration, same file,
+        different page.
+        """
+        from custom_components.better_lighting import panel
+
+        assert await async_setup_component(hass, "lovelace", {})
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+
+        resources = hass.data["lovelace"].resources
+        await resources.async_get_info()
+        ours = [
+            item for item in resources.async_items() if panel.CARD_FILE in item["url"]
+        ]
+        assert len(ours) == 1, resources.async_items()
+        assert ours[0]["type"] == "module"
+        assert ours[0]["url"].endswith(f"?v={panel._fingerprint(panel.CARD_FILE)}")
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_the_resource_is_rewritten_rather_than_duplicated(
+        self, hass: HomeAssistant, monkeypatch
+    ) -> None:
+        """Including the one somebody added by hand when it would not load."""
+        from custom_components.better_lighting import panel
+
+        assert await async_setup_component(hass, "lovelace", {})
+        resources = hass.data["lovelace"].resources
+        await resources.async_get_info()
+        await resources.async_create_item(
+            {"res_type": "module", "url": f"{panel.PANEL_URL}/{panel.CARD_FILE}"}
+        )
+
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+
+        ours = [
+            item for item in resources.async_items() if panel.CARD_FILE in item["url"]
+        ]
+        assert len(ours) == 1, resources.async_items()
+        assert ours[0]["url"].endswith(f"?v={panel._fingerprint(panel.CARD_FILE)}")
+
+        # And an upgrade moves that same row rather than adding another.
+        was = ours[0]["id"]
+        monkeypatch.setattr(panel, "_fingerprint", lambda name=None: "deadbeefcafe")
+        await panel.async_setup_panel(hass)
+        ours = [
+            item for item in resources.async_items() if panel.CARD_FILE in item["url"]
+        ]
+        assert len(ours) == 1
+        assert ours[0]["id"] == was
+        assert ours[0]["url"].endswith("?v=deadbeefcafe")
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_removing_the_integration_takes_the_resource_with_it(
+        self, hass: HomeAssistant
+    ) -> None:
+        """A row pointing at a file nobody serves breaks every dashboard that
+        still has the card on it, so it goes when we do -- but only then: an
+        unload happens on every restart."""
+        from custom_components.better_lighting import panel
+
+        assert await async_setup_component(hass, "lovelace", {})
+        await setup_members(hass, [MemberLight("One")])
+        entry = await setup_hub(hass, hub_entry())
+        resources = hass.data["lovelace"].resources
+
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert any(panel.CARD_FILE in item["url"] for item in resources.async_items())
+
+        await hass.config_entries.async_remove(entry.entry_id)
+        await hass.async_block_till_done()
+        assert not any(
+            item["url"].startswith(panel.PANEL_URL) for item in resources.async_items()
+        )
+
 
 class TestEverySettingIsReachable:
     """The panel edits the same tables the config flow renders."""

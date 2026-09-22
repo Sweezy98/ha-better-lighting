@@ -77,10 +77,33 @@
   <div class="left">
     <div class="badge">
       <div class="mark">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-          <path d="M12 3a6 6 0 0 0-3.2 11.08c.42.27.7.7.78 1.19l.12.73h4.6l.12-.73c.08-.49.36-.92.78-1.19A6 6 0 0 0 12 3Z"
-                stroke="#7fd2ff" stroke-width="1.5" stroke-linejoin="round"/>
-          <path d="M9.9 19.2h4.2M10.5 21.2h3" stroke="#7fd2ff" stroke-width="1.5" stroke-linecap="round"/>
+        <!-- The integration's own mark, the same paths as images/icon.html
+             without its plate: the badge around it already is one. -->
+        <svg width="32" height="32" viewBox="96 96 320 320" fill="none">
+          <defs>
+            <linearGradient id="markday" gradientUnits="userSpaceOnUse"
+                            x1="150" y1="330" x2="362" y2="150">
+              <stop offset="0"    stop-color="#4aa8e0"/>
+              <stop offset="0.42" stop-color="#ffd27a"/>
+              <stop offset="1"    stop-color="#ffb43c"/>
+            </linearGradient>
+          </defs>
+          <path d="M256 110
+                   c -62 0 -112 49 -112 110
+                   0 39 20 68 44 88
+                   12 10 19 24 21 39
+                   l 2 15 h 90 l 2 -15
+                   c 2 -15 9 -29 21 -39
+                   24 -20 44 -49 44 -88
+                   0 -61 -50 -110 -112 -110 Z"
+                fill="#0b141d" fill-opacity=".55"
+                stroke="url(#markday)" stroke-width="22" stroke-linejoin="round"/>
+          <path d="M196 268 C 214 268, 218 216, 256 216 C 294 216, 298 268, 316 268"
+                stroke="#ffe6b0" stroke-width="15" stroke-linecap="round" fill="none"/>
+          <g stroke="#7fd2ff" stroke-width="20" stroke-linecap="round" opacity=".92">
+            <path d="M214 400 h 84"/>
+            <path d="M222 434 h 68"/>
+          </g>
         </svg>
       </div>
       <div class="kicker"><span class="dot"></span>Home&nbsp;Assistant &nbsp;·&nbsp; Custom&nbsp;Integration</div>

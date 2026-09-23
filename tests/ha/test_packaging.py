@@ -19,6 +19,14 @@ import yaml
 from custom_components.better_lighting.const import SubentryType
 
 COMPONENT = pathlib.Path(__file__).parents[2] / "custom_components" / "better_lighting"
+# The one call that puts our files on a URL, as it is written. Found by its
+# arguments rather than by splitting on the first bracket, which used to
+# match the function's own definition whenever the call was reformatted.
+SERVED_FILES = re.search(
+    r"await _async_serve\(\s*hass,(.*?)\)",
+    (COMPONENT / "panel.py").read_text(),
+    re.S,
+).group(1)
 STRINGS = json.loads((COMPONENT / "strings.json").read_text())
 SERVICES_YAML = yaml.safe_load((COMPONENT / "services.yaml").read_text())
 MANIFEST = json.loads((COMPONENT / "manifest.json").read_text())
@@ -367,6 +375,122 @@ def test_the_reload_keeps_what_cannot_go_out_of_date() -> None:
     # And it says so rather than reloading into the same nothing.
     assert "this._reachable(CARD_URL)" in reload
     assert "reload_frontend_missing" in reload
+
+
+def test_the_guide_exists_in_both_languages_with_the_same_shape() -> None:
+    """One guide, two languages, and the same guide in both.
+
+    Headings are the cheap check that catches the expensive mistake: a
+    section added to one language and forgotten in the other, which is how a
+    translated document quietly becomes a different document.
+    """
+    from custom_components.better_lighting import panel
+
+    heads = {}
+    for name in panel.GUIDE_FILES:
+        path = COMPONENT / "www" / name
+        assert path.is_file(), f"{name} is missing"
+        text = path.read_text(encoding="utf-8")
+        assert len(text.split()) > 1500, f"{name} is not a guide, it is a note"
+        heads[name] = [
+            len(match.group(1)) for match in re.finditer(r"^(#{1,6}) ", text, re.M)
+        ]
+
+    levels = list(heads.values())
+    assert levels[0] == levels[1], "the two guides have different structures"
+
+
+def test_the_guide_is_served_and_reachable() -> None:
+    """It is read in two places, so it has to be fetchable from one of them:
+    GitHub renders the file, and the panel fetches it over our own route."""
+    from custom_components.better_lighting import panel
+
+    for name in panel.GUIDE_FILES:
+        assert name in SERVED_FILES or "GUIDE_FILES" in SERVED_FILES
+
+    panel_js = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    at = panel_js.index('<div class="menu" id="more-menu"')
+    assert 'id="go-guide"' in panel_js[at : at + 400]
+    assert 'getElementById("go-guide").addEventListener' in panel_js
+    assert "guide.${wanted}.md" in panel_js, "fetched, not built in"
+
+    readme = (COMPONENT.parents[1] / "README.md").read_text()
+    for name in panel.GUIDE_FILES:
+        assert f"custom_components/better_lighting/www/{name}" in readme, (
+            f"the README does not link to {name}"
+        )
+
+
+def test_the_guide_stays_inside_the_markdown_the_panel_renders() -> None:
+    """The panel has its own small renderer, because `ha-markdown` is
+    registered lazily with the dashboard's components and a panel opened on
+    its own may never have it. So the guide may only use what it handles:
+    headings, paragraphs, lists, tables, quotes, rules, links, inline code
+    and emphasis. Fenced code blocks and images are the two easy ways to
+    write something that would come out as literal text."""
+    from custom_components.better_lighting import panel
+
+    for name in panel.GUIDE_FILES:
+        text = (COMPONENT / "www" / name).read_text(encoding="utf-8")
+        assert "```" not in text, f"{name} uses a fenced code block"
+        assert not re.search(r"^!\[", text, re.M), f"{name} uses an image"
+        assert not re.search(r"^\s{4,}\S", text, re.M), (
+            f"{name} uses an indented code block"
+        )
+
+
+def test_the_panel_renders_every_guide_completely() -> None:
+    """Run the panel's own renderer over the actual guides.
+
+    A renderer that quietly leaves ``**`` or a table's pipes standing as text
+    is worse than one that fails, because nothing about the page says so --
+    and both happened: bold straddling two wrapped lines, and bold with an
+    emphasis inside it. So the check is the one that matters: after
+    rendering, no Markdown may survive as text.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    from custom_components.better_lighting import panel as panel_py
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node to run it with")
+
+    panel = (COMPONENT / "www" / "better_lighting_panel.js").read_text()
+    at = panel.index("  _markdown(text) {")
+    renderer = panel[at : panel.index("\n  async _paintImport()", at)]
+
+    for name in panel_py.GUIDE_FILES:
+        guide = (COMPONENT / "www" / name).read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as folder:
+            source = pathlib.Path(folder) / "render.js"
+            text = pathlib.Path(folder) / "guide.md"
+            text.write_text(guide, encoding="utf-8")
+            source.write_text(
+                "const fs = require('fs');\n"
+                f"const panel = {{ {renderer} }};\n"
+                f"const html = panel._markdown("
+                f"fs.readFileSync({str(text)!r}, 'utf8'));\n"
+                # Tags out, entities back, and then look for anything that is
+                # still Markdown rather than prose.
+                "const prose = html.replace(/<[^>]+>/g, '')\n"
+                "  .replace(/&amp;/g, '&').replace(/&lt;/g, '<')\n"
+                "  .replace(/&gt;/g, '>');\n"
+                "const left = prose.match(/\\*\\*|^\\s*\\||^\\s*#{1,6} |`/gm) || [];\n"
+                "console.log(JSON.stringify({ left: left.slice(0, 5),\n"
+                "  headings: (html.match(/<h[1-6]>/g) || []).length,\n"
+                "  tables: (html.match(/<table>/g) || []).length }));\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [node, str(source)], capture_output=True, text=True, check=True
+            )
+        report = json.loads(result.stdout)
+        assert not report["left"], f"{name} still has Markdown in it: {report['left']}"
+        assert report["headings"] >= 30, name
+        assert report["tables"] >= 5, name
 
 
 def test_the_reload_is_in_the_overflow_menu() -> None:
@@ -859,8 +983,7 @@ def test_the_icon_is_served_for_older_cores_too() -> None:
     from custom_components.better_lighting import panel
 
     assert (COMPONENT / panel.ICON_FILE).is_file()
-    source = (COMPONENT / "panel.py").read_text()
-    assert "ICON_FILE" in source.split("_async_serve(hass")[1].split(")")[0]
+    assert "ICON_FILE" in SERVED_FILES
 
 
 def test_the_card_owns_its_controls() -> None:
@@ -900,7 +1023,7 @@ def test_the_sidebar_icon_is_registered_before_it_is_used() -> None:
 
     assert (COMPONENT / "www" / panel.ICONS_FILE).is_file()
     source = (COMPONENT / "panel.py").read_text()
-    assert "ICONS_FILE" in source.split("_async_serve(hass")[1].split(")")[0]
+    assert "ICONS_FILE" in SERVED_FILES
     # The whole of the function that hands scripts to the frontend, rather
     # than a slice of the file that happens to contain a similar loop.
     registers = source[source.index("async def _async_register_card") :]

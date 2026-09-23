@@ -74,6 +74,8 @@ const WORDS = {
     nobody: "Nobody here",
     by_hand: "On by hand",
     automatically: "On automatically",
+    night: "Night mode",
+    simulating: "Simulating presence",
     switching_off: "Switching off",
     room: "Room",
     hidden_scenes: "Hidden scenes",
@@ -99,6 +101,8 @@ const WORDS = {
     nobody: "Niemand hier",
     by_hand: "Von Hand eingeschaltet",
     automatically: "Automatisch eingeschaltet",
+    night: "Nachtmodus",
+    simulating: "Anwesenheit wird simuliert",
     switching_off: "Schaltet ab",
     room: "Raum",
     hidden_scenes: "Ausgeblendete Szenen",
@@ -715,10 +719,12 @@ class BetterLightingCard extends HTMLElement {
           color: var(--state-icon-color, var(--secondary-text-color));
         }
         /* Badges say why the room looks the way it does. They are not
-           buttons: nothing here is a thing to press. */
+           buttons: nothing here is a thing to press -- and since none of
+           them is more of a thing to press than the others, none of them is
+           coloured either. One of them used to be, and it read as the only
+           live control in a row of decorations. */
         .badges { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
         .badge { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
-        .badge.on { color: var(--primary-color); }
         .countdown {
           display: inline-flex; align-items: center; gap: 4px;
           padding: 3px 9px 3px 7px; border-radius: 999px;
@@ -991,10 +997,18 @@ class BetterLightingCard extends HTMLElement {
 
   _paintBadges(attrs, on) {
     const badges = [];
+    // Only when the room actually has a sensor: the attribute is null
+    // otherwise, which is not the same as nobody being in the room.
     if (attrs.bl_presence === true) {
-      badges.push(["mdi:motion-sensor", "on", this._words.presence]);
+      badges.push(["mdi:motion-sensor", this._words.presence]);
     } else if (attrs.bl_presence === false) {
-      badges.push(["mdi:motion-sensor-off", "", this._words.nobody]);
+      badges.push(["mdi:motion-sensor-off", this._words.nobody]);
+    }
+    if (attrs.bl_night === true) {
+      badges.push(["mdi:weather-night", this._words.night]);
+    }
+    if (attrs.bl_simulating === true) {
+      badges.push(["mdi:home-clock", this._words.simulating]);
     }
     const left = this._secondsLeft(attrs.bl_off_at);
     // A countdown only runs when nobody is holding the lights on, so saying
@@ -1003,8 +1017,14 @@ class BetterLightingCard extends HTMLElement {
     if (on && left === null) {
       badges.push(
         attrs.bl_held_by_hand
-          ? ["mdi:hand-back-right", "on", this._words.by_hand]
-          : ["mdi:motion-sensor", "", this._words.automatically]
+          ? ["mdi:hand-back-right", this._words.by_hand]
+          // Not a motion sensor: this says nobody reached for a switch, which
+          // is true of a scene an automation set in a room with no sensor in
+          // it. Drawn as one, it was read as presence detection -- and read
+          // that way most often in the moment before `bl_held_by_hand` caught
+          // up with a switch press, which is a flicker of exactly the thing
+          // the room does not have.
+          : ["mdi:auto-mode", this._words.automatically]
       );
     }
     const countdown =
@@ -1016,8 +1036,8 @@ class BetterLightingCard extends HTMLElement {
     this.shadowRoot.getElementById("badges").innerHTML =
       badges
         .map(
-          ([icon, cls, title]) =>
-            `<span title="${title}">${this._icon(icon, `badge ${cls}`)}</span>`
+          ([icon, title]) =>
+            `<span title="${title}">${this._icon(icon, "badge")}</span>`
         )
         .join("") + countdown;
   }

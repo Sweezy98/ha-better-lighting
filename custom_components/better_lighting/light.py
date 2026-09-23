@@ -279,6 +279,13 @@ class RoomLight(GroupEntity, LightEntity, RestoreEntity):
             # None when the room has no sensor at all, which is not the same
             # as nobody being in it.
             "bl_presence": presence.occupied if presence is not None else None,
+            # Night settings are in force here. Not the same as the helper
+            # being on: a room set to ignore night mode says no.
+            "bl_night": controller.is_night if controller is not None else None,
+            # The presence simulation is driving this room right now.
+            "bl_simulating": (
+                controller.simulating if controller is not None else None
+            ),
             # Whether somebody reached for a switch: it is why the automatic
             # turn-off is standing down, and worth a badge saying so.
             "bl_held_by_hand": (

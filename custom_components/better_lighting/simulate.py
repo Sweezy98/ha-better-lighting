@@ -194,6 +194,9 @@ class SimulationRunner:
             if run.cancel is not None:
                 run.cancel()
             controller = self.runtime.controllers.get(room_id)
+            if controller is not None:
+                controller.simulating = False
+                controller.async_notify()
             if controller is None or not run.lit:
                 continue
             if controller.held_by_hand:
@@ -245,6 +248,12 @@ class SimulationRunner:
         room = controller.room
         run = _RoomRun()
         self._runs[room_id] = run
+        # Said here rather than at the end: the room is taking part from the
+        # moment it is picked, whether its first step is to light up or to
+        # wait. A dashboard showing "simulating" only while a lamp happens to
+        # be on would be describing the lamp, not the simulation.
+        controller.simulating = True
+        controller.async_notify()
 
         if room.simulation_mode is SimulationMode.ADAPTIVE:
             await controller.async_set_adaptive()

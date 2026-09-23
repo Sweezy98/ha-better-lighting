@@ -1812,6 +1812,8 @@ class BetterLightingPanel extends HTMLElement {
         return [{ label: this._t("diagnostics") }];
       case "import":
         return [{ label: this._t("import_scenes") }];
+      case "guide":
+        return [{ label: this._t("guide") }];
       case "presets": {
         const top = { label: named("presets"), go: to({ kind: "presets" }) };
         if (view.index === undefined) return [top];
@@ -1943,6 +1945,9 @@ class BetterLightingPanel extends HTMLElement {
     this.shadowRoot.getElementById("go-import").innerHTML = `${this._icon(
       "mdi:download"
     )}<span class="grow">${this._t("import_scenes")}</span>`;
+    this.shadowRoot.getElementById("go-guide").innerHTML = `${this._icon(
+      "mdi:book-open-variant"
+    )}<span class="grow">${this._t("guide")}</span>`;
     this.shadowRoot.getElementById("go-reload").innerHTML = `${this._icon(
       "mdi:cached"
     )}<span class="grow">${this._t("reload_frontend")}</span>`;
@@ -2519,6 +2524,54 @@ class BetterLightingPanel extends HTMLElement {
                           word-break:break-word; }
         /* Home Assistant's own logbook shape: the time down the left, a ruled
            line of icons beside it, and what happened to the right of that. */
+        /* The guide. Long-form text on a page built for forms, so it gets
+           a measure it can be read at rather than the width of the window,
+           and the spacing prose needs rather than the spacing rows do. */
+        .guide { max-width:74ch; font-size:15px; line-height:1.62; }
+        .guide h1 { font-size:1.7rem; margin:0 0 8px; }
+        .guide h2 { font-size:1.28rem; margin:32px 0 10px; }
+        .guide h3 { font-size:1.06rem; margin:24px 0 8px; }
+        .guide p { margin:0 0 14px; }
+        /* Prose lists, not rows. Every list on a page is otherwise a ruled
+           box of things to open -- right for a room's scenes, wrong for four
+           sentences -- so the row treatment is undone here rather than made
+           conditional there: the guide is the odd one out, not the rule. */
+        .guide ul, .guide ol {
+          margin:0 0 14px; padding-left:22px; border:0; border-radius:0;
+          overflow:visible; list-style:disc;
+        }
+        .guide ol { list-style:decimal; }
+        .guide li {
+          display:list-item; margin:0 0 6px; padding:0; min-height:0;
+          border:0; border-radius:0; cursor:auto; gap:0;
+          color:var(--primary-text-color);
+        }
+        .guide li + li { border-top:0; }
+        .guide li:hover { background:none; }
+        .guide hr { border:0; border-top:1px solid var(--divider-color,#e0e0e0);
+                    margin:28px 0; }
+        .guide blockquote {
+          margin:0 0 14px; padding:8px 14px;
+          border-left:3px solid var(--primary-color,#03a9f4);
+          background:var(--secondary-background-color,#f2f2f2);
+          border-radius:0 8px 8px 0; color:var(--secondary-text-color,#666);
+        }
+        .guide table { width:100%; border-collapse:collapse; margin:0 0 18px;
+                       font-size:14px; }
+        .guide th, .guide td {
+          text-align:left; vertical-align:top; padding:8px 10px;
+          border-bottom:1px solid var(--divider-color,#e0e0e0);
+        }
+        .guide th { color:var(--secondary-text-color,#666); font-weight:600; }
+        /* An entity id broken across three lines is not a shorter column,
+           it is an unreadable one. */
+        .guide td code, .guide th code { white-space:nowrap; }
+        .guide code {
+          font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+          font-size:.88em; padding:1px 5px; border-radius:5px;
+          background:var(--secondary-background-color,#f2f2f2);
+        }
+        .guide a { color:var(--primary-color,#03a9f4); }
         .log { max-height:420px; overflow:auto; font-size:14px; }
         .log .entry { display:flex; gap:12px; align-items:flex-start;
                       padding:10px 0; }
@@ -2551,6 +2604,7 @@ class BetterLightingPanel extends HTMLElement {
           <button class="icon-btn" id="more"></button>
           <div class="menu" id="more-menu" hidden>
             <button class="menu-item" id="go-import"></button>
+            <button class="menu-item" id="go-guide"></button>
             <button class="menu-item" id="go-reload"></button>
             <button class="menu-item" id="go-about"></button>
           </div>
@@ -2598,6 +2652,13 @@ class BetterLightingPanel extends HTMLElement {
     this.shadowRoot.getElementById("more").addEventListener("click", (event) => {
       event.stopPropagation();
       overflow.hidden = !overflow.hidden;
+    });
+    this.shadowRoot.getElementById("go-guide").addEventListener("click", () => {
+      overflow.hidden = true;
+      this._leave(() => {
+        this._view = { kind: "guide" };
+        this._paint();
+      });
     });
     this.shadowRoot.getElementById("go-reload").addEventListener("click", () => {
       overflow.hidden = true;
@@ -3642,6 +3703,8 @@ class BetterLightingPanel extends HTMLElement {
         return this._paintMode();
       case "import":
         return this._paintImport();
+      case "guide":
+        return this._paintGuide();
       case "scenes":
         return this._paintScenes();
       case "switches":
@@ -4201,6 +4264,170 @@ class BetterLightingPanel extends HTMLElement {
    * one scene in each, holding only that room's lights. Anything in no room
    * is named rather than dropped quietly.
    */
+  /**
+   * The user guide, rendered where somebody is actually setting things up.
+   *
+   * The file is the same Markdown GitHub renders, fetched rather than built
+   * into this script: one source with two readers, so what the repository
+   * says and what the panel says cannot drift apart. German if the frontend
+   * is in German, English otherwise and as the fallback -- a guide in a
+   * language somebody does not read is worse than one they have to.
+   */
+  async _paintGuide() {
+    const main = this._page(`<div class="guide" id="guide"></div>`);
+    const into = main.querySelector("#guide");
+    into.innerHTML = `<p class="muted">${this._t("loading")}</p>`;
+
+    const language = (this._hass?.language || "en").split("-")[0];
+    const text = await this._guideText(language);
+    if (text === null) {
+      into.innerHTML = `<p class="muted">${this._t("guide_missing")}</p>`;
+      return;
+    }
+    into.innerHTML = this._markdown(text);
+  }
+
+  /** The guide in the best language available, or null if none is. */
+  async _guideText(language) {
+    for (const wanted of [language, "en"]) {
+      try {
+        const url = new URL(`guide.${wanted}.md`, import.meta.url).href;
+        const response = await fetch(url);
+        if (response.ok) return await response.text();
+      } catch {
+        // Offline, or this language has no guide. Try the next.
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Markdown, as much of it as the guide uses.
+   *
+   * Deliberately not `ha-markdown`: it is registered lazily with the
+   * dashboard's own components and a custom panel opened on its own may
+   * never have it, and a guide is the one page that must not depend on
+   * something else having loaded. Headings, paragraphs, lists, tables,
+   * quotes, rules, links and inline code is the whole of what is used here,
+   * and a test keeps the guide inside that.
+   */
+  _markdown(text) {
+    const escape = (raw) =>
+      raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // Run over a whole paragraph rather than a line, because the guide is
+    // wrapped at a readable width and **a phrase in bold** may well straddle
+    // two lines of the file. Applied per line, both halves came out as
+    // literal asterisks.
+    const inline = (raw) =>
+      escape(raw)
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        // Non-greedy and allowing asterisks inside, because **bold with an
+        // *emphasis* in it** is a shape the guide actually uses; forbidding
+        // them left the bold markers standing as text.
+        .replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>")
+        .replace(
+          /\[([^\]]+)\]\(([^)]+)\)/g,
+          '<a href="$2" target="_blank" rel="noopener">$1</a>'
+        );
+    const cells = (row) =>
+      row
+        .replace(/^\||\|$/g, "")
+        .split("|")
+        .map((cell) => cell.trim());
+
+    const lines = text.split("\n");
+    const out = [];
+    const heading = (line) => /^(#{1,6}) (.*)$/.exec(line);
+    const bullet = (line) => /^\s*[-*] (.*)$/.exec(line);
+    const numbered = (line) => /^\s*\d+\. (.*)$/.exec(line);
+    // A line that starts something of its own, and so ends whatever is being
+    // gathered above it.
+    const starts = (line) =>
+      !line.trim() ||
+      heading(line) ||
+      bullet(line) ||
+      numbered(line) ||
+      /^---+$/.test(line.trim()) ||
+      line.trim().startsWith("|") ||
+      line.trim().startsWith(">");
+
+    let at = 0;
+    while (at < lines.length) {
+      const line = lines[at];
+      const head = heading(line);
+      const item = bullet(line) || numbered(line);
+
+      if (!line.trim()) {
+        at += 1;
+      } else if (head) {
+        out.push(`<h${head[1].length}>${inline(head[2])}</h${head[1].length}>`);
+        at += 1;
+      } else if (/^---+$/.test(line.trim())) {
+        out.push("<hr>");
+        at += 1;
+      } else if (line.trim().startsWith("|")) {
+        const rows = [];
+        while (at < lines.length && lines[at].trim().startsWith("|")) {
+          rows.push(lines[at]);
+          at += 1;
+        }
+        const head0 = cells(rows[0])
+          .map((cell) => `<th>${inline(cell)}</th>`)
+          .join("");
+        const body = rows
+          .slice(2)
+          .map(
+            (row) =>
+              `<tr>${cells(row)
+                .map((cell) => `<td>${inline(cell)}</td>`)
+                .join("")}</tr>`
+          )
+          .join("");
+        out.push(
+          `<table><thead><tr>${head0}</tr></thead><tbody>${body}</tbody></table>`
+        );
+      } else if (line.trim().startsWith(">")) {
+        const parts = [];
+        while (at < lines.length && lines[at].trim().startsWith(">")) {
+          parts.push(lines[at].replace(/^\s*>\s?/, ""));
+          at += 1;
+        }
+        out.push(`<blockquote>${inline(parts.join(" "))}</blockquote>`);
+      } else if (item) {
+        const tag = bullet(line) ? "ul" : "ol";
+        const items = [];
+        while (at < lines.length && (bullet(lines[at]) || numbered(lines[at]))) {
+          const first = bullet(lines[at]) || numbered(lines[at]);
+          const parts = [first[1]];
+          at += 1;
+          // Everything indented under it belongs to it.
+          while (at < lines.length && !starts(lines[at])) {
+            parts.push(lines[at].trim());
+            at += 1;
+          }
+          items.push(`<li>${inline(parts.join(" "))}</li>`);
+          if (at < lines.length && !lines[at].trim()) {
+            // A blank line inside a list does not end it; a blank line
+            // followed by anything but another item does.
+            const next = lines[at + 1];
+            if (next === undefined || !(bullet(next) || numbered(next))) break;
+            at += 1;
+          }
+        }
+        out.push(`<${tag}>${items.join("")}</${tag}>`);
+      } else {
+        const parts = [];
+        while (at < lines.length && !starts(lines[at])) {
+          parts.push(lines[at].trim());
+          at += 1;
+        }
+        out.push(`<p>${inline(parts.join(" "))}</p>`);
+      }
+    }
+    return out.join("\n");
+  }
+
   async _paintImport() {
     const main = this.shadowRoot.getElementById("main");
     const { scenes } = await this._call("importable_scenes");

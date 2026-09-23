@@ -26,6 +26,18 @@ express.
 > **Status: beta.** Everything described here is implemented, tested, and running on a live
 > Home Assistant instance. Expect rough edges, and please open an issue if you find one.
 
+### 📖 User guide
+
+This README is what the integration *is*. The user guide is how you **set it up** — one room
+first, then the things that make it behave on its own, with worked examples and the order
+that works.
+
+- **[User guide (English)](custom_components/better_lighting/www/guide.en.md)**
+- **[Benutzerhandbuch (Deutsch)](custom_components/better_lighting/www/guide.de.md)**
+
+The same guide is in the panel itself, under the three-dot menu → **User guide**, in whichever
+of the two languages your frontend is set to. It is the same file, so the two cannot drift.
+
 ---
 
 ## Installation
@@ -164,8 +176,10 @@ One row of controls each, and nothing that gets used twice a year:
 
 - **The title** opens Home Assistant's own light dialog, which is where colour
   and temperature live. They are not worth two buttons on every room.
-- **Badges** say *why* the room looks the way it does: somebody is here, and
-  whether the lights are on by hand or by a trigger.
+- **Badges** say *why* the room looks the way it does: somebody is here, this room
+  is in night mode, the presence simulation is driving it, and whether the lights
+  are on by hand or automatically. They are all the same grey — none of them is a
+  thing to press, so none of them is coloured like one.
 - **Back to adaptive** appears only when the room is *not* adaptive. It is the
   way back after a scene or a manual change, not a toggle — there is no such
   thing as turning adaptive off from a card.

@@ -202,6 +202,11 @@ class RoomController:
         # Presence, for modes that gate on whether a room is occupied.
         self.presence: RoomPresence | None = None
         self.windows: WindowWatcher | None = None
+        # Whether the presence simulation is currently driving this room. Set
+        # by the runner rather than worked out here: which rooms take part is
+        # its decision, and a room that sat this one out should not say it is
+        # taking part just because the house is empty.
+        self.simulating = False
         # A window is open in this room.
         self.insect_active = False
         # A press has waved insect mode away until the window closes and is

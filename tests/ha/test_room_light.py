@@ -218,3 +218,28 @@ async def test_the_room_light_follows_its_controller(hass: HomeAssistant) -> Non
     await hass.async_block_till_done()
 
     assert hass.states.get(ROOM).attributes["bl_held_by_hand"] is True
+
+
+async def test_the_room_says_when_it_is_at_night_or_being_simulated(
+    hass: HomeAssistant,
+) -> None:
+    """Two more things a dashboard has to be able to say, and neither is
+    visible in the bulbs: night settings are in force, and the presence
+    simulation is driving this room. Both come from the controller, so both
+    ride the same subscription."""
+    entry = await _setup(
+        hass,
+        MemberLight("One", is_on=True, brightness=100),
+        MemberLight("Two", is_on=True, brightness=100),
+    )
+    controller = next(iter(entry.runtime_data.controllers.values()))
+
+    attributes = hass.states.get(ROOM).attributes
+    assert attributes["bl_night"] is False
+    assert attributes["bl_simulating"] is False
+
+    controller.simulating = True
+    controller.async_notify()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(ROOM).attributes["bl_simulating"] is True

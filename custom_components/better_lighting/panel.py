@@ -99,6 +99,12 @@ ICON_FILE = "brand/icon.png"
 # The same bulb as a single-colour glyph, because the sidebar takes an icon
 # name and not an image.
 ICONS_FILE = "better_lighting_icons.js"
+# The user guide, one file per language. Written as Markdown because it has
+# two readers with nothing else in common: GitHub, which renders it where
+# somebody is deciding whether to install this at all, and the panel, which
+# renders it where they are actually setting it up. One source, so the two
+# cannot drift.
+GUIDE_FILES = ("guide.en.md", "guide.de.md")
 SIDEBAR_ICON = "better-lighting:lamp"
 ELEMENT = "better-lighting-panel"
 
@@ -160,7 +166,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     # integration rather than restarting Home Assistant skipped it entirely.
     # That is exactly how somebody receives an update -- and how the card
     # shipped unreachable.
-    await _async_serve(hass, PANEL_FILE, CARD_FILE, ICONS_FILE, ICON_FILE)
+    await _async_serve(hass, PANEL_FILE, CARD_FILE, ICONS_FILE, ICON_FILE, *GUIDE_FILES)
     # Idempotent, and deliberately before the early return below: whether the
     # sidebar needs rebuilding says nothing about whether the card is loaded.
     await _async_register_card(hass)

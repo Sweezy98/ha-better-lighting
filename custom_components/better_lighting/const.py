@@ -445,6 +445,8 @@ CONF_ADAPTIVE_COLOR_ON = "adaptive_color_default_on"
 
 CONF_NIGHT_BEHAVIOR = "night_behavior"
 CONF_NIGHT_SCENE = "night_scene_id"
+# No longer a field: each trigger says whether it stands aside at night. Read
+# only as the default for triggers stored before they could say so.
 CONF_NIGHT_IGNORE_PRESENCE = "night_ignore_presence"
 CONF_NIGHT_TRANSITION = "night_transition"
 
@@ -588,7 +590,6 @@ ROOM_NIGHT_SPECS: tuple[FieldSpec, ...] = (
         validator=VALID_TRANSITION,
         section=Section.NIGHT,
     ),
-    FieldSpec(CONF_NIGHT_IGNORE_PRESENCE, False, _boolean(), section=Section.NIGHT),
 )
 
 
@@ -861,6 +862,8 @@ CONF_EFFECTS = "effects"
 CONF_TRIGGERS = "triggers"
 CONF_TRIGGER_ENTITY = "trigger_entity"
 CONF_TRIGGER_ACTIVE_STATE = "active_state"
+CONF_TRIGGER_IGNORE_AT_NIGHT = "ignore_at_night"
+CONF_TRIGGER_SCENE = "trigger_scene_id"
 CONF_RULES = "rules"
 CONF_CONDITION_ID = "condition_id"
 CONF_CONDITION_KIND = "check"
@@ -895,6 +898,7 @@ TRIGGER_SPECS: tuple[FieldSpec, ...] = (
                     "cover",
                     "device_tracker",
                     "input_boolean",
+                    "media_player",
                     "person",
                     "sensor",
                     "switch",
@@ -903,18 +907,28 @@ TRIGGER_SPECS: tuple[FieldSpec, ...] = (
         ),
         required=True,
     ),
-    # Left empty, the usual four: on, open, home, detected. Named, it is that
-    # state and nothing else, for a sensor that reports something odd.
+    # Left empty, the usual ones: on, open, home, detected, playing. Named, it
+    # is that state and nothing else, for a sensor that reports something odd.
     FieldSpec(
         CONF_TRIGGER_ACTIVE_STATE,
         None,
         selector.SelectSelector(
             selector.SelectSelectorConfig(
-                options=["on", "open", "home", "detected", "off", "closed"],
+                options=["on", "open", "home", "detected", "playing", "off", "closed"],
                 mode="dropdown",
                 custom_value=True,
             )
         ),
+    ),
+    # Per sensor rather than per room: the presence sensor over the bed stands
+    # aside at night while the one under it still lights the way out.
+    FieldSpec(CONF_TRIGGER_IGNORE_AT_NIGHT, False, _boolean()),
+    # Empty means whatever the room's presence settings say.
+    FieldSpec(
+        CONF_TRIGGER_SCENE,
+        None,
+        _select([], "scene"),
+        options_key="scenes",
     ),
 )
 

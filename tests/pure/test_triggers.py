@@ -6,6 +6,7 @@ from custom_components.better_lighting.triggers import (
     SensorTrigger,
     active_entities,
     any_active,
+    counted,
     is_active,
 )
 
@@ -92,3 +93,30 @@ class TestWhatToSubscribeTo:
     def test_a_trigger_with_no_entity_is_dropped(self) -> None:
         """A half-filled row in the editor should not subscribe to nothing."""
         assert active_entities([SensorTrigger(""), MOTION]) == ["binary_sensor.motion"]
+
+
+class TestMediaPlayers:
+    def test_a_player_that_is_playing_or_paused(self) -> None:
+        tv = SensorTrigger("media_player.tv")
+        assert is_active(tv, {"media_player.tv": "playing"})
+        assert is_active(tv, {"media_player.tv": "paused"})
+        assert not is_active(tv, {"media_player.tv": "idle"})
+
+
+class TestWhichTriggersCount:
+    """Asked once, as a sensor goes active, and then held."""
+
+    def test_a_trigger_that_may_not_count_does_not(self) -> None:
+        states = {"binary_sensor.motion": "on", "cover.garage": "open"}
+        held = counted([MOTION, DOOR], states, (), lambda t: t is DOOR)
+        assert held == (DOOR,)
+
+    def test_once_counting_it_is_not_asked_again(self) -> None:
+        """A lux rule re-read under the light it switched on would put it out."""
+        states = {"binary_sensor.motion": "on"}
+        held = counted([MOTION], states, (MOTION,), lambda _t: False)
+        assert held == (MOTION,)
+
+    def test_going_quiet_lets_go(self) -> None:
+        states = {"binary_sensor.motion": "off"}
+        assert counted([MOTION], states, (MOTION,), lambda _t: True) == ()

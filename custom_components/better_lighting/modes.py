@@ -13,6 +13,10 @@ happy path:
   film-watching state and the final restore would relight nothing.
 * On the way out, rooms return to *adaptive*, filtered to the lights that were
   on beforehand. The snapshot says which lights; the curve says how bright.
+* A rule's scene is what the room looks like for the film, not an order to
+  light it. Lights already on take it; dark ones stay dark and take it when
+  they come on -- by a switch, by presence, by hand. A hallway can be set to
+  a dim scene and only light when somebody walks through it.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 from homeassistant.util import ulid as ulid_util
 
+from .activity import async_note, caused_by
 from .const import DOMAIN, IDLE_STATE
 from .render import RoomMode, Trigger
 from .scripts import async_run_scripts
@@ -187,6 +192,10 @@ class ModeGroupRuntime:
 
     async def async_set_state(self, state: str) -> None:
         """Move the mode to ``state``. The idle state ends the session."""
+        with caused_by(f"mode:{self.config.name}"):
+            await self._async_set_state(state)
+
+    async def _async_set_state(self, state: str) -> None:
         if state == self.state:
             return
         if state != IDLE_STATE and state not in self.config.states:
@@ -257,6 +266,10 @@ class ModeGroupRuntime:
         than the film ending: the film is still playing, so the state stays
         recorded even though we stop acting on it.
         """
+        with caused_by(f"mode:{self.config.name}"):
+            await self._async_end(restore=restore, reset_state=reset_state)
+
+    async def _async_end(self, *, restore: bool, reset_state: bool) -> None:
         if not self.active:
             if reset_state:
                 self.state = IDLE_STATE
@@ -344,14 +357,26 @@ class ModeGroupRuntime:
             self.session_id or "",
             self._handle_opt_out(room_id),
         )
+        async_note(
+            self.hass,
+            "mode_rule",
+            room_id=room_id,
+            room=controller.room.name,
+            mode=self.config.name,
+            state=self.state,
+            action=str(rule.action),
+            scene=controller._scene_name(rule.scene_id),
+        )
 
         match rule.action:
             case RoomAction.KEEP:
                 return
             case RoomAction.ADAPTIVE:
-                await controller.async_set_adaptive()
+                await controller.async_set_mode(RoomMode.ADAPTIVE, light_dark=False)
             case RoomAction.APPLY_SCENE if rule.scene_id:
-                await controller.async_set_mode(RoomMode.SCENE, rule.scene_id)
+                await controller.async_set_mode(
+                    RoomMode.SCENE, rule.scene_id, light_dark=False
+                )
             case RoomAction.TURN_OFF:
                 await self._async_turn_off(room_id, controller, rule)
 
@@ -417,6 +442,10 @@ class ModeGroupRuntime:
 
     async def async_room_cleared(self, room_id: str) -> None:
         """The room has emptied. Anything waiting on that can happen now."""
+        with caused_by(f"mode:{self.config.name}"):
+            await self._async_room_cleared(room_id)
+
+    async def _async_room_cleared(self, room_id: str) -> None:
         if not self.active:
             return
         action = self.deferred.get(self.session_id or "", room_id)
@@ -448,12 +477,21 @@ class ModeGroupRuntime:
         if rule is None or room_id in self.opted_out:
             return
         if rule.on_free_action == "turn_off":
+            if rule.action in (RoomAction.APPLY_SCENE, RoomAction.ADAPTIVE):
+                # Dark again, but still set for the film, so the next person
+                # through gets the same light.
+                await controller.async_darken()
+                return
             await controller.async_set_mode(RoomMode.OFF)
         elif rule.on_free_action == "reapply_mode_action":
             await self._async_apply_rule(room_id, controller, rule)
 
     async def async_room_occupied(self, room_id: str) -> None:
         """Somebody has walked into a room during the session."""
+        with caused_by(f"mode:{self.config.name}"):
+            await self._async_room_occupied(room_id)
+
+    async def _async_room_occupied(self, room_id: str) -> None:
         if not self.active or room_id in self.opted_out:
             return
         rule = self.config.rule_for(self.state, room_id)

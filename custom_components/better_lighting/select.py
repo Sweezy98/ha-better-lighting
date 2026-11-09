@@ -11,6 +11,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import BetterLightingConfigEntry
+from .activity import caused_by
 from .const import DOMAIN, IDLE_STATE
 from .models import RoomConfig
 from .modes import ModeGroupRuntime
@@ -188,7 +189,8 @@ class RoomModeSelect(SelectEntity, RestoreEntity):
             return
 
         if render:
-            await self.controller.async_set_mode(target, scene_id)
+            with caused_by("dashboard"):
+                await self.controller.async_set_mode(target, scene_id)
         else:
             self.controller.mode = target
             self.controller.active_scene_id = scene_id

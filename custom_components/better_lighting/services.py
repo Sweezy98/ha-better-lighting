@@ -9,6 +9,7 @@ renaming an entity, which is what a documented automation should use).
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import voluptuous as vol
@@ -18,6 +19,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 
+from .activity import caused_by
 from .const import DOMAIN
 from .effects import EffectRequest
 from .effects import resolve as resolve_effect
@@ -345,35 +347,42 @@ def async_register_services(hass: HomeAssistant) -> None:
                 await mode_runtime._async_apply_rule(room_id, controller, rule)
         mode_runtime.async_notify()
 
-    hass.services.async_register(DOMAIN, SERVICE_SET_MODE, _set_mode, SET_MODE_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_END_MODE, _end_mode, END_MODE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_REJOIN_MODE, _rejoin_mode, REJOIN_MODE_SCHEMA
-    )
-    hass.services.async_register(
+    _register(hass, DOMAIN, SERVICE_SET_MODE, _set_mode, SET_MODE_SCHEMA)
+    _register(hass, DOMAIN, SERVICE_END_MODE, _end_mode, END_MODE_SCHEMA)
+    _register(hass, DOMAIN, SERVICE_REJOIN_MODE, _rejoin_mode, REJOIN_MODE_SCHEMA)
+    _register(
+        hass,
         DOMAIN,
         SERVICE_NIGHT_LIGHTS_OFF,
         _night_lights_off,
         NIGHT_LIGHTS_OFF_SCHEMA,
     )
-    hass.services.async_register(DOMAIN, SERVICE_NOTIFY, _play_effect, NOTIFY_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_APPLY_EFFECT, _play_effect, APPLY_EFFECT_SCHEMA
+    _register(hass, DOMAIN, SERVICE_NOTIFY, _play_effect, NOTIFY_SCHEMA)
+    _register(hass, DOMAIN, SERVICE_APPLY_EFFECT, _play_effect, APPLY_EFFECT_SCHEMA)
+    _register(hass, DOMAIN, SERVICE_STOP_EFFECT, _stop_effect, STOP_EFFECT_SCHEMA)
+    _register(hass, DOMAIN, SERVICE_PRESS, _press, PRESS_SCHEMA)
+    _register(hass, DOMAIN, SERVICE_CYCLE, _cycle, CYCLE_SCHEMA)
+    _register(hass, DOMAIN, SERVICE_SET_ADAPTIVE, _set_adaptive, SET_ADAPTIVE_SCHEMA)
+    _register(
+        hass, DOMAIN, SERVICE_ACTIVATE_SCENE, _activate_scene, ACTIVATE_SCENE_SCHEMA
     )
-    hass.services.async_register(
-        DOMAIN, SERVICE_STOP_EFFECT, _stop_effect, STOP_EFFECT_SCHEMA
-    )
-    hass.services.async_register(DOMAIN, SERVICE_PRESS, _press, PRESS_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_CYCLE, _cycle, CYCLE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_SET_ADAPTIVE, _set_adaptive, SET_ADAPTIVE_SCHEMA
-    )
-    hass.services.async_register(
-        DOMAIN, SERVICE_ACTIVATE_SCENE, _activate_scene, ACTIVATE_SCENE_SCHEMA
-    )
-    hass.services.async_register(
-        DOMAIN, SERVICE_CLEAR_MANUAL, _clear_manual, CLEAR_MANUAL_SCHEMA
-    )
+    _register(hass, DOMAIN, SERVICE_CLEAR_MANUAL, _clear_manual, CLEAR_MANUAL_SCHEMA)
+
+
+def _register(
+    hass: HomeAssistant,
+    domain: str,
+    service: str,
+    handler: Callable[[ServiceCall], Awaitable[None]],
+    schema: vol.Schema,
+) -> None:
+    """Register one service, naming it as the cause of whatever it does."""
+
+    async def _handle(call: ServiceCall) -> None:
+        with caused_by(f"service:{service}"):
+            await handler(call)
+
+    hass.services.async_register(domain, service, _handle, schema)
 
 
 @callback

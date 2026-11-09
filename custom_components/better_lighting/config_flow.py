@@ -1377,7 +1377,12 @@ class RoomSubentryFlow(ConfigSubentryFlow):
                 if index is None:
                     self._room_triggers.append(cleaned)
                 else:
-                    self._room_triggers[index] = cleaned
+                    # Over what was stored, so the trigger's own rules -- set
+                    # in the panel, not asked for here -- survive the edit.
+                    self._room_triggers[index] = {
+                        **self._room_triggers[index],
+                        **cleaned,
+                    }
                 self._editing_trigger = None
                 return await self.async_step_room_triggers()
 
@@ -1386,7 +1391,9 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             current = dict(self._room_triggers[index])
         return self.async_show_form(
             step_id=step_id,
-            data_schema=build_schema(TRIGGER_SPECS, current),
+            data_schema=build_schema(
+                TRIGGER_SPECS, current, options={"scenes": self._scene_options()}
+            ),
             errors=errors,
         )
 

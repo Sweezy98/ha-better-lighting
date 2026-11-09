@@ -810,3 +810,91 @@ class TestSwitchedOffActions:
         await set_state(hass, "playing")
 
         assert calls == []
+
+
+class TestScenesSetRatherThanLight:
+    """A rule's scene is what the room looks like for the film. Lights that are
+    on take it; dark ones stay dark and take it when they come on."""
+
+    async def _build(self, hass: HomeAssistant):
+        await setup_members(
+            hass,
+            [
+                MemberLight("Lounge Main", is_on=True, brightness=200),
+                MemberLight("Lounge Lamp", is_on=False),
+                MemberLight("Kitchen Main", is_on=False),
+            ],
+        )
+        hass.states.async_set("binary_sensor.kitchen_presence", "off")
+        entry = hub_entry(
+            subentries_data=[
+                room_subentry("Lounge", ["light.lounge_main", "light.lounge_lamp"]),
+                room_subentry(
+                    "Kitchen",
+                    ["light.kitchen_main"],
+                    presence_entity="binary_sensor.kitchen_presence",
+                    presence_clear_delay=0,
+                ),
+                scene_subentry("Movie", brightness=5),
+                scene_subentry("Path", brightness=15),
+            ]
+        )
+        await setup_hub(hass, entry)
+        ids = subentry_ids(entry)
+        rules = [
+            rule(["playing"], [ids["Lounge"]], "apply_scene", scene_id=ids["Movie"]),
+            rule(["playing"], [ids["Kitchen"]], "apply_scene", scene_id=ids["Path"]),
+        ]
+        hass.config_entries.async_add_subentry(entry, _sub(mode_subentry(rules=rules)))
+        await hass.async_block_till_done()
+        await set_state(hass, "playing")
+
+    async def test_only_lit_lights_take_the_scene(self, hass: HomeAssistant) -> None:
+        await self._build(hass)
+        assert hass.states.get("light.lounge_main").attributes["brightness"] <= 20
+        assert hass.states.get("light.lounge_lamp").state == "off"
+        assert hass.states.get("light.kitchen_main").state == "off"
+
+    async def test_presence_lights_a_set_room_in_its_scene(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._build(hass)
+        hass.states.async_set("binary_sensor.kitchen_presence", "on")
+        await hass.async_block_till_done()
+        kitchen = hass.states.get("light.kitchen_main")
+        assert kitchen.state == "on"
+        assert kitchen.attributes["brightness"] <= 45
+
+        hass.states.async_set("binary_sensor.kitchen_presence", "off")
+        await hass.async_block_till_done()
+        assert hass.states.get("light.kitchen_main").state == "off"
+
+        # Still set for the film: the next one through gets the same.
+        hass.states.async_set("binary_sensor.kitchen_presence", "on")
+        await hass.async_block_till_done()
+        assert hass.states.get("light.kitchen_main").attributes["brightness"] <= 45
+
+    async def test_switching_a_set_room_on_lights_its_scene(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._build(hass)
+        await hass.services.async_call(
+            "light", "turn_on", {"entity_id": "light.kitchen"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        kitchen = hass.states.get("light.kitchen_main")
+        assert kitchen.state == "on"
+        assert kitchen.attributes["brightness"] <= 45
+
+    async def test_a_lamp_lit_by_hand_joins_the_scene(
+        self, hass: HomeAssistant
+    ) -> None:
+        await self._build(hass)
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"entity_id": "light.lounge_lamp", "brightness": 255},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+        assert hass.states.get("light.lounge_lamp").attributes["brightness"] <= 20

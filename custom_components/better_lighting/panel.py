@@ -118,6 +118,9 @@ DRAFT_ID = "__draft__"
 # every open.
 _CURVE_STEPS = 96
 
+# Marks the copy of each script loaded by the page itself, so it never shares
+# a URL -- and so a failed fetch -- with the copy a dashboard asks for.
+PAGE_COPY = "page=1"
 # Where we note that the panel's route is already on the HTTP app.
 _STATIC_REGISTERED = f"{DOMAIN}_panel_static"
 # The card URLs we have handed the frontend, so the next run can take back
@@ -249,13 +252,22 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     would have to own -- so we own it: it is rewritten when the file changes,
     any duplicate pointing at our path is taken away, and it is deleted when
     the integration is.
+
+    And each way gets its own URL. A browser remembers a module that failed
+    to load under the URL it failed at, for as long as the page is open. A
+    dashboard opened while Home Assistant is still starting asks for its
+    resources before this integration has put the file on a route, gets a
+    404 -- and if the page's own copy were the same URL, the working load
+    that arrives a moment later would be answered from that failure. That
+    is the card that is missing for a while and then back with nothing
+    changed: it comes back when the app happens to reload the page.
     """
     urls = []
     for name in (CARD_FILE, ICONS_FILE):
         fingerprint = await hass.async_add_executor_job(_fingerprint, name)
         urls.append(f"{PANEL_URL}/{name}?v={fingerprint}")
 
-    _async_refresh_extra_modules(hass, urls)
+    _async_refresh_extra_modules(hass, [f"{url}&{PAGE_COPY}" for url in urls])
     await _async_refresh_resources(hass, urls)
 
 

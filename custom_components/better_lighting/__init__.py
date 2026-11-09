@@ -20,7 +20,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
-from .activity import ActivityLog
+from .activity import EVENT_ACTIVITY, ActivityLog
 from .const import (
     CONF_ROOM_SCENES,
     CONF_ROOM_SWITCHES,
@@ -33,7 +33,7 @@ from .const import (
     SubentryType,
 )
 from .context import ContextRegistry
-from .controllers import EVENT_PRESS, ControllerRuntime
+from .controllers import ControllerRuntime
 from .cycle import ADAPTIVE_STEP
 from .models import (
     ControllerConfig,
@@ -62,12 +62,16 @@ from .room import EVENT_ROOM_MODE_CHANGED, RoomController
 from .scenes import Scene
 from .services import async_register_services, async_remove_services
 from .session import DeferredRegistry
-from .simulate import SimulationRunner
+from .simulate import EVENT_SIMULATION, SimulationRunner
 from .store import SessionStore
+from .triggers import SensorTrigger
 
 # Everything worth remembering, which is the same set the panel watches.
+# Presses are not here: the room notes each one as it handles it, with what
+# the press was for and where the cycle landed, which says more.
 ACTIVITY_EVENTS = (
-    EVENT_PRESS,
+    EVENT_ACTIVITY,
+    EVENT_SIMULATION,
     EVENT_ROOM_MODE_CHANGED,
     EVENT_MODE_CHANGED,
     EVENT_DEFERRED,
@@ -346,6 +350,7 @@ async def async_setup_entry(
         presence = RoomPresence(
             hass,
             room,
+            may_count=controller.trigger_may_count,
             on_occupied=_room_occupied(hass, runtime, subentry_id),
             on_cleared=_room_cleared(hass, runtime, subentry_id),
             on_gate_opened=_gate_opened(hass, controller),
@@ -465,17 +470,19 @@ def _room_occupied(hass: HomeAssistant, runtime: BetterLightingRuntime, room_id:
     room checks for that and stands down.
     """
 
-    def _notify() -> None:
-        hass.async_create_task(_async_occupied(runtime, room_id))
+    def _notify(trigger: SensorTrigger | None = None) -> None:
+        hass.async_create_task(_async_occupied(runtime, room_id, trigger))
 
     return _notify
 
 
-async def _async_occupied(runtime: BetterLightingRuntime, room_id: str) -> None:
+async def _async_occupied(
+    runtime: BetterLightingRuntime, room_id: str, trigger: SensorTrigger | None
+) -> None:
     for mode_runtime in runtime.mode_runtimes.values():
         await mode_runtime.async_room_occupied(room_id)
     if (controller := runtime.controllers.get(room_id)) is not None:
-        await controller.async_presence_detected()
+        await controller.async_presence_detected(trigger)
 
 
 def _room_cleared(hass: HomeAssistant, runtime: BetterLightingRuntime, room_id: str):

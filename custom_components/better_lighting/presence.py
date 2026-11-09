@@ -13,6 +13,10 @@ reaching for the biscuit tin.
 The gate is watched as well as read. A cover closing while somebody is already
 in the room is exactly as much a reason to light it as somebody walking into an
 already-dark one -- and only tracking the presence sensor would miss it.
+
+Occupancy here counts only the triggers allowed to count: one standing aside
+at night, or held back by its own rules, is not somebody in the room as far
+as the lights are concerned.
 """
 
 from __future__ import annotations
@@ -40,7 +44,7 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from homeassistant.util import dt as dt_util
 
 from .const import CoverCondition
-from .triggers import UNREADABLE, active_entities, any_active
+from .triggers import UNREADABLE, SensorTrigger, active_entities, counted
 from .zones import Zone
 
 if TYPE_CHECKING:
@@ -49,6 +53,60 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _OCCUPIED_STATES = (STATE_ON, STATE_HOME)
+
+type MayCount = Callable[[SensorTrigger], bool]
+type OnOccupied = Callable[[SensorTrigger | None], None]
+
+
+def _always(_trigger: SensorTrigger) -> bool:
+    return True
+
+
+class TriggerLatch:
+    """Which of a set of triggers is holding the lights on.
+
+    Shared by a room and by the parts of it, which ask the same question of
+    their own sensors.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        triggers: tuple[SensorTrigger, ...],
+        may_count: MayCount,
+    ) -> None:
+        self.hass = hass
+        self.triggers = triggers
+        self.may_count = may_count
+        self.held: tuple[SensorTrigger, ...] = ()
+
+    @property
+    def entities(self) -> list[str]:
+        return active_entities(self.triggers)
+
+    def update(self) -> tuple[SensorTrigger, ...] | None:
+        """Re-read every sensor. Returns the triggers that have just started
+        counting, or None when not one sensor can be read -- which is held
+        rather than guessed: a sensor that dropped out is not an empty room.
+        """
+        states = {
+            entity_id: (
+                state.state
+                if (state := self.hass.states.get(entity_id)) is not None
+                else None
+            )
+            for entity_id in self.entities
+        }
+        if all(value in UNREADABLE for value in states.values()):
+            return None
+        now = counted(self.triggers, states, self.held, self.may_count)
+        started = tuple(trigger for trigger in now if trigger not in self.held)
+        self.held = now
+        return started
+
+    def release(self, predicate: Callable[[SensorTrigger], bool]) -> None:
+        """Stop counting the triggers ``predicate`` names, until they re-arm."""
+        self.held = tuple(trigger for trigger in self.held if not predicate(trigger))
 
 
 class RoomPresence:
@@ -59,13 +117,15 @@ class RoomPresence:
         hass: HomeAssistant,
         room: RoomConfig,
         *,
-        on_occupied: Callable[[], None] | None = None,
+        may_count: MayCount = _always,
+        on_occupied: OnOccupied | None = None,
         on_cleared: Callable[[], None] | None = None,
         on_gate_opened: Callable[[], None] | None = None,
         on_countdown: Callable[[], None] | None = None,
     ) -> None:
         self.hass = hass
         self.room = room
+        self._latch = TriggerLatch(hass, room.triggers, may_count)
         self._on_occupied = on_occupied
         self._on_cleared = on_cleared
         self._on_gate_opened = on_gate_opened
@@ -87,7 +147,7 @@ class RoomPresence:
                 )
             )
 
-        watched = active_entities(self.room.triggers)
+        watched = self._latch.entities
         if not watched:
             return
         self._occupied = self._read_triggers()
@@ -109,22 +169,26 @@ class RoomPresence:
         return bool(active_entities(self.room.triggers))
 
     def _read_triggers(self) -> bool | None:
-        """Whether any trigger is asking, or None if none can be read.
-
-        Held rather than guessed: every sensor being unavailable is not
-        evidence that a room is empty.
-        """
-        states = {
-            entity_id: (
-                state.state
-                if (state := self.hass.states.get(entity_id)) is not None
-                else None
-            )
-            for entity_id in active_entities(self.room.triggers)
-        }
-        if all(value in UNREADABLE for value in states.values()):
+        """Whether any trigger is counting, or None if none can be read."""
+        if self._latch.update() is None:
             return None
-        return any_active(self.room.triggers, states)
+        return bool(self._latch.held)
+
+    @property
+    def holding(self) -> tuple[SensorTrigger, ...]:
+        """The triggers currently keeping this room occupied."""
+        return self._latch.held
+
+    @callback
+    def async_release(self, predicate: Callable[[SensorTrigger], bool]) -> None:
+        """Stop counting some triggers -- night has just begun, say.
+
+        Quietly: the room is not emptied by this, nothing is switched off. It
+        only means the next thing that happens is judged afresh.
+        """
+        self._latch.release(predicate)
+        if self._occupied and not self._latch.held:
+            self._occupied = False
 
     @property
     def occupied(self) -> bool | None:
@@ -180,8 +244,11 @@ class RoomPresence:
     def _handle_change(self, event: Event[EventStateChangedData]) -> None:
         # Asked of the whole set, not of the sensor that moved: with two
         # triggers on one room, one going quiet is not the room going quiet.
-        occupied = self._read_triggers()
-        if occupied is None or occupied == self._occupied:
+        started = self._latch.update()
+        if started is None:
+            return
+        occupied = bool(self._latch.held)
+        if occupied == self._occupied:
             return
         self._occupied = occupied
 
@@ -189,7 +256,7 @@ class RoomPresence:
             self._cancel_timer()
             _LOGGER.debug("%s: occupied", self.room.name)
             if self._on_occupied is not None:
-                self._on_occupied()
+                self._on_occupied(started[0] if started else None)
             return
 
         self._arm_clear_timer()
@@ -280,12 +347,14 @@ class ZoneOccupancy:
         hass: HomeAssistant,
         zone: Zone,
         *,
-        on_occupied: Callable[[], None],
+        on_occupied: OnOccupied,
         on_cleared: Callable[[], None],
         on_countdown: Callable[[], None] | None = None,
+        may_count: MayCount = _always,
     ) -> None:
         self.hass = hass
         self.zone = zone
+        self._latch = TriggerLatch(hass, zone.triggers, may_count)
         self._on_occupied = on_occupied
         self._on_cleared = on_cleared
         self._on_countdown = on_countdown
@@ -297,7 +366,7 @@ class ZoneOccupancy:
 
     @callback
     def async_setup(self) -> None:
-        watched = active_entities(self.zone.triggers)
+        watched = self._latch.entities
         if not watched:
             return
         self._occupied = self._read_triggers()
@@ -306,23 +375,17 @@ class ZoneOccupancy:
         )
 
     def _read_triggers(self) -> bool | None:
-        """Whether any of this zone's triggers is asking.
-
-        None when not one of them can be read, which is held rather than
-        guessed: a sensor that has dropped out is not evidence of an empty
-        desk.
-        """
-        states = {
-            entity_id: (
-                state.state
-                if (state := self.hass.states.get(entity_id)) is not None
-                else None
-            )
-            for entity_id in active_entities(self.zone.triggers)
-        }
-        if all(value in UNREADABLE for value in states.values()):
+        """Whether any of this zone's triggers is counting, or None if unread."""
+        if self._latch.update() is None:
             return None
-        return any_active(self.zone.triggers, states)
+        return bool(self._latch.held)
+
+    @callback
+    def async_release(self, predicate: Callable[[SensorTrigger], bool]) -> None:
+        """Stop counting some triggers, quietly. See the room's."""
+        self._latch.release(predicate)
+        if self._occupied and not self._latch.held:
+            self._occupied = False
 
     @callback
     def async_shutdown(self) -> None:
@@ -340,15 +403,18 @@ class ZoneOccupancy:
     def _handle_change(self, event: Event[EventStateChangedData]) -> None:
         # Asked of the whole set: with a motion sensor and a door on one zone,
         # the motion stopping is not the zone going quiet.
-        occupied = self._read_triggers()
-        if occupied is None or occupied == self._occupied:
+        started = self._latch.update()
+        if started is None:
+            return
+        occupied = bool(self._latch.held)
+        if occupied == self._occupied:
             return
         self._occupied = occupied
 
         if occupied:
             self._cancel_timer()
             _LOGGER.debug("%s: occupied", self.zone.name)
-            self._on_occupied()
+            self._on_occupied(started[0] if started else None)
             return
         self._arm_clear_timer()
 

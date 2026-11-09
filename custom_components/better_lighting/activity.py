@@ -14,7 +14,10 @@ set in the global settings; zero keeps nothing at all.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from collections.abc import Iterator
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -30,8 +33,56 @@ STORE_KEY = f"{DOMAIN}.activity"
 STORE_VERSION = 1
 
 # A ceiling as well as an age, so a loop that fires every second cannot fill
-# the disk before the sweep next runs.
-MAX_ENTRIES = 2000
+# the disk before the sweep next runs. Generous, because every adaptive step
+# of every room is in here too.
+MAX_ENTRIES = 5000
+
+# Everything the integration decides, as one event: the bus events kept for
+# automations say what changed, this says what was weighed and why.
+EVENT_ACTIVITY = f"{DOMAIN}_activity"
+
+# What set the current chain of work going -- a press, presence, a film, the
+# interval. Carried with the task rather than passed down every call, so a
+# mode change three calls deep still knows it was somebody at the door.
+CAUSE: ContextVar[str] = ContextVar(f"{DOMAIN}_cause", default="")
+
+
+@contextlib.contextmanager
+def caused_by(cause: str) -> Iterator[None]:
+    """Name what started the work done inside this block.
+
+    Set only where work actually starts -- a press, a sensor, the interval --
+    so the innermost of those is the honest answer. A timer booked during a
+    press would otherwise still claim to be that press an hour later.
+    """
+    token = CAUSE.set(cause)
+    try:
+        yield
+    finally:
+        CAUSE.reset(token)
+
+
+@callback
+def async_note(
+    hass: HomeAssistant,
+    what: str,
+    *,
+    room_id: str | None = None,
+    room: str | None = None,
+    **detail: Any,
+) -> None:
+    """Put one decision on the bus, and so in the log."""
+    hass.bus.async_fire(
+        EVENT_ACTIVITY,
+        {
+            "what": what,
+            "room_id": room_id,
+            "room": room,
+            "cause": CAUSE.get() or None,
+            **{key: value for key, value in detail.items() if value is not None},
+        },
+    )
+
 
 # How often the store is actually written. Every entry would mean a disk write
 # per press; this batches them, and nothing here is worth a lost second of.
@@ -81,7 +132,7 @@ class ActivityLog:
         self._prune()
         self._schedule_save()
 
-    def recent(self, limit: int = 200) -> list[dict[str, Any]]:
+    def recent(self, limit: int = 500) -> list[dict[str, Any]]:
         """The newest entries first, which is the order they are read in."""
         return list(reversed(self._entries[-limit:]))
 

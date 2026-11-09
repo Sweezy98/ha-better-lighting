@@ -11,6 +11,7 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import BetterLightingConfigEntry
+from .activity import caused_by
 from .const import DOMAIN
 from .models import ControllerConfig, RoomConfig
 from .modes import ModeGroupRuntime
@@ -117,8 +118,9 @@ class NightLightsOffButton(ButtonEntity):
         )
 
     async def async_press(self) -> None:
-        for controller in self._entry.runtime_data.controllers.values():
-            await controller.async_request_night_off()
+        with caused_by("button:night_lights_off"):
+            for controller in self._entry.runtime_data.controllers.values():
+                await controller.async_request_night_off()
 
 
 class RoomButton(ButtonEntity):
@@ -155,7 +157,8 @@ class RoomButton(ButtonEntity):
         )
 
     async def async_press(self) -> None:
-        await self._action()
+        with caused_by(f"button:{self._attr_translation_key}"):
+            await self._action()
 
 
 class ModeClearButton(ButtonEntity):
@@ -179,7 +182,8 @@ class ModeClearButton(ButtonEntity):
         )
 
     async def async_press(self) -> None:
-        await self.runtime.async_end()
+        with caused_by("button:mode_clear"):
+            await self.runtime.async_end()
 
 
 __all__ = ["ControllerConfig", "ModeClearButton", "RoomButton", "async_setup_entry"]

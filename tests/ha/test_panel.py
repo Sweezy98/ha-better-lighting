@@ -362,6 +362,43 @@ class TestTheDashboardCard:
         not importlib.util.find_spec("hass_frontend"),
         reason="no frontend installed",
     )
+    async def test_the_page_and_the_dashboard_never_share_a_url(
+        self, hass: HomeAssistant
+    ) -> None:
+        """The card that is missing for a while and then back.
+
+        A browser remembers a failed module load against its URL until the
+        page reloads. A dashboard opened while Home Assistant is starting asks
+        for its resource before the route exists; were the page's own copy the
+        same URL, its later, working load would be answered from that failure.
+        """
+        from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+
+        from custom_components.better_lighting import panel
+
+        assert await async_setup_component(hass, "lovelace", {})
+        await setup_members(hass, [MemberLight("One")])
+        await setup_hub(hass, hub_entry())
+
+        resources = hass.data["lovelace"].resources
+        await resources.async_get_info()
+        resource = {
+            item["url"]
+            for item in resources.async_items()
+            if panel.CARD_FILE in item["url"]
+        }
+        page = {
+            url
+            for url in hass.data[DATA_EXTRA_MODULE_URL].urls
+            if panel.CARD_FILE in url
+        }
+        assert len(resource) == len(page) == 1
+        assert not resource & page
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
     async def test_the_resource_is_rewritten_rather_than_duplicated(
         self, hass: HomeAssistant, monkeypatch
     ) -> None:

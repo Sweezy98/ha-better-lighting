@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import BetterLightingConfigEntry
+from .activity import caused_by
 from .const import DOMAIN, NightBehavior
 from .models import RoomConfig
 from .modes import ModeGroupRuntime
@@ -109,10 +110,12 @@ class AdaptiveAxisSwitch(_RoomSwitch):
         return self.controller.adapt_color
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.controller.async_set_adaptive_axis(self.axis, True)
+        with caused_by("switch"):
+            await self.controller.async_set_adaptive_axis(self.axis, True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.controller.async_set_adaptive_axis(self.axis, False)
+        with caused_by("switch"):
+            await self.controller.async_set_adaptive_axis(self.axis, False)
 
 
 class NightSwitch(_RoomSwitch):
@@ -142,14 +145,18 @@ class NightSwitch(_RoomSwitch):
         return {
             "source_entity": self.room.night_source_entity,
             "behavior": self.room.night_behavior.value,
-            "ignores_presence": self.room.night_ignore_presence,
+            "ignores_presence": any(
+                trigger.ignore_at_night for trigger in self.room.triggers
+            ),
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self.controller.async_set_night(True)
+        with caused_by("switch"):
+            await self.controller.async_set_night(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self.controller.async_set_night(False)
+        with caused_by("switch"):
+            await self.controller.async_set_night(False)
 
 
 class ModeEnabledSwitch(SwitchEntity, RestoreEntity):

@@ -218,8 +218,13 @@ Jeder Raum entscheidet dann selbst, was das heißt:
 `switch.<raum>_night` spiegelt den Helfer und lässt sich auch von Hand
 umlegen; beim nächsten Wechsel gewinnt der Helfer wieder.
 
-**Anwesenheit nachts ignorieren** ist die Schlafzimmer-Einstellung: Bewegung
-um drei Uhr nachts soll den Raum nicht beleuchten.
+Eine **Nachtszene** kann genau die Lampen nennen, die sie will — die Lampe
+am Bett in tiefem Orange etwa — und *den Rest des Raums* auf aus setzen. Was
+den Raum nachts einschaltet, schaltet dann nur diese ein.
+
+Ob ein Sensor **nachts ignoriert** wird, stellst du an jedem Auslöser ein
+(Schritt 8), nicht hier: Der Präsenzsensor über dem Bett tritt zurück,
+während der Bewegungsmelder darunter weiterhin den Weg zur Tür beleuchtet.
 
 Die Karte zeigt ein Mond-Symbol, solange ein Raum tatsächlich im Nachtmodus
 ist — was nicht dasselbe ist wie ein eingeschalteter Helfer, denn ein Raum
@@ -243,9 +248,30 @@ beides. Einer reicht:
 - **Ein neuer Auslöser während der Wartezeit startet sie neu.**
 
 „Aktiv“ muss für die üblichen Sensoren nicht eingestellt werden: `on`,
-`open`, `home` und `detected` zählen alle, ein Binärsensor, ein Rollladen und
-ein Gerätetracker funktionieren also, wie sie sind. Für alles, was etwas
-anderes meldet, gibst du den Zustand ausdrücklich an.
+`open`, `home`, `detected` und ein Mediaplayer, der `playing` oder `paused`
+meldet, zählen alle — ein Binärsensor, ein Rollladen, ein Gerätetracker und
+ein Fernseher funktionieren also, wie sie sind. Für alles, was etwas anderes
+meldet, gibst du den Zustand ausdrücklich an.
+
+### Jeder Auslöser hat sein eigenes Wort
+
+Jeder Auslöser ist ein eigenes Akkordeon. Aufgeklappt gibt es neben dem
+Sensor:
+
+- **Im Nachtmodus ignorieren.** Der Präsenzsensor über dem Bett schaltet das
+  Schlafzimmer nachts nicht mehr ein — und hält es auch nicht mehr an, kann
+  den Raum also nicht bis zum Morgen beleuchten.
+- **Szene dieses Sensors.** Leer heißt: was die Präsenzeinstellungen des
+  Raums sagen. Gesetzt, schaltet dieser Sensor stattdessen diese Szene: der
+  Bewegungsmelder unter dem Bett schaltet nur den Weg zur Tür.
+- **Regeln für diesen Auslöser**, zusätzlich zu denen des Raums. Der
+  Flursensor, der auch das Wohnzimmer einschaltet — aber nur, solange der
+  Nachtmodus aus ist — ist ein zweiter Auslöser am Wohnzimmer mit der Regel
+  *Nacht-Helfer ist aus*.
+
+Die eigenen Regeln eines Auslösers werden geprüft, wenn er aktiv wird, und
+ein zugelassener Auslöser zählt, bis er wieder ruhig ist. Eine Lux-Regel kann
+also nicht das Licht ausschalten, dessen Helligkeit sie gerade misst.
 
 ### Der Schalter schlägt den Timer
 
@@ -272,8 +298,9 @@ einen Countdown, solange der Timer läuft.
 
 ## Schritt 9 — Regeln
 
-Regeln entscheiden, **ob ein Auslöser feuern darf**. Sie gehören zu
-demselben Raum oder derselben Zone wie die Auslöser, die sie begrenzen.
+Regeln entscheiden, **ob ein Auslöser feuern darf**. Die Regeln des Raums
+gelten für jeden seiner Auslöser; jeder Auslöser kann eigene ergänzen
+(Schritt 8).
 
 | Regel | Prüft |
 |---|---|
@@ -402,9 +429,16 @@ Was der Modus für dich erledigt:
   die an waren*. Die Momentaufnahme liefert, welche Lampen; die Kurve
   liefert, wie hell. Die exakte Helligkeit von vor einer Stunde
   wiederherzustellen würde sofort gegen die Sonne arbeiten.
-- **Ein Druck nimmt einen Raum heraus.** Wer mitten im Film zum
-  Küchenschalter greift, behält die Küche. Sie wird am Ende auch nicht
-  zurückgesetzt.
+- **Eine Szene stellt einen Raum ein; sie schaltet ihn nicht ein.** Lampen,
+  die an sind, übernehmen die Szene der Regel. Lampen, die aus sind, bleiben
+  aus — und übernehmen die Szene, wenn sie angehen: per Schalter, per
+  Anwesenheit oder eine Lampe von Hand. So kann der Flur für den Film auf
+  eine gedimmte *Weg*-Szene gestellt sein und dunkel bleiben, bis jemand
+  hindurchgeht, und danach wieder dunkel werden.
+- **Ein Druck nimmt einen Raum heraus** — sobald der Raum an ist. Wer mitten
+  im Film zum Küchenschalter greift, behält die Küche. Sie wird am Ende auch
+  nicht zurückgesetzt. Einen Raum einzuschalten, den der Film dunkel gelassen
+  hat, schaltet ihn in der Szene des Films ein.
 - **Aufgeschobene Aktionen.** „Küche ausschalten, wenn sie leer ist“ wartet,
   bis die Küche tatsächlich leer ist, prüft dann, dass der Film noch läuft
   und niemand den Raum übernommen hat, und handelt erst dann.
@@ -559,9 +593,14 @@ auf. Für eine Szene `select.select_option` auf `select.<raum>_scene`.
 **Panel → Diagnose** ist die erste Anlaufstelle. Dort steht, was jeder Raum
 und jeder Modus gerade glaubt — sein Modus, seine Szene, welche Lampen
 manuell gesteuert sind, ob Nacht oder offenes Fenster gilt, welche
-Modus-Sitzung ihn besitzt — daneben ein Live-Protokoll der Ereignisse, die
-dorthin geführt haben. Der Zustand sagt, wo der Raum gelandet ist; das
-Protokoll sagt, welcher Druck oder welcher Film ihn dorthin gebracht hat.
+Modus-Sitzung ihn besitzt — daneben ein Protokoll von allem, was die
+Integration getan und entschieden hat: Anwesenheit erkannt, ignoriert oder
+von einer Regel blockiert, jeder Druck und wo der Durchlauf gelandet ist,
+Szenen aus dem Dashboard, die Regeln eines Modus, Nacht und Fenster, manuelle
+Übernahmen und jede adaptive Anpassung mit den gesendeten Werten. Jeder
+Eintrag sagt, was ihn ausgelöst hat. Der Zustand sagt, wo der Raum gelandet
+ist; das Protokoll sagt, welcher Druck, Sensor oder Film ihn dorthin gebracht
+hat.
 
 Es sind dieselben Daten wie im Diagnose-Download, Seite und Fehlerbericht
 können sich also nicht widersprechen.
@@ -588,7 +627,10 @@ können sich also nicht widersprechen.
   `select.home_cinema_state` auf `playing`. Das Wohnzimmer dimmt auf seine
   Filmszene; die Küche soll ausgehen, ist aber belegt, also wartet die
   Anforderung. Der Schreibtisch in der Ecke ist belegt und steigt aus dem
-  Modus aus: er bleibt, wie er war.
+  Modus aus: er bleibt, wie er war. Der Flur war dunkel, also bleibt er
+  dunkel — eingestellt auf seine gedimmte Weg-Szene.
+- 20:50. Jemand geht in die Küche. Der Flursensor schaltet den Flur in seiner
+  Weg-Szene ein, und er wird wieder dunkel, sobald die Person vorbei ist.
 - 20:35. Die Küche wird leer. Die aufgeschobene Aktion prüft, dass der Film
   noch läuft und niemand die Küche übernommen hat, und schaltet sie aus.
 - 21:10. Jemand drückt den Küchenschalter für ein Glas Wasser. Die Küche

@@ -524,7 +524,7 @@ class TestNothingIsLeftBehind:
         registered = {
             getattr(services, name)
             for name in re.findall(
-                r"async_register\(\s*DOMAIN,\s*(SERVICE_\w+)", source, re.S
+                r"_register\(\s*(?:hass,\s*)?DOMAIN,\s*(SERVICE_\w+)", source, re.S
             )
         }
         assert registered, "no services found at all; the pattern has rotted"

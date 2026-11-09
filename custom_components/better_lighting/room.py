@@ -56,6 +56,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.sun import get_astral_location
 from homeassistant.util import dt as dt_util
 
+from .activity import CAUSE, async_note, caused_by
 from .adaptive import AdaptiveConfig, SunEventOrderError, compute_for_transition
 from .conditions import Condition, Verdict, evaluate
 from .const import (
@@ -99,8 +100,9 @@ from .render import (
     batch,
     render_room,
 )
-from .scenes import Scene
+from .scenes import ALL_LIGHTS, OthersPolicy, Scene
 from .scripts import async_run_scripts
+from .triggers import SensorTrigger
 from .util import clamp
 from .zones import Zone, ZonePlan, plan_units
 
@@ -199,6 +201,10 @@ class RoomController:
         # session, so nothing needs a timeout to expire.
         self.session_owner: tuple[str, str] | None = None
         self._opt_out_callback: Callable[[str], None] | None = None
+        # That mode set this room without lighting it, so whatever lights it
+        # next -- a switch, presence, a lamp by hand -- should do so in the
+        # mode's look rather than the room's own.
+        self._set_by_mode = False
         # Presence, for modes that gate on whether a room is occupied.
         self.presence: RoomPresence | None = None
         self.windows: WindowWatcher | None = None
@@ -266,6 +272,7 @@ class RoomController:
                 on_occupied=self._zone_occupied(zone.zone_id),
                 on_cleared=self._zone_cleared(zone.zone_id),
                 on_countdown=self.async_notify,
+                may_count=self.trigger_may_count,
             )
             watch.async_setup()
             self._zone_watches.append(watch)
@@ -332,11 +339,12 @@ class RoomController:
     def release_session_owner(self) -> None:
         self.session_owner = None
         self._opt_out_callback = None
+        self._set_by_mode = False
         # The room is its own again, so there is nothing left to stand apart
         # from. Whatever the zones were doing, they are back in the room.
         self._detached.clear()
 
-    def _zone_occupied(self, zone_id: str) -> Callable[[], None]:
+    def _zone_occupied(self, zone_id: str) -> Callable[[SensorTrigger | None], None]:
         """Somebody is here, or the door has just opened.
 
         Two quite different things hang off the same signal. **Detaching** only
@@ -347,7 +355,7 @@ class RoomController:
         """
 
         @callback
-        def _occupied() -> None:
+        def _occupied(trigger: SensorTrigger | None = None) -> None:
             changed = False
             if self.session_owner is not None and zone_id not in self._detached:
                 self._detached.add(zone_id)
@@ -357,7 +365,14 @@ class RoomController:
             # was cancelled by the watcher the moment it came back, which is
             # what makes a fresh trigger start the wait again.
             zone = self._zone_by_id(zone_id)
-            lit = (RoomMode.ADAPTIVE, None)
+            lit: tuple[RoomMode, str | None] = (RoomMode.ADAPTIVE, None)
+            if trigger is not None and trigger.scene_id in self.scenes:
+                lit = (RoomMode.SCENE, trigger.scene_id)
+            self._note(
+                "zone_occupied",
+                zone=zone.name if zone else zone_id,
+                trigger=trigger.entity_id if trigger else None,
+            )
             if (
                 zone is not None
                 and zone.light_on_trigger
@@ -366,6 +381,11 @@ class RoomController:
             ):
                 self._zone_intent[zone_id] = lit
                 changed = True
+                self._note(
+                    "zone_lit",
+                    zone=zone.name,
+                    scene=self._scene_name(lit[1]),
+                )
 
             if changed:
                 self.async_notify()
@@ -390,6 +410,7 @@ class RoomController:
                 changed = True
 
             zone = self._zone_by_id(zone_id)
+            self._note("zone_cleared", zone=zone.name if zone else zone_id)
             if (
                 zone is not None
                 and zone.light_on_trigger
@@ -399,15 +420,45 @@ class RoomController:
                     # Somebody reached for the switch. The timer stands down
                     # until they turn these lights off themselves.
                     _LOGGER.debug("%s: held on by hand; not switching off", zone.name)
+                    self._note("zone_kept", zone=zone.name, reason="held_by_hand")
                 else:
                     self._zone_intent[zone_id] = (RoomMode.OFF, None)
                     changed = True
+                    self._note("zone_off", zone=zone.name)
 
             if changed:
                 self.async_notify()
                 self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
 
         return _cleared
+
+    def trigger_may_count(self, trigger: SensorTrigger) -> bool:
+        """Whether one sensor may speak for these lights as it goes active.
+
+        Its own say, on top of the room's rules: the hallway sensor that
+        lights the living room only while night mode is off, the one over the
+        bed that stands aside at night.
+        """
+        if trigger.ignore_at_night and self.is_night:
+            _LOGGER.debug("%s: %s ignored at night", self.room.name, trigger.entity_id)
+            self._note("trigger_ignored", trigger=trigger.entity_id, reason="night")
+            return False
+        verdict = self.rules_allow(trigger.rules)
+        if not verdict:
+            _LOGGER.debug(
+                "%s: %s blocked by %s",
+                self.room.name,
+                trigger.entity_id,
+                verdict.blocked_by,
+            )
+            self._note(
+                "trigger_ignored",
+                trigger=trigger.entity_id,
+                reason="rule",
+                rule=str(verdict.blocked_by),
+            )
+            return False
+        return True
 
     def _zone_by_id(self, zone_id: str) -> Zone | None:
         return next((z for z in self.room.zones if z.zone_id == zone_id), None)
@@ -420,6 +471,7 @@ class RoomController:
         verdict = self.rules_allow(zone.rules)
         if not verdict:
             _LOGGER.debug("%s: trigger blocked by %s", zone.name, verdict.blocked_by)
+            self._note("zone_blocked", zone=zone.name, rule=str(verdict.blocked_by))
             return False
         return True
 
@@ -477,6 +529,28 @@ class RoomController:
         for listener in list(self._listeners):
             listener()
 
+    @callback
+    def _note(self, what: str, **detail: Any) -> None:
+        """Put one of this room's decisions in the activity log."""
+        async_note(
+            self.hass,
+            what,
+            room_id=self.room.subentry_id,
+            room=self.room.name,
+            **detail,
+        )
+
+    def _scene_name(self, scene_id: str | None) -> str | None:
+        if not scene_id:
+            return None
+        scene = self.scenes.get(scene_id)
+        return scene.name if scene is not None else scene_id
+
+    def _step_label(self, step: CycleStep) -> str:
+        if step.kind is StepKind.SCENE and step.scene_id:
+            return self._scene_name(step.scene_id) or step.scene_id
+        return str(step.kind)
+
     @contextlib.asynccontextmanager
     async def _serialised(self):
         """Hold this room's lock, re-entrantly.
@@ -525,11 +599,14 @@ class RoomController:
         self.async_notify()
         # From the source entity, so the whole house is going to bed. That is
         # what may darken a room, unlike the room's own night switch.
-        self.hass.async_create_task(self._async_night_changed(from_source=True))
+        with caused_by("night_helper"):
+            self._note("night", active=active, source=new_state.entity_id)
+            self.hass.async_create_task(self._async_night_changed(from_source=True))
 
     @callback
     def _handle_tick(self, _now: datetime.datetime) -> None:
-        self.hass.async_create_task(self.async_render(Trigger.TICK))
+        with caused_by("interval"):
+            self.hass.async_create_task(self.async_render(Trigger.TICK))
 
     @property
     def adaptive_axes(self) -> Axis:
@@ -556,6 +633,7 @@ class RoomController:
             if enabled == self.adapt_color:
                 return
             self.adapt_color = enabled
+        self._note("adaptive_axis", axis=str(axis), enabled=enabled)
         self.async_notify()
         if enabled:
             await self.async_render(Trigger.ACTIVATE, only_lit=True)
@@ -571,6 +649,7 @@ class RoomController:
         if active == self.night_active:
             return
         self.night_active = active
+        self._note("night", active=active)
         self.async_notify()
         await self._async_night_changed(from_source=False)
 
@@ -595,6 +674,18 @@ class RoomController:
 
     async def _async_night_changed(self, *, from_source: bool) -> None:
         """Apply a change of night mode."""
+        if self.is_night:
+            # The sensors that stand aside at night stop holding the room now
+            # rather than whenever they next go quiet, which for a presence
+            # sensor over a bed is the morning.
+            def _night_ignored(trigger: SensorTrigger) -> bool:
+                return trigger.ignore_at_night
+
+            if self.presence is not None:
+                self.presence.async_release(_night_ignored)
+            for watch in self._zone_watches:
+                watch.async_release(_night_ignored)
+
         if not self.night_active:
             self._night_turn_off_pending = False
             await self.async_render(Trigger.ACTIVATE, only_lit=True)
@@ -615,19 +706,35 @@ class RoomController:
                     "%s: night turn-off waiting for the room to empty",
                     self.room.name,
                 )
+                self._note("night_off_waiting")
                 return
             await self.async_set_mode(RoomMode.OFF)
             return
 
         await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
-    async def async_set_mode(self, mode: RoomMode, scene_id: str | None = None) -> None:
-        """Change what this room is doing, and re-render once."""
+    async def async_set_mode(
+        self,
+        mode: RoomMode,
+        scene_id: str | None = None,
+        *,
+        light_dark: bool = True,
+    ) -> None:
+        """Change what this room is doing, and re-render once.
+
+        ``light_dark`` False sets the room without lighting anything: lit
+        lights take the new look, dark ones stay dark and take it when they
+        come on. That is what a film does to the rooms around it.
+        """
         async with self._serialised():
-            await self._async_set_mode(mode, scene_id)
+            await self._async_set_mode(mode, scene_id, light_dark=light_dark)
 
     async def _async_set_mode(
-        self, mode: RoomMode, scene_id: str | None = None
+        self,
+        mode: RoomMode,
+        scene_id: str | None = None,
+        *,
+        light_dark: bool = True,
     ) -> None:
         if mode is RoomMode.SCENE and scene_id not in self.scenes:
             _LOGGER.warning(
@@ -637,10 +744,13 @@ class RoomController:
                 self.mode,
             )
             return
+        if not light_dark and self.session_owner is not None:
+            self._set_by_mode = True
         if mode is RoomMode.OFF:
             # However the room went dark -- the switch, a mode ending, every
             # bulb turned off by hand -- the automation has its lights back.
             self._held_by_hand = False
+            self._set_by_mode = False
         # A room-wide command is the most recent deliberate thing anybody has
         # said, so the zones driven by their own switch or their own trigger
         # rejoin it. Zones detached by occupancy are not touched: that is a
@@ -686,6 +796,10 @@ class RoomController:
                 "to_mode": mode.value,
                 "effective_mode": self.effective_mode.value,
                 "scene_id": self.active_scene_id,
+                "scene": self._scene_name(self.active_scene_id),
+                "cause": CAUSE.get() or None,
+                # Set without lighting anything: dark lights stay dark.
+                "lit": light_dark or self._any_member_on(),
             },
         )
 
@@ -698,14 +812,14 @@ class RoomController:
             await self.async_render(Trigger.ACTIVATE)
             return
 
+        if not light_dark:
+            # Set, not lit: only what is already on takes the new look.
+            await self.async_render(Trigger.ACTIVATE, only_lit=True)
+            return
+
         if not self._any_member_on():
-            # Coming back from dark: light only the members that were on last
-            # time, at the value the new mode implies, in one command.
-            targets = (
-                self.light.restore_targets()
-                if self.light is not None
-                else list(self.room.lights)
-            )
+            # Coming back from dark, in one command.
+            targets = self._turn_on_targets()
             if not await self.async_render(Trigger.TURN_ON, entity_ids=targets):
                 # The engine had nothing to say -- adaptive is switched off, or
                 # every light is already where it should be. Switching the
@@ -719,6 +833,35 @@ class RoomController:
 
         await self.async_render(Trigger.ACTIVATE)
         await self._async_start_scene_effect()
+
+    def _turn_on_targets(self) -> list[str]:
+        """Which lights a room coming back from dark should light.
+
+        The members that were on last time -- unless the scene it is coming
+        back into names its lights, in which case those are lit, and the
+        remembered ones only where the scene leaves the rest of the room
+        adaptive. A night scene of two lamps lights two lamps.
+        """
+        remembered = (
+            self.light.restore_targets()
+            if self.light is not None
+            else list(self.room.lights)
+        )
+        scene = self.active_scene()
+        if scene is None or not scene.lights or ALL_LIGHTS in scene.lights:
+            return remembered
+        named = {
+            entity_id
+            for entity_id in self.room.lights
+            if scene.targets(entity_id) and not scene.spec_for(entity_id).turn_off
+        }
+        if scene.others is OthersPolicy.ADAPTIVE:
+            named |= {
+                entity_id for entity_id in remembered if entity_id not in scene.lights
+            }
+        return [entity_id for entity_id in self.room.lights if entity_id in named] or (
+            remembered
+        )
 
     async def _async_start_scene_effect(self) -> None:
         """Play the current scene's effect, if it asked for one.
@@ -783,6 +926,11 @@ class RoomController:
         )
         self._effect_request = request
         self._effect_frames = iter(effect_frames(request))
+        self._note(
+            "effect",
+            effect=request.effect.name or request.effect.effect_id,
+            lights=len(targets),
+        )
         await self._async_effect_frame()
 
     async def _async_effect_frame(self) -> None:
@@ -920,6 +1068,7 @@ class RoomController:
             mode_id, _session_id = self.session_owner
             callback_fn, self._opt_out_callback = self._opt_out_callback, None
             self.session_owner = None
+            self._set_by_mode = False
             if callback_fn is not None:
                 callback_fn(mode_id)
             dismissed = True
@@ -933,8 +1082,9 @@ class RoomController:
         self, controller: ControllerConfig, kind: str = "press", *, steps: int = 1
     ) -> None:
         """Handle a press from ``controller``. ``steps`` counts a coalesced burst."""
-        async with self._serialised():
-            await self._async_press(controller, kind, steps=steps)
+        with caused_by(f"press:{controller.name}"):
+            async with self._serialised():
+                await self._async_press(controller, kind, steps=steps)
 
     async def _async_press(
         self, controller: ControllerConfig, kind: str = "press", *, steps: int = 1
@@ -950,6 +1100,13 @@ class RoomController:
 
         _LOGGER.debug(
             "%s: %s from %s -> %s", self.room.name, kind, controller.name, action
+        )
+        self._note(
+            "press",
+            switch=controller.name,
+            press=kind,
+            action=str(action),
+            steps=steps if steps > 1 else None,
         )
 
         match action:
@@ -1000,6 +1157,13 @@ class RoomController:
         two in between.
         """
         zone = self._zone_for(controller)
+        if zone is None and direction > 0 and self._armed:
+            # A film has set this room and left it dark. Switching it on is
+            # asking for the room as the film has it, not leaving the film.
+            self._held_by_hand = True
+            self._note("cycle", switch=controller.name, reason="armed_by_mode")
+            await self.async_set_mode(self.mode, self.active_scene_id)
+            return
         cycle = controller.cycle(frozenset(self.scenes))
         state = RoomCycleState(
             current=self._current_step(zone),
@@ -1043,6 +1207,13 @@ class RoomController:
         else:
             self._held_by_hand = held
         self._last_index[controller.subentry_id] = result.index
+        self._note(
+            "cycle",
+            switch=controller.name,
+            zone=zone.name if zone else None,
+            landed=self._step_label(result.step),
+            reason=result.reason,
+        )
         _LOGGER.debug(
             "%s: %s x%d -> %s (%s)",
             zone.name if zone else self.room.name,
@@ -1118,28 +1289,47 @@ class RoomController:
         }
         return evaluate(rules, dt_util.now(), states)
 
-    def _presence_allowed(self) -> bool:
-        """Whether presence has any say in this room right now.
+    @property
+    def _armed(self) -> bool:
+        """A cross-room mode has set this room but left it dark."""
+        return (
+            self._set_by_mode
+            and self.session_owner is not None
+            and self.mode in (RoomMode.ADAPTIVE, RoomMode.SCENE)
+            and not self._any_member_on()
+        )
 
-        Three separate ways to silence it, all meaning the same thing, so the
-        check is an OR rather than a precedence chain: a bedroom at night, a
-        scene that says so, and a room a cross-room mode is driving.
+    def _presence_blocked(self) -> str | None:
+        """Why presence has no say in this room right now, or None if it has.
+
+        Separate ways to silence it, all meaning the same thing, so the check
+        is an OR rather than a precedence chain: the room's own rules, a
+        scene that says so, and a room a cross-room mode is driving. Night is
+        each trigger's own business now, decided before it ever gets here.
         """
         if self.session_owner is not None:
             # A mode is driving this room; its own presence rules apply there.
-            return False
-        if self.is_night and self.room.night_ignore_presence:
-            return False
+            return "mode_driving"
+        return self._presence_gate_closed()
+
+    def _presence_gate_closed(self) -> str | None:
+        """The room's rules, and the scene's say, without asking about modes."""
         if not (verdict := self.rules_allow(self.room.rules)):
             _LOGGER.debug(
                 "%s: presence blocked by %s", self.room.name, verdict.blocked_by
             )
-            return False
+            return f"rule:{verdict.blocked_by}"
         scene = self.active_scene()
-        return not (scene is not None and scene.ignore_presence)
+        if scene is not None and scene.ignore_presence:
+            return "scene_ignores_presence"
+        return None
 
-    def _presence_target(self) -> CycleStep:
+    def _presence_target(self, trigger: SensorTrigger | None = None) -> CycleStep:
         """Where presence should put the room when somebody walks in."""
+        if trigger is not None and trigger.scene_id in self.scenes:
+            # The sensor names its own scene: the toilet light from the one
+            # under the bed, whatever the room would otherwise do.
+            return scene_step(trigger.scene_id)
         match self.room.presence_on_action:
             case PresenceOnAction.SCENE if self.room.presence_on_scene_id:
                 return scene_step(self.room.presence_on_scene_id)
@@ -1150,45 +1340,98 @@ class RoomController:
             case _:
                 return ADAPTIVE
 
-    async def async_presence_detected(self) -> None:
-        """Somebody has walked in."""
-        if self.room.presence_on_action is PresenceOnAction.NONE:
-            return
-        if not self._presence_allowed():
-            return
-        if self.presence is not None and not self.presence.covers_ok:
-            # Requirement 3: only when the blinds are down.
-            _LOGGER.debug("%s: presence blocked by the cover gate", self.room.name)
-            return
+    async def async_presence_detected(
+        self, trigger: SensorTrigger | None = None
+    ) -> None:
+        """Somebody has walked in, noticed by ``trigger`` if we know which."""
+        with caused_by("presence"):
+            outcome = await self._async_presence_detected(trigger)
+            self._note(
+                "presence_detected",
+                trigger=trigger.entity_id if trigger else None,
+                outcome=outcome,
+            )
+
+    async def _async_presence_detected(self, trigger: SensorTrigger | None) -> str:
+        """Act on somebody walking in, and say what was decided."""
+        own_scene = trigger is not None and trigger.scene_id in self.scenes
+        if self.room.presence_on_action is PresenceOnAction.NONE and not own_scene:
+            return "presence_does_nothing"
+        if self._armed:
+            # A film set this room and left it dark: light it as the film has
+            # it, which is how the hallway comes on dimmed rather than bright.
+            if reason := self._presence_gate_closed() or self._covers_blocked():
+                return reason
+            await self.async_set_mode(self.mode, self.active_scene_id)
+            return f"lit:{self._scene_name(self.active_scene_id) or self.mode}"
+        if reason := self._presence_blocked() or self._covers_blocked():
+            return reason
         if self.room.presence_on_only_when_off and self._any_member_on():
-            return
-        await self.async_apply_step(self._presence_target())
+            return "already_on"
+        target = self._presence_target(trigger)
+        await self.async_apply_step(target)
+        return f"lit:{self._step_label(target)}"
+
+    def _covers_blocked(self) -> str | None:
+        """Requirement 3: only when the blinds are down."""
+        if self.presence is not None and not self.presence.covers_ok:
+            _LOGGER.debug("%s: presence blocked by the cover gate", self.room.name)
+            return "covers_open"
+        return None
+
+    async def async_darken(self) -> None:
+        """Lights out, with what the room is set to kept for when they return.
+
+        For a room a film has set: somebody walked through and has gone, and
+        the next one through should get the same dim light, not a dark room
+        that has forgotten.
+        """
+        async with self._serialised():
+            lit = [
+                entity_id
+                for entity_id in self.room.lights
+                if (state := self.hass.states.get(entity_id)) is not None
+                and state.state == STATE_ON
+            ]
+            if lit:
+                self._note("darkened", kept=self._scene_name(self.active_scene_id))
+                await self._async_call(
+                    "turn_off", {ATTR_ENTITY_ID: lit}, Trigger.ACTIVATE
+                )
 
     async def async_presence_cleared(self) -> None:
         """The room has emptied."""
+        with caused_by("presence"):
+            outcome = await self._async_presence_cleared()
+            self._note("presence_cleared", outcome=outcome)
+
+    async def _async_presence_cleared(self) -> str:
+        """Act on the room emptying, and say what was decided."""
         if self._night_turn_off_pending:
             self._night_turn_off_pending = False
             if self.night_active and self._any_member_on():
                 _LOGGER.debug("%s: night turn-off released", self.room.name)
                 await self.async_set_mode(RoomMode.OFF)
-            return
+                return "night_turn_off"
+            return "night_turn_off_dropped"
         if self.room.presence_off_action is PresenceOffAction.NONE:
-            return
-        if not self._presence_allowed():
-            return
+            return "presence_does_nothing"
+        if reason := self._presence_blocked():
+            return reason
         if self.room.presence_respects_manual and self.manual:
             # Somebody set this room by hand. Switching it off behind them
             # would be the rudest possible reading of an empty room.
-            return
+            return "set_by_hand"
         if self.room.hold_when_set_by_hand and self._held_by_hand:
             # Somebody reached for the switch. The timer stands down until
             # they turn the lights off themselves, and then takes over again.
             _LOGGER.debug("%s: held on by hand; not switching off", self.room.name)
-            return
+            return "held_by_hand"
         if self.room.presence_off_action is PresenceOffAction.ADAPTIVE:
             await self.async_set_adaptive()
-            return
+            return "adaptive"
         await self.async_set_mode(RoomMode.OFF)
+        return "turned_off"
 
     async def async_cover_gate_opened(self) -> None:
         """The blinds came down while somebody was already in the room."""
@@ -1196,11 +1439,18 @@ class RoomController:
 
     async def async_window_opened(self) -> None:
         """Requirement 4: a window is open, so switch to the insect scene."""
+        with caused_by("window"):
+            await self._async_window_opened()
+
+    async def _async_window_opened(self) -> None:
         if self.room.insect_scene(self.scenes) is None:
+            self._note("window_opened", outcome="no_insect_scene")
             return
         if self.room.insect_only_when_on and not self._any_member_on():
             # An open window is no reason to light a dark room.
+            self._note("window_opened", outcome="room_dark")
             return
+        self._note("window_opened", outcome="insect_mode")
         self.insect_active = True
         self.insect_dismissed = False
         self._pre_insect = self._current_step()
@@ -1209,6 +1459,11 @@ class RoomController:
 
     async def async_window_closed(self) -> None:
         """Put the room back to whatever it was doing before."""
+        with caused_by("window"):
+            self._note("window_closed", restored=self.insect_showing)
+            await self._async_window_closed()
+
+    async def _async_window_closed(self) -> None:
         was_showing = self.insect_showing
         self.insect_active = False
         self.insect_dismissed = False
@@ -1245,7 +1500,24 @@ class RoomController:
             return
         if ours:
             return
+        old_state = event.data.get("old_state")
         self._reconcile_power(on=True)
+        if (
+            self.mode is RoomMode.SCENE
+            and old_state is not None
+            and old_state.state == "off"
+        ):
+            # Lit by something other than us while the room is in a scene --
+            # a lamp's own switch, during a film. It takes the scene.
+            self._note(
+                "light_joined_scene",
+                light=entity_id,
+                scene=self._scene_name(self.active_scene_id),
+            )
+            self.hass.async_create_task(
+                self.async_render(Trigger.TURN_ON, entity_ids=[entity_id])
+            )
+            return
         if not self.hub.take_over_control:
             return
 
@@ -1307,6 +1579,11 @@ class RoomController:
             return
         if self.mode is RoomMode.OFF or self._any_member_on():
             return
+        if self._set_by_mode and self.mode is RoomMode.SCENE:
+            # Dark, but still set for the film: whatever comes on next
+            # should come on in its scene.
+            self.async_notify()
+            return
         self.hass.async_create_task(self.async_set_mode(RoomMode.OFF))
 
     @callback
@@ -1319,6 +1596,7 @@ class RoomController:
         _LOGGER.debug(
             "%s: %s taken over manually (%s)", self.room.name, entity_id, axes
         )
+        self._note("manual", light=entity_id, axes=str(axes))
         self._arm_manual_reset(entity_id)
         self.async_notify()
 
@@ -1337,6 +1615,7 @@ class RoomController:
                 _LOGGER.debug(
                     "%s: %s handed back to the engine", self.room.name, entity_id
                 )
+                self._note("manual_released", light=entity_id)
                 self.async_notify()
                 self.hass.async_create_task(self.async_render(Trigger.ACTIVATE))
 
@@ -1591,7 +1870,15 @@ class RoomController:
             if not commands:
                 return False
 
-            for action, data in batch(commands):
+            sent = batch(commands)
+            self._note(
+                "lights",
+                trigger=str(trigger),
+                mode=str(self.effective_mode),
+                scene=self._scene_name(self.active_scene_id),
+                commands=[_summary(action, data) for action, data in sent],
+            )
+            for action, data in sent:
                 await self._async_call(action, data, trigger)
             return True
 
@@ -1665,3 +1952,16 @@ class RoomController:
     def saturated_lights(self) -> dict[str, Saturation]:
         """Lights whose calibration is being clipped, for entity attributes."""
         return dict(self._saturation)
+
+
+def _summary(action: str, data: dict[str, Any]) -> dict[str, Any]:
+    """One service call, small enough to keep: who, and to what."""
+    summary: dict[str, Any] = {"action": action, "lights": list(data[ATTR_ENTITY_ID])}
+    if (brightness := data.get("brightness")) is not None:
+        summary["brightness_pct"] = round(int(brightness) / 2.55)
+    if (kelvin := data.get("color_temp_kelvin")) is not None:
+        summary["kelvin"] = int(kelvin)
+    for key in ("rgb_color", "hs_color", "xy_color", "rgbw_color", "rgbww_color"):
+        if (value := data.get(key)) is not None:
+            summary["color"] = list(value)
+    return summary

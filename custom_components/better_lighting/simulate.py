@@ -33,6 +33,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
+from .activity import caused_by
 from .const import DOMAIN
 from .render import RoomMode
 from .simulation import (
@@ -166,6 +167,10 @@ class SimulationRunner:
 
     async def async_start(self, *, reason: str = "", forced: bool = False) -> bool:
         """Begin simulating. Returns whether anything actually started."""
+        with caused_by("presence_simulation"):
+            return await self._async_start(reason=reason, forced=forced)
+
+    async def _async_start(self, *, reason: str, forced: bool) -> bool:
         if self._running:
             return False
         if not forced and not self._allowed():
@@ -184,6 +189,10 @@ class SimulationRunner:
 
     async def async_stop(self, *, reason: str = "") -> None:
         """Stop, and put back every room this turned on."""
+        with caused_by("presence_simulation"):
+            await self._async_stop(reason=reason)
+
+    async def _async_stop(self, *, reason: str) -> None:
         if not self._running:
             return
         self._running = False
@@ -365,6 +374,10 @@ class SimulationRunner:
         run.cancel = async_call_later(self.hass, wait, _fire)
 
     async def _async_apply(self, room_id: str) -> None:
+        with caused_by("presence_simulation"):
+            await self._async_apply_step(room_id)
+
+    async def _async_apply_step(self, room_id: str) -> None:
         run = self._runs.get(room_id)
         controller = self.runtime.controllers.get(room_id)
         if run is None or controller is None or not self._running:

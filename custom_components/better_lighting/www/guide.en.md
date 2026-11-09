@@ -210,8 +210,13 @@ Each room then decides for itself what that means:
 `switch.<room>_night` mirrors the helper and can also be flipped by hand;
 the helper wins again the next time it changes.
 
-**Ignore presence at night** is the bedroom setting: motion at 3am should
-not light the room.
+A **night scene** can name just the lights it wants — the lamp by the bed in
+a deep orange, say — and set *the rest of the room* to off. Whatever turns the
+room on at night then lights only those.
+
+Whether a sensor is **ignored at night** is set on each trigger (step 8), not
+here: the presence sensor over the bed stands aside, while the motion sensor
+under it still lights the way to the door.
 
 The card shows a moon badge while a room is actually in night mode — which
 is not the same as the helper being on, since a room set to *Off* says no.
@@ -232,10 +237,28 @@ them is enough:
 - **When the last one clears**, they go off after the delay you set.
 - **A fresh trigger during the wait starts the wait again.**
 
-"Active" needs no configuring for the usual sensors: `on`, `open`, `home` and
-`detected` all count, so a binary sensor, a cover and a device tracker each
-work as they are. Name a state outright for anything that reports something
-else.
+"Active" needs no configuring for the usual sensors: `on`, `open`, `home`,
+`detected`, and a media player that is `playing` or `paused` all count, so a
+binary sensor, a cover, a device tracker and a TV each work as they are. Name
+a state outright for anything that reports something else.
+
+### Each trigger has its own say
+
+Every trigger is a fold of its own. Open it and, besides the sensor:
+
+- **Ignore while night mode is on.** The presence sensor over the bed stops
+  lighting the bedroom at night — and stops keeping it lit, so it cannot hold
+  the room on until morning.
+- **Scene this sensor lights.** Empty means whatever the room's presence
+  settings say. Set, this sensor lights that scene instead: the motion sensor
+  under the bed lights only the path to the door.
+- **Rules for this trigger**, on top of the room's. The hallway sensor that
+  also lights the living room — but only while night mode is off — is a
+  second trigger on the living room with the rule *night helper is off*.
+
+A trigger's own rules are checked as it goes active, and a trigger that was
+allowed stays counted until it goes quiet. A lux rule therefore cannot switch
+off the light whose brightness it is reading.
 
 ### The switch beats the timer
 
@@ -261,8 +284,8 @@ countdown while the timer is running.
 
 ## Step 9 — Rules
 
-Rules decide **whether a trigger may fire**. They belong to the same room or
-zone as the triggers they gate.
+Rules decide **whether a trigger may fire**. The room's rules apply to every
+one of its triggers; each trigger can add rules of its own (step 8).
 
 | Rule | Checks |
 |---|---|
@@ -383,8 +406,15 @@ What the mode handles for you:
 - **Restoring on exit** to *adaptive, filtered to the lights that were on*.
   The snapshot supplies which lights; the curve supplies how bright.
   Restoring last hour's exact brightness would immediately fight the sun.
-- **A press opts a room out.** Somebody who reaches for the kitchen switch
-  mid-film keeps the kitchen. It is not put back at the end either.
+- **A scene sets a room; it does not light it.** Lights that are on take the
+  rule's scene. Lights that are off stay off — and take the scene when they
+  come on: by the switch, by presence, or a lamp switched on by hand. So a
+  hallway can be set to a dim *path* scene for the film and stay dark until
+  somebody walks through it, then go dark again behind them.
+- **A press opts a room out** — once the room is lit. Somebody who reaches
+  for the kitchen switch mid-film keeps the kitchen. It is not put back at
+  the end either. Switching on a room the film left dark lights it in the
+  film's scene instead.
 - **Deferred actions.** "Turn the kitchen off when it is empty" waits for the
   kitchen to actually empty, then checks the film is still running and
   nobody has taken the room over, and only then acts.
@@ -531,8 +561,12 @@ scene, call `select.select_option` on `select.<room>_scene`.
 **Panel → Diagnostics** is the first stop. It shows what every room and mode
 currently believes — its mode, its scene, which lights are under manual
 control, whether night or open-window is showing, which mode session owns it
-— beside a live log of the events that got it there. The room's state says
-where it ended up; the log says which press or which film put it there.
+— beside a log of everything the integration did and decided: presence seen,
+ignored or blocked by a rule, each press and where the cycle landed, scenes
+chosen from a dashboard, a mode's rules, night and windows, manual takeovers,
+and every adaptive adjustment with the values it sent. Each entry says what
+caused it. The room's state says where it ended up; the log says which press,
+sensor or film put it there.
 
 It is the same data the diagnostics download produces, so the page and your
 bug report cannot disagree.
@@ -557,7 +591,10 @@ bug report cannot disagree.
 - 20:30. The film starts. An automation sets `select.home_cinema_state` to
   `playing`. The living room dims to its film scene; the kitchen is asked to
   go off but is occupied, so the request waits. The desk in the corner is
-  occupied and steps out of the mode: it stays as it was.
+  occupied and steps out of the mode: it stays as it was. The hallway was
+  dark, so it stays dark — set to its dim path scene.
+- 20:50. Somebody walks to the kitchen. The hallway sensor lights the hallway
+  in its path scene, and it goes dark again once they have passed.
 - 20:35. The kitchen empties. The deferred action checks the film is still
   running and nobody has taken the kitchen over, and turns it off.
 - 21:10. Somebody presses the kitchen switch for a glass of water. The

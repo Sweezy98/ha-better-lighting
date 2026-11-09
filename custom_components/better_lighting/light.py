@@ -52,6 +52,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from . import BetterLightingConfigEntry
+from .activity import async_note
 from .brightness import (
     group_by_brightness,
     relative_brightness_map,
@@ -610,6 +611,13 @@ class RoomLight(GroupEntity, LightEntity, RestoreEntity):
         states = self._member_states()
         valid = self._valid(states)
         on_states = self._on(valid)
+        async_note(
+            self.hass,
+            "room_off",
+            room_id=self.room.subentry_id,
+            room=self.room.name,
+            lights=len(on_states),
+        )
 
         if self.room.remember_on_state:
             # Snapshot before issuing anything: once the members start turning

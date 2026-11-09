@@ -227,16 +227,30 @@ garage has a door, a porch may have both — so they are **ORed**:
   off by hand, and then the automation has them back. Turn *Hold when set by
   hand* off if you would rather the timer always won.
 
-"Active" needs no configuring for the usual sensors: `on`, `open`, `home` and
-`detected` all count, so a binary sensor, a cover and a device tracker are each a
-trigger as they are. Name a state outright for anything that reports something
-else.
+"Active" needs no configuring for the usual sensors: `on`, `open`, `home`,
+`detected`, and a media player that is `playing` or `paused` all count, so a
+binary sensor, a cover, a device tracker and a TV are each a trigger as they are.
+Name a state outright for anything that reports something else.
+
+Each trigger folds open to three settings of its own:
+
+- **Ignore while night mode is on** — the presence sensor over the bed stops
+  lighting the bedroom at night, and stops holding it lit.
+- **Scene this sensor lights** — the motion sensor under the bed lights only the
+  path to the door, whatever the room would otherwise do.
+- **Rules for this trigger**, on top of the room's — the hallway sensor that
+  also lights the living room, but only while night mode is off.
+
+A trigger's own rules are checked as it goes active, and a trigger that was
+allowed stays counted until it goes quiet, so a lux rule cannot switch off the
+light whose brightness it is reading.
 
 A whole room lights from its triggers through its **Presence** settings; a zone
 does it with *Light this zone while the sensor is active*, which is how one
 motion sensor lights the drive without touching the rest of the outside.
 
-**Rules** decide whether a trigger may fire, and belong to the same room or zone:
+**Rules** decide whether a trigger may fire. The room's rules apply to every
+one of its triggers; each trigger can add its own:
 
 | Rule | Checks |
 |---|---|
@@ -640,7 +654,7 @@ is already in the room counts just as much as somebody walking into a dark one.
 
 Presence can be silenced three ways, all meaning the same thing:
 
-- **Night mode ignores presence** — for a bedroom.
+- **A trigger ignored at night** — for the presence sensor over a bed.
 - **A scene ignores presence** — for the living room during a film.
 - **A room a cross-room mode is driving** follows that mode's actions instead.
 
@@ -659,8 +673,12 @@ A **mode** spans several rooms and has named states — *playing*, *paused*, *cr
 automation moves between by setting one `select` entity. Each (state, room) pair has a rule:
 apply a scene, switch the room off, return it to adaptive, or leave it alone.
 
-Three behaviours make this feel right rather than merely functional:
+Four behaviours make this feel right rather than merely functional:
 
+- **A scene sets a room; it does not light it.** Lights that are on take the rule's scene;
+  lights that are off stay off and take it when they come on — by the switch, by presence,
+  or a lamp switched on by hand. A hallway set to a dim scene for the film stays dark until
+  somebody walks through it, and goes dark again behind them.
 - **An occupied room is not plunged into darkness.** The instruction waits until the room
   empties, and is re-checked when it fires — by then the film may have ended or been paused,
   or you may have taken the room back, and each of those cancels it.
@@ -669,8 +687,8 @@ Three behaviours make this feel right rather than merely functional:
 - **On the way out, rooms return to adaptive, relighting only the lights that were on
   beforehand.** The snapshot says *which* lights; the sun says *how bright*.
 
-Press a switch in a room during the film and that room is **yours** for the rest of the
-session: later state changes skip it, and the ending leaves it as you left it. Use
+Press a switch in a lit room during the film and that room is **yours** for the rest of the
+session (in a room the film left dark, the first press lights it in the film's scene): later state changes skip it, and the ending leaves it as you left it. Use
 `better_lighting.rejoin_mode` to hand it back.
 
 ### Switching a mode off
@@ -699,8 +717,12 @@ episodes does not relight the whole house.
 The panel has a **Diagnostics** page: what every room and mode currently
 believes — its mode, its scene, which lights are under manual control, whether
 night or insect mode is showing, which cross-room session owns it — beside a
-live log of the events that got it there. A room's state tells you where it
-ended up; the log tells you which press or which film put it there.
+log of everything the integration did and decided: presence seen, ignored or
+blocked by a rule, each press and where the cycle landed, scenes chosen from a
+dashboard, a mode's rules, night and windows, manual takeovers, and every
+adaptive adjustment with the brightness and colour it sent. Each entry says
+what caused it. A room's state tells you where it ended up; the log tells you
+which press, sensor or film put it there.
 
 It is the same dump the diagnostics download produces, so what you read on the
 page and what you attach to a bug report cannot disagree.

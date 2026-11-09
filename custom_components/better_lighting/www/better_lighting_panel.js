@@ -93,6 +93,84 @@ const CARD_URL = new URL("better_lighting_card.js", import.meta.url).href;
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
+// What each kind of decision in the activity log is called, and drawn with.
+const ACTIVITY = {
+  presence_detected: { title: "act_presence_detected", icon: "mdi:motion-sensor" },
+  presence_cleared: { title: "act_presence_cleared", icon: "mdi:motion-sensor-off" },
+  trigger_ignored: { title: "act_trigger_ignored", icon: "mdi:eye-off-outline" },
+  zone_occupied: { title: "act_zone_occupied", icon: "mdi:motion-sensor" },
+  zone_cleared: { title: "act_zone_cleared", icon: "mdi:motion-sensor-off" },
+  zone_lit: { title: "act_zone_lit", icon: "mdi:lightbulb-on-outline" },
+  zone_off: { title: "act_zone_off", icon: "mdi:lightbulb-off-outline" },
+  zone_kept: { title: "act_zone_kept", icon: "mdi:hand-back-left" },
+  zone_blocked: { title: "act_zone_blocked", icon: "mdi:eye-off-outline" },
+  night: { title: "act_night", icon: "mdi:weather-night" },
+  night_off_waiting: { title: "act_night_off_waiting", icon: "mdi:timer-sand" },
+  adaptive_axis: { title: "act_adaptive_axis", icon: "mdi:theme-light-dark" },
+  effect: { title: "act_effect", icon: "mdi:auto-fix" },
+  press: { title: "act_press", icon: "mdi:light-switch" },
+  cycle: { title: "act_cycle", icon: "mdi:debug-step-over" },
+  manual: { title: "act_manual", icon: "mdi:hand-back-left" },
+  manual_released: { title: "act_manual_released", icon: "mdi:refresh-auto" },
+  light_joined_scene: { title: "act_light_joined_scene", icon: "mdi:lightbulb-on" },
+  lights: { title: "act_lights", icon: "mdi:lightbulb-on-outline" },
+  darkened: { title: "act_darkened", icon: "mdi:lightbulb-off-outline" },
+  window_opened: { title: "act_window_opened", icon: "mdi:window-open-variant" },
+  window_closed: { title: "act_window_closed", icon: "mdi:window-closed-variant" },
+  mode_rule: { title: "act_mode_rule", icon: "mdi:movie-open-cog" },
+  room_off: { title: "act_room_off", icon: "mdi:lightbulb-off" },
+};
+
+// The things that set work going, as the log names them.
+const CAUSES = {
+  press: "cause_press",
+  presence: "cause_presence",
+  mode: "cause_mode",
+  interval: "cause_interval",
+  dashboard: "cause_dashboard",
+  service: "cause_service",
+  button: "cause_button",
+  switch: "cause_switch",
+  window: "cause_window",
+  night_helper: "cause_night_helper",
+  presence_simulation: "cause_presence_simulation",
+};
+
+// The particulars of a decision, by the name the backend gives them.
+const ACTIVITY_FIELDS = {
+  trigger: "act_field_trigger",
+  outcome: "act_field_outcome",
+  reason: "act_field_reason",
+  rule: "act_field_rule",
+  scene: "act_field_scene",
+  switch: "act_field_switch",
+  press: "act_field_press",
+  action: "act_field_action",
+  landed: "act_field_landed",
+  light: "act_field_light",
+  lights: "act_field_lights",
+  axes: "act_field_axes",
+  active: "act_field_active",
+  source: "act_field_source",
+  mode: "act_field_mode",
+  state: "act_field_state",
+  kept: "act_field_kept",
+  restored: "act_field_restored",
+  enabled: "act_field_enabled",
+  axis: "act_field_axis",
+  effect: "act_field_effect",
+  steps: "act_field_steps",
+};
+
+// What a room is doing, as the log says it.
+const ROOM_MODES = {
+  off: "room_mode_off",
+  adaptive: "room_mode_adaptive",
+  scene: "room_mode_scene",
+  night: "room_mode_night",
+  insect: "room_mode_insect",
+};
+
 // The menu narrower than this is not a menu, so dragging past it means the
 // rail instead; and never wider than a quarter, since the content is what the
 // page is for.
@@ -983,6 +1061,28 @@ class BetterLightingPanel extends HTMLElement {
       this._checkVersion();
     } else if (this._scene) {
       this._paintLightList();
+    } else if (this._view.kind === "control") {
+      this._refreshControl();
+    }
+  }
+
+  /**
+   * Keep the control page live.
+   *
+   * The room cards repaint themselves from whatever hass they are handed, so
+   * each is handed every new one. The house rows are drawn here, and are
+   * redrawn only when something they show has actually changed -- a redraw
+   * on every state change anywhere would close a dropdown somebody is
+   * halfway through.
+   */
+  _refreshControl() {
+    const main = this.shadowRoot.getElementById("main");
+    main?.querySelectorAll("better-lighting-card").forEach((card) => {
+      card.hass = this._hass;
+    });
+    const house = main?.querySelector("#house");
+    if (house && this._houseSignature() !== house.dataset.signature) {
+      this._paintHouseControls(house);
     }
   }
 
@@ -1668,8 +1768,12 @@ class BetterLightingPanel extends HTMLElement {
     if (this._watching) return;
     this._watching = true;
 
+    // The same events the backend keeps. Presses are not among them: the
+    // room says what each one was for and where the cycle landed, which is
+    // the press and its answer in one line.
     const kinds = [
-      "better_lighting_press",
+      "better_lighting_activity",
+      "better_lighting_simulation",
       "better_lighting_zone_mode_changed",
       "better_lighting_mode_changed",
       "better_lighting_deferred_action",
@@ -1684,7 +1788,7 @@ class BetterLightingPanel extends HTMLElement {
             data: event.data,
           });
           // A log that grows forever is a memory leak with a nice name.
-          this._events = this._events.slice(0, 200);
+          this._events = this._events.slice(0, 500);
           this._renderEvents();
           this._noteChanged();
         }, kind);
@@ -1698,23 +1802,32 @@ class BetterLightingPanel extends HTMLElement {
   /** The words and the icon for one thing that happened. */
   _describeEvent(event) {
     const data = event.data || {};
-    const room = this._rooms.find(
-      (candidate) => candidate.id === data.zone_id
-    )?.name;
+    const room =
+      data.room ||
+      this._rooms.find(
+        (candidate) => candidate.id === (data.room_id || data.zone_id)
+      )?.name;
+    const why = data.cause ? this._describeCause(data.cause) : "";
     switch (event.kind) {
-      case "press":
+      case "activity":
         return {
-          icon: "mdi:light-switch",
-          title: `${data.controller || this._t("switch")} \u2192 ${data.kind}`,
-          where: room,
+          icon: ACTIVITY[data.what]?.icon || "mdi:information-outline",
+          title: ACTIVITY[data.what] ? this._t(ACTIVITY[data.what].title) : data.what,
+          where: [room, data.zone].filter(Boolean).join(" \u203a "),
+          detail: this._activityDetail(data),
+          why,
         };
       case "zone_mode_changed":
         return {
           icon: "mdi:lightbulb-group",
-          title: `${data.to || data.mode || "?"}${
+          title: `${
+            ROOM_MODES[data.to_mode] ? this._t(ROOM_MODES[data.to_mode]) : data.to_mode || "?"
+          }${
             data.scene ? ` \u00b7 ${data.scene}` : ""
           }`,
-          where: room || data.zone,
+          where: room,
+          detail: data.lit === false ? this._t("act_set_not_lit") : "",
+          why,
         };
       case "mode_changed":
         return {
@@ -1722,21 +1835,77 @@ class BetterLightingPanel extends HTMLElement {
           title: `${data.mode}: ${data.from_state || "?"} \u2192 ${
             data.to_state || "?"
           }`,
-          where: data.applied === false ? this._t("diag_enabled") : undefined,
+          detail:
+            data.applied === false ? this._t("act_mode_switched_off") : "",
+          why,
         };
       case "deferred_action":
         return {
           icon: "mdi:timer-sand",
-          title: `${data.action || "?"} \u00b7 ${data.status || ""} ${
-            data.reason || ""
-          }`.trim(),
+          title: `${this._t("act_deferred")} \u00b7 ${data.phase || ""}`,
           where: room,
+          detail: data.reason || "",
         };
       case "zone_opted_out":
-        return { icon: "mdi:hand-back-left", title: data.mode, where: room };
+        return {
+          icon: "mdi:hand-back-left",
+          title: this._t("act_opted_out"),
+          where: room,
+          detail: data.cause || "",
+        };
+      case "simulation":
+        return {
+          icon: "mdi:home-account",
+          title: `${this._t("presence_simulation")} \u00b7 ${data.state || ""}`,
+          detail: data.why || "",
+        };
       default:
         return { icon: "mdi:information-outline", title: event.kind, where: room };
     }
+  }
+
+  /** Why something happened, in a few words: a press, presence, a film. */
+  _describeCause(cause) {
+    const [kind, ...rest] = String(cause).split(":");
+    const named = rest.join(":");
+    const label = CAUSES[kind] ? this._t(CAUSES[kind]) : kind;
+    return named ? `${label}: ${named}` : label;
+  }
+
+  /** The particulars of one decision, as one line. */
+  _activityDetail(data) {
+    if (data.what === "lights") {
+      return (data.commands || [])
+        .map((command) => {
+          const parts = [];
+          if (command.brightness_pct !== undefined) {
+            parts.push(`${command.brightness_pct}%`);
+          }
+          if (command.kelvin !== undefined) parts.push(`${command.kelvin} K`);
+          if (command.color) parts.push(`rgb(${command.color.join(",")})`);
+          const who = (command.lights || []).map((id) => this._name(id)).join(", ");
+          const verb = command.action === "turn_off" ? this._t("act_off") : "";
+          return `${who} \u2192 ${[verb, ...parts].filter(Boolean).join(" \u00b7 ")}`;
+        })
+        .join("; ");
+    }
+    const skip = new Set(["what", "room", "room_id", "zone", "cause"]);
+    return Object.entries(data)
+      .filter(([key, value]) => !skip.has(key) && value !== null && value !== "")
+      .map(([key, value]) => {
+        const shown =
+          typeof value === "string" && /^[a-z_]+\.[a-z0-9_]+$/.test(value)
+            ? this._name(value)
+            : Array.isArray(value)
+              ? value.join(", ")
+              : String(value).replaceAll("_", " ");
+        return `${this._activityLabel(key)}: ${shown}`;
+      })
+      .join(" \u00b7 ");
+  }
+
+  _activityLabel(key) {
+    return ACTIVITY_FIELDS[key] ? this._t(ACTIVITY_FIELDS[key]) : key;
   }
 
   /**
@@ -1757,7 +1926,7 @@ class BetterLightingPanel extends HTMLElement {
     }
     log.innerHTML = this._events
       .map((event) => {
-        const { icon, title, where } = this._describeEvent(event);
+        const { icon, title, where, detail, why } = this._describeEvent(event);
         const at = new Date(event.at);
         return `<div class="entry">
           <span class="when">${
@@ -1767,6 +1936,8 @@ class BetterLightingPanel extends HTMLElement {
           <span class="what">
             <strong>${title}</strong>
             ${where ? `<div class="muted">${where}</div>` : ""}
+            ${detail ? `<div class="muted small">${detail}</div>` : ""}
+            ${why ? `<div class="muted small">${this._t("act_why")} ${why}</div>` : ""}
           </span>
         </div>`;
       })
@@ -2415,6 +2586,15 @@ class BetterLightingPanel extends HTMLElement {
         details[open] > summary { border-bottom:1px solid var(--divider-color,#3d3d3d); }
         details > bl-form { display:block; padding:16px 20px; }
         details > .fold-body { padding:16px 20px; }
+        /* A trigger is a fold inside the Triggers fold: a box inside a box,
+           so it drops the card background and keeps only the line. */
+        details.trigger { background:none; }
+        details.trigger > summary { font-size:14px; padding:10px 14px; }
+        .trigger-head { display:flex; align-items:center; gap:12px; min-width:0;
+                        flex:1 1 auto; }
+        .trigger-notes { font-size:12px; font-weight:400; }
+        button.drop-trigger { color:var(--error-color,#db4437); margin-top:4px;
+                              padding:0 8px; }
         /* Appended after the form's own folds, and flush against the last of
            them without this. */
         #extra > details:first-child { margin-top:12px; }
@@ -2575,6 +2755,7 @@ class BetterLightingPanel extends HTMLElement {
         .log { max-height:420px; overflow:auto; font-size:14px; }
         .log .entry { display:flex; gap:12px; align-items:flex-start;
                       padding:10px 0; }
+        .log .small { font-size:12px; }
         .log .entry + .entry { border-top:1px solid var(--divider-color,#e0e0e0); }
         .log .when { flex:0 0 68px; padding-top:9px; font-size:12px;
                      color:var(--secondary-text-color);
@@ -4716,7 +4897,10 @@ class BetterLightingPanel extends HTMLElement {
    * ``onChange`` so the form that holds it saves it along with everything
    * else -- these are not lists with a page of their own.
    */
-  _paintNestedList(into, { title, hint, formKey, items, blank, addLabel, describe }) {
+  _paintNestedList(
+    into,
+    { title, hint, formKey, items, blank, addLabel, describe, onChange }
+  ) {
     const fold = document.createElement("details");
     fold.open = true;
     fold.innerHTML = `<summary>${title}</summary>
@@ -4750,6 +4934,7 @@ class BetterLightingPanel extends HTMLElement {
         form.addEventListener("value-changed", (event) => {
           items[at] = { ...items[at], [event.detail.key]: event.detail.value };
           this._touch();
+          onChange?.();
           // Redrawn because a field can decide which other fields apply --
           // a rule between two times asks nothing about an entity.
           if (describe) draw();
@@ -4764,6 +4949,7 @@ class BetterLightingPanel extends HTMLElement {
         drop.addEventListener("click", () => {
           items.splice(at, 1);
           this._touch();
+          onChange?.();
           draw();
         });
         row.appendChild(drop);
@@ -4776,6 +4962,7 @@ class BetterLightingPanel extends HTMLElement {
       adder.addEventListener("click", () => {
         items.push({ ...blank });
         this._touch();
+        onChange?.();
         draw();
       });
       list.appendChild(adder);
@@ -4933,28 +5120,160 @@ class BetterLightingPanel extends HTMLElement {
    * that is where somebody thinks about them.
    */
   _paintTriggerEditors(into, values) {
-    const triggers = (values.triggers || []).map((one) => ({ ...one }));
+    const triggers = (values.triggers || []).map((one) => ({
+      // Rooms that ignored presence at night as a whole hand that to every
+      // trigger that has not said otherwise -- the backend reads it the same
+      // way, so the box shows what will actually happen.
+      ignore_at_night: Boolean(values.night_ignore_presence),
+      ...one,
+      rules: (one.rules || []).map((rule) => ({ ...rule })),
+    }));
     const rules = (values.rules || []).map((one) => ({ ...one }));
     values.triggers = triggers;
     values.rules = rules;
 
-    this._paintNestedList(into, {
-      title: this._t("triggers"),
-      hint: this._t("triggers_hint"),
-      formKey: "trigger",
-      items: triggers,
-      blank: { trigger_entity: null },
-      addLabel: this._t("add_trigger"),
-    });
+    this._paintTriggerList(into, triggers);
     this._paintNestedList(into, {
       title: this._t("rules"),
-      hint: this._t("rules_hint"),
+      hint: this._t("room_rules_hint"),
       formKey: "condition",
       items: rules,
       blank: { check: "state_is", required_state: "on", unknown_blocks: true },
       addLabel: this._t("add_rule"),
       describe: (rule) => this._describeCondition(rule),
     });
+  }
+
+  /**
+   * A room's triggers, one fold each.
+   *
+   * A trigger is more than a sensor now -- its own rules, whether it stands
+   * aside at night, the scene it lights -- and a list of open forms with a
+   * list of rules inside each one is a page nobody can find anything on.
+   * Folded, each reads as one line saying what it does; open, it is the
+   * whole of it.
+   */
+  _paintTriggerList(into, triggers) {
+    const fold = document.createElement("details");
+    fold.open = true;
+    fold.innerHTML = `<summary>${this._t("triggers")}</summary>
+      <div class="fold-body">
+        <p class="muted">${this._t("triggers_hint")}</p>
+        <div class="triggers"></div>
+      </div>`;
+    into.appendChild(fold);
+    const list = fold.querySelector(".triggers");
+    const choices = this._choices(this._room);
+    // Which folds are open, by position, so a redraw -- a deleted trigger, a
+    // changed sensor -- leaves open what was open.
+    const open = new Set();
+
+    const summary = (trigger) => {
+      const notes = [];
+      if (trigger.ignore_at_night) notes.push(this._t("ignored_at_night"));
+      const scene = choices.scenes.find(
+        (option) => option.value === trigger.trigger_scene_id
+      );
+      if (scene) notes.push(scene.label);
+      if (trigger.rules?.length) {
+        notes.push(
+          this._t("n_rules").replace("{count}", String(trigger.rules.length))
+        );
+      }
+      return notes.join(" \u00b7 ");
+    };
+
+    const draw = () => {
+      list.innerHTML = "";
+      triggers.forEach((trigger, at) => {
+        const item = document.createElement("details");
+        item.className = "trigger";
+        item.open = open.has(at);
+        item.addEventListener("toggle", () =>
+          item.open ? open.add(at) : open.delete(at)
+        );
+        item.innerHTML = `<summary>
+            <span class="trigger-head">${this._icon("mdi:motion-sensor")}
+              <span class="grow">
+                <span class="trigger-name"></span>
+                <div class="muted trigger-notes"></div>
+              </span>
+            </span>
+          </summary>
+          <div class="fold-body"></div>`;
+        item.querySelector(".trigger-name").textContent = trigger.trigger_entity
+          ? this._name(trigger.trigger_entity)
+          : this._t("new_trigger");
+        item.querySelector(".trigger-notes").textContent = summary(trigger);
+        const body = item.querySelector(".fold-body");
+
+        const form = document.createElement("bl-form");
+        form.configure({
+          fields: (this._schema?.forms.trigger || []).flatMap((g) => g.fields),
+          values: trigger,
+          labels: this._labels,
+          choices,
+          states: this._hass.states,
+          hass: this._hass,
+        });
+        form.addEventListener("value-changed", (event) => {
+          trigger[event.detail.key] = event.detail.value;
+          this._touch();
+          item.querySelector(".trigger-name").textContent = trigger.trigger_entity
+            ? this._name(trigger.trigger_entity)
+            : this._t("new_trigger");
+          item.querySelector(".trigger-notes").textContent = summary(trigger);
+        });
+        body.appendChild(form);
+
+        trigger.rules = trigger.rules || [];
+        this._paintNestedList(body, {
+          title: this._t("trigger_rules"),
+          hint: this._t("trigger_rules_hint"),
+          formKey: "condition",
+          items: trigger.rules,
+          blank: { check: "state_is", required_state: "on", unknown_blocks: true },
+          addLabel: this._t("add_rule"),
+          describe: (rule) => this._describeCondition(rule),
+          onChange: () => {
+            item.querySelector(".trigger-notes").textContent = summary(trigger);
+          },
+        });
+
+        const drop = document.createElement("button");
+        drop.className = "flat drop-trigger";
+        drop.innerHTML = `${this._icon("mdi:delete-outline")}<span>${this._t(
+          "delete"
+        )}</span>`;
+        drop.addEventListener("click", () => {
+          triggers.splice(at, 1);
+          // Positions after this one move up a place, and so do their folds.
+          const shifted = [...open]
+            .filter((index) => index !== at)
+            .map((index) => (index > at ? index - 1 : index));
+          open.clear();
+          shifted.forEach((index) => open.add(index));
+          this._touch();
+          draw();
+        });
+        body.appendChild(drop);
+        list.appendChild(item);
+      });
+
+      const adder = document.createElement("ul");
+      adder.className = "nested";
+      adder.innerHTML = `<li class="add">${this._icon("mdi:plus")}<span class="grow">${this._t(
+        "add_trigger"
+      )}</span></li>`;
+      adder.firstElementChild.addEventListener("click", () => {
+        triggers.push({ trigger_entity: null, ignore_at_night: false, rules: [] });
+        open.add(triggers.length - 1);
+        this._touch();
+        draw();
+      });
+      list.appendChild(adder);
+    };
+    draw();
   }
 
   /**
@@ -4970,7 +5289,7 @@ class BetterLightingPanel extends HTMLElement {
    * The room cards are the very same custom card, instantiated here. One
    * implementation, two places it is shown.
    */
-  _paintControl() {
+  async _paintControl() {
     const main = this._page(
       `<div id="house"></div>
        <div class="cards" id="cards"></div>
@@ -4979,6 +5298,8 @@ class BetterLightingPanel extends HTMLElement {
     this._paintHouseControls(main.querySelector("#house"));
 
     const cards = main.querySelector("#cards");
+    await this._ensureCard();
+    if (!cards.isConnected) return;
     for (const room of this._rooms) {
       const entityId = this._roomLight(room.id);
       if (!entityId) continue;
@@ -5025,6 +5346,22 @@ class BetterLightingPanel extends HTMLElement {
     return plain;
   }
 
+  /**
+   * Load the card ourselves if the page has not.
+   *
+   * Under a URL of its own: should the page's copy have failed to load, the
+   * browser remembers that failure against its URL until the page reloads,
+   * and asking again under the same one would only be told the same thing.
+   */
+  async _ensureCard() {
+    if (customElements.get("better-lighting-card")) return;
+    try {
+      await import(`${CARD_URL}?v=${OWN_VERSION || "dev"}&panel=1`);
+    } catch {
+      // Reported below, where the cards would have been.
+    }
+  }
+
   /** The light entity of one room, as the room itself claims it. */
   _roomLight(roomId) {
     const states = this._hass?.states || {};
@@ -5042,6 +5379,23 @@ class BetterLightingPanel extends HTMLElement {
    * Found by what they are rather than by name: the entity ids follow the
    * hub's own name, which somebody may well have renamed.
    */
+  /** What the house rows show, so they are redrawn only when it changes. */
+  _houseSignature() {
+    const states = this._hass?.states || {};
+    return Object.keys(states)
+      .filter(
+        (id) =>
+          (id.startsWith("select.") && states[id].attributes?.bl_rooms) ||
+          (id.startsWith("switch.") && "rooms" in (states[id].attributes || {}))
+      )
+      .map(
+        (id) =>
+          `${id}=${states[id].state}:${(states[id].attributes.rooms || []).length}`
+      )
+      .sort()
+      .join("|");
+  }
+
   _paintHouseControls(into) {
     const states = this._hass?.states || {};
     const ours = (prefix, attribute) =>
@@ -5056,6 +5410,7 @@ class BetterLightingPanel extends HTMLElement {
       id.endsWith("_night_lights_off")
     );
     const modes = ours("select.", "bl_rooms");
+    into.dataset.signature = this._houseSignature();
 
     const rows = [];
     if (simulation) {
@@ -5086,7 +5441,10 @@ class BetterLightingPanel extends HTMLElement {
         <span class="mode-here" data-entity="${id}"></span>
       </li>`);
     }
-    if (!rows.length) return;
+    if (!rows.length) {
+      into.innerHTML = "";
+      return;
+    }
 
     into.innerHTML = `<h3>${this._t("the_house")}</h3><ul>${rows.join("")}</ul>`;
 

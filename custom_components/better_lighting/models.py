@@ -196,6 +196,8 @@ from .const import (
     CONF_TRANSITION,
     CONF_TRIGGER_ACTIVE_STATE,
     CONF_TRIGGER_ENTITY,
+    CONF_TRIGGER_IGNORE_AT_NIGHT,
+    CONF_TRIGGER_SCENE,
     CONF_TRIGGERS,
     CONF_WARM_WHITE,
     CONF_WINDOW_ENTITIES,
@@ -391,7 +393,6 @@ class RoomConfig:
     night_brightness_pct: float
     night_color_temp_k: int
     night_transition: float
-    night_ignore_presence: bool
 
     # What the first press after the room was switched off should do.
     restore_on_power_cycle: RestoreOnPowerCycle
@@ -564,7 +565,6 @@ class RoomConfig:
             night_brightness_pct=float(raw[CONF_NIGHT_BRIGHTNESS_PCT]),
             night_color_temp_k=int(raw[CONF_NIGHT_COLOR_TEMP_K]),
             night_transition=float(raw[CONF_NIGHT_TRANSITION]),
-            night_ignore_presence=bool(raw[CONF_NIGHT_IGNORE_PRESENCE]),
             scenes=scenes,
             light_profiles={
                 entry[CONF_LIGHT_ENTITY]: room_light_profile(entry)
@@ -1218,11 +1218,19 @@ def _triggers(raw: dict[str, Any]) -> tuple[SensorTrigger, ...]:
 
     A single ``presence_entity`` is read as one trigger, so a room set up
     before triggers were a list carries on working without being touched.
+    Likewise a room that ignored presence at night as a whole hands that to
+    every trigger that has not said otherwise.
     """
+    night_default = bool(raw.get(CONF_NIGHT_IGNORE_PRESENCE, False))
     stored = [
         SensorTrigger(
             entity_id=str(entry.get(CONF_TRIGGER_ENTITY) or ""),
             active_state=str(entry.get(CONF_TRIGGER_ACTIVE_STATE) or ""),
+            rules=_rules(entry),
+            ignore_at_night=bool(
+                entry.get(CONF_TRIGGER_IGNORE_AT_NIGHT, night_default)
+            ),
+            scene_id=str(entry.get(CONF_TRIGGER_SCENE) or "") or None,
         )
         for entry in (raw.get(CONF_TRIGGERS) or ())
         if entry.get(CONF_TRIGGER_ENTITY)
@@ -1230,7 +1238,7 @@ def _triggers(raw: dict[str, Any]) -> tuple[SensorTrigger, ...]:
     if stored:
         return tuple(stored)
     if legacy := raw.get(CONF_PRESENCE_ENTITY):
-        return (SensorTrigger(str(legacy)),)
+        return (SensorTrigger(str(legacy), ignore_at_night=night_default),)
     return ()
 
 

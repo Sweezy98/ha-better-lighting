@@ -210,6 +210,11 @@ Each room then decides for itself what that means:
 `switch.<room>_night` mirrors the helper and can also be flipped by hand;
 the helper wins again the next time it changes.
 
+A switch's double press (or any press) can be **Night mode on, or ask for it
+again**: the first time it puts the room into night mode, and while night
+mode is already on it repeats what night mode did when it came on — the same
+as the *Night: lights off* button, for this room.
+
 A **night scene** can name just the lights it wants — the lamp by the bed in
 a deep orange, say — and set *the rest of the room* to off. Whatever turns the
 room on at night then lights only those.

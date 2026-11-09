@@ -1325,6 +1325,7 @@
         "reset_adaptive": "Back to adaptive",
         "zone_off": "Switch the room off",
         "toggle_night": "Toggle night mode",
+        "night_on": "Night mode on, or ask for it again",
         "brighten": "Brighten while held",
         "dim": "Dim while held"
       }

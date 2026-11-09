@@ -553,7 +553,9 @@ dark, and then somebody gets up for a glass of water and leaves a light on. Reac
 night switch does nothing, because night mode never stopped being on — so there is a button
 (`Night: lights off`) and a service (`better_lighting.night_lights_off`) that repeat what
 happened when the house went to bed. Only while night mode is on, and down the same path as the
-original, so a room somebody is standing in is still left alone.
+original, so a room somebody is standing in is still left alone. A switch can do the same for its
+room: its double press set to **Night mode on, or ask for it again** puts the room into night mode
+the first time and asks again every time after.
 
 ---
 

@@ -441,6 +441,7 @@ DE |= {
     "Previous in the cycle": "Vorheriges in der Abfolge",
     "Switch the room off": "Den Raum ausschalten",
     "Toggle night mode": "Nachtmodus umschalten",
+    "Night mode on, or ask for it again": "Nachtmodus an oder erneut anfordern",
     "First": "Zuerst",
     "Last": "Zuletzt",
     "Not in the cycle": "Nicht in der Abfolge",

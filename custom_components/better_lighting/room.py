@@ -1123,6 +1123,11 @@ class RoomController:
                 await self.async_set_mode(RoomMode.OFF)
             case PressAction.TOGGLE_NIGHT:
                 await self.async_set_night(not self.night_active)
+            case PressAction.NIGHT_ON:
+                if self.night_active:
+                    await self.async_request_night_off()
+                else:
+                    await self.async_set_night(True)
             case PressAction.BRIGHTEN:
                 await self._async_adjust_bias(controller.dim_step_pct * steps)
             case PressAction.DIM:

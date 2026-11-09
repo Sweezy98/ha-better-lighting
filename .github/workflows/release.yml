@@ -1,0 +1,88 @@
+name: Release
+
+# A pushed version tag becomes its GitHub release, titled and described here:
+# GitHub's own form only ever prefills the tag as the title, and its
+# generated notes come from pull requests, which this repository does not
+# use -- they came out empty. The notes are the commit messages since the
+# previous version tag, which are written to be read.
+on:
+  push:
+    tags: ['v*']
+  # For a tag pushed before this workflow existed, or to write a release again.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to release, e.g. v0.2.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Notes from the commits since the previous version
+        run: |
+          previous=$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)
+          {
+            echo "## What's new"
+            echo
+            # Bare version bumps say nothing; a trailing "; version x" is trimmed.
+            git log "${previous:+$previous..}$TAG" --no-merges --reverse --pretty='- %s' \
+              | grep -vE '^- Version [0-9][0-9A-Za-z.+-]*$' \
+              | sed -E 's/; version [0-9][0-9A-Za-z.+-]*$//' || true
+            if [ -n "$previous" ]; then
+              echo
+              echo "**Full changelog:** https://github.com/$GITHUB_REPOSITORY/compare/$previous...$TAG"
+            fi
+          } > notes.md
+          cat notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Create or update, whichever the release needs -- and settle for what
+        # is there: `gh release create` made the release and then reported
+        # "tag_name already exists" on a second try of its own, failing a run
+        # whose release was fine. A create that finds it made is an update.
+        run: |
+          jq -n --arg tag "$TAG" --arg name "Better Lighting $TAG" --rawfile body notes.md \
+            '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false, make_latest: "true"}' > release.json
+          update() {
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .id)
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$id" --input release.json --jq .html_url
+          }
+          if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --silent 2>/dev/null; then
+            update
+          elif ! gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input release.json --jq .html_url; then
+            update
+          fi
+
+      - name: Keep the newest four releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: 4
+        # HACS lists every release in its version picker; beyond the last few
+        # that is clutter. Newest by version, not by date -- a release written
+        # again must not push a newer one out -- and only the releases go: the
+        # tags stay, so every version remains in the history.
+        # The list lags a release just made by a few seconds; read before it
+        # shows, it held one fewer and nothing was removed. So it waits for it.
+        run: |
+          for attempt in $(seq 1 12); do
+            gh api "repos/$GITHUB_REPOSITORY/releases" --jq '.[].tag_name' | grep -qx "$TAG" && break
+            sleep 5
+          done
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | "\(.tag_name) \(.id)"' \
+            | sed 's/^v//' | sort -V -r -k1,1 | tail -n +$((KEEP + 1)) \
+            | while read -r version id; do
+                echo "Removing the release of v$version"
+                gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
+              done

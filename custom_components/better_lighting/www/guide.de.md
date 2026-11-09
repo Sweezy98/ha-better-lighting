@@ -218,6 +218,12 @@ Jeder Raum entscheidet dann selbst, was das heißt:
 `switch.<raum>_night` spiegelt den Helfer und lässt sich auch von Hand
 umlegen; beim nächsten Wechsel gewinnt der Helfer wieder.
 
+Der Doppeldruck eines Schalters (oder jeder andere Druck) kann **Nachtmodus
+an oder erneut anfordern** sein: Beim ersten Mal schaltet er den Raum in den
+Nachtmodus, und solange der Nachtmodus schon an ist, wiederholt er, was der
+Nachtmodus beim Einschalten getan hat — wie die Taste *Nacht: Licht aus*,
+für diesen Raum.
+
 Eine **Nachtszene** kann genau die Lampen nennen, die sie will — die Lampe
 am Bett in tiefem Orange etwa — und *den Rest des Raums* auf aus setzen. Was
 den Raum nachts einschaltet, schaltet dann nur diese ein.

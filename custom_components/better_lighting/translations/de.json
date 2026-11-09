@@ -1325,6 +1325,7 @@
         "reset_adaptive": "Zurück zu adaptiv",
         "zone_off": "Den Raum ausschalten",
         "toggle_night": "Nachtmodus umschalten",
+        "night_on": "Nachtmodus an oder erneut anfordern",
         "brighten": "Beim Halten heller",
         "dim": "Beim Halten dunkler"
       }

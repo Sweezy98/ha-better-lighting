@@ -1133,3 +1133,60 @@ async def test_every_room_button_is_available_without_hunting(
         "button.kitchen_clear_manual_override",
     ):
         assert hass.states.get(button) is not None, f"{button} is not enabled"
+
+
+class TestNightFromADoublePress:
+    """The bedside switch: twice for night, and twice again to ask again."""
+
+    async def _setup(self, hass: HomeAssistant):
+        await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+        entry = hub_entry(subentries_data=[room_subentry(night_behavior="turn_off")])
+        await setup_hub(hass, entry)
+        ids = subentry_ids(entry)
+        add_room_switch(
+            hass,
+            entry,
+            controller_subentry(
+                "Bedside",
+                room_id=ids["Kitchen"],
+                scene_order=[],
+                double_press_action="night_on",
+            ),
+            ids["Kitchen"],
+        )
+        await hass.async_block_till_done()
+        return entry.runtime_data.controllers[ids["Kitchen"]]
+
+    async def _double(self, hass: HomeAssistant) -> None:
+        await hass.services.async_call(
+            DOMAIN,
+            "press",
+            {"room": "kitchen", "controller": "Bedside", "kind": "double_press"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    async def test_the_first_turns_night_on_without_darkening(
+        self, hass: HomeAssistant
+    ) -> None:
+        controller = await self._setup(hass)
+        await press_room(hass)
+
+        await self._double(hass)
+
+        assert controller.night_active
+        assert hass.states.get("light.one").state == "on"
+
+    async def test_the_next_asks_for_what_night_mode_asked_for(
+        self, hass: HomeAssistant
+    ) -> None:
+        controller = await self._setup(hass)
+        await press_room(hass)
+        await self._double(hass)
+
+        await self._double(hass)
+
+        # Still night, and the room switched off as the house going to bed would.
+        assert controller.night_active
+        assert controller.mode is RoomMode.OFF
+        assert hass.states.get("light.one").state == "off"

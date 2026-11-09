@@ -137,6 +137,9 @@ class PressAction(StrEnum):
     RESET_ADAPTIVE = "reset_adaptive"
     ROOM_OFF = "zone_off"
     TOGGLE_NIGHT = "toggle_night"
+    # Night on, and when it already is, ask for it again -- what the
+    # night-lights-off button does, from the bedside switch.
+    NIGHT_ON = "night_on"
     # Relative dimming, for the hold on a rocker's up and down halves. A bias
     # rather than an absolute level, so the room keeps tracking the sun while
     # sitting a few points below (or above) where the curve would put it.

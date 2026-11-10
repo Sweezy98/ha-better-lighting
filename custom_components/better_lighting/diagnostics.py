@@ -102,6 +102,8 @@ def _room_diagnostics(runtime: Any, room_id: str) -> dict[str, Any]:
         "adaptive_override": room.adaptive_override,
         "night_source": room.night_source_entity,
         "night_behavior": room.night_behavior.value,
+        "night_look": room.night_look.value,
+        "night_presence_clear_delay": room.night_presence_clear_delay,
         "triggers": [t.entity_id for t in room.triggers],
         "presence_covers": list(room.presence_covers),
         "window_entities": list(room.window_entities),

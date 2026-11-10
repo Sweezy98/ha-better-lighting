@@ -20,7 +20,7 @@ import datetime
 import hashlib
 import logging
 import zoneinfo
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -47,6 +47,7 @@ from homeassistant.core import (
     EventStateChangedData,
     HomeAssistant,
     callback,
+    split_entity_id,
 )
 from homeassistant.helpers.event import (
     async_call_later,
@@ -62,6 +63,7 @@ from .conditions import Condition, Verdict, evaluate
 from .const import (
     DOMAIN,
     NightBehavior,
+    NightLook,
     PresenceOffAction,
     PresenceOnAction,
     PressAction,
@@ -135,6 +137,9 @@ MANUAL_MIRED_DELTA = 20
 
 _VALID_MEMBER_STATES = (STATE_ON, "off")
 
+# Night helpers a press can switch on itself.
+_SWITCHABLE_SOURCES = ("input_boolean", "switch")
+
 
 class RoomController:
     """Owns one room's mode and drives its lights."""
@@ -205,6 +210,9 @@ class RoomController:
         # next -- a switch, presence, a lamp by hand -- should do so in the
         # mode's look rather than the room's own.
         self._set_by_mode = False
+        # Every room in the house, this one included. Wired up by the hub;
+        # alone until then, which is all a room on its own can speak for.
+        self.house: Callable[[], Iterable[RoomController]] = lambda: (self,)
         # Presence, for modes that gate on whether a room is occupied.
         self.presence: RoomPresence | None = None
         self.windows: WindowWatcher | None = None
@@ -698,15 +706,17 @@ class RoomController:
         ):
             presence = self.presence
             if presence is not None and not presence.is_clear:
-                # Somebody is still in here. Wait rather than switching the
+                # Somebody is still in here. Dim now rather than switching the
                 # light off from under them; presence will call back when the
-                # room empties.
+                # room empties. A room whose sensors have gone quiet is clear
+                # already, whatever is left of its wait.
                 self._night_turn_off_pending = True
                 _LOGGER.debug(
                     "%s: night turn-off waiting for the room to empty",
                     self.room.name,
                 )
                 self._note("night_off_waiting")
+                await self.async_render(Trigger.ACTIVATE, only_lit=True)
                 return
             await self.async_set_mode(RoomMode.OFF)
             return
@@ -1124,14 +1134,35 @@ class RoomController:
             case PressAction.TOGGLE_NIGHT:
                 await self.async_set_night(not self.night_active)
             case PressAction.NIGHT_ON:
-                if self.night_active:
-                    await self.async_request_night_off()
-                else:
-                    await self.async_set_night(True)
+                await self._async_press_night()
             case PressAction.BRIGHTEN:
                 await self._async_adjust_bias(controller.dim_step_pct * steps)
             case PressAction.DIM:
                 await self._async_adjust_bias(-controller.dim_step_pct * steps)
+
+    async def _async_press_night(self) -> None:
+        """Send the house to bed, or, when it already is, ask again.
+
+        Through the helper the house follows wherever it can be switched, so
+        that every room goes to bed and not only this one. Asked again, every
+        room repeats what night mode did when it came on -- the button for
+        the light somebody left on after a glass of water.
+        """
+        if self.night_active:
+            for room in self.house():
+                await room.async_request_night_off()
+            return
+        source = self.night_source
+        if source is not None and split_entity_id(source)[0] in _SWITCHABLE_SOURCES:
+            await self.hass.services.async_call(
+                split_entity_id(source)[0],
+                "turn_on",
+                {ATTR_ENTITY_ID: source},
+                blocking=True,
+            )
+            return
+        # A sensor or a schedule says when it is night; nothing here can.
+        await self.async_set_night(True)
 
     async def _async_adjust_bias(self, delta: float) -> None:
         """Shift the whole room up or down, without leaving the curve.
@@ -1640,6 +1671,14 @@ class RoomController:
     # -- state -------------------------------------------------------------
 
     @property
+    def presence_clear_delay(self) -> int:
+        """How long the room waits once nobody is sensed any more."""
+        night_delay = self.room.night_presence_clear_delay
+        if night_delay is not None and self.is_night:
+            return night_delay
+        return self.room.presence_clear_delay
+
+    @property
     def is_night(self) -> bool:
         """Whether night settings apply, honouring the room's night behaviour."""
         if self.room.night_behavior is NightBehavior.OFF:
@@ -1692,10 +1731,9 @@ class RoomController:
         if mode is RoomMode.SCENE:
             return self.scenes.get(self.active_scene_id or "")
         if mode is RoomMode.NIGHT:
-            # Only the "apply a scene" behaviour resolves to one. "Minimum
-            # settings" is handled inside the curve, and "switch off" leaves
-            # the room dark, so neither has a scene.
-            if self.room.night_behavior is NightBehavior.SCENE:
+            # Only a scene for a look resolves to one; the brightness and
+            # colour looks are handled inside the curve.
+            if self.room.night_look is NightLook.SCENE:
                 return self.scenes.get(self.room.night_scene_id or "")
             return None
         return None

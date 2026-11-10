@@ -114,7 +114,7 @@ In the global config:
 | Global | What it is |
 |---|---|
 | **Colour presets** | The house's named colours — "TV orange", "candle" — so a colour used in several scenes is described once and picked by name. |
-| **Night mode helper** | The one helper that says the house is asleep. Each room decides for itself whether that dims it, darkens it, applies a scene, or does nothing. |
+| **Night mode helper** | The one helper that says the house is asleep, and the night brightness and colour every room uses unless it sets its own. Each room decides for itself whether that dims it, darkens it once empty, or does nothing. |
 
 ### Zones: the desk that does not go dark for the film
 
@@ -553,9 +553,10 @@ dark, and then somebody gets up for a glass of water and leaves a light on. Reac
 night switch does nothing, because night mode never stopped being on — so there is a button
 (`Night: lights off`) and a service (`better_lighting.night_lights_off`) that repeat what
 happened when the house went to bed. Only while night mode is on, and down the same path as the
-original, so a room somebody is standing in is still left alone. A switch can do the same for its
-room: its double press set to **Night mode on, or ask for it again** puts the room into night mode
-the first time and asks again every time after.
+original, so a room somebody is standing in is still left alone. A switch can do both: its
+double press set to **Night mode on, or ask for it again** switches the night helper itself on
+(an `input_boolean` or a `switch`), so the whole house goes to bed, and asks every room again
+every time after.
 
 ---
 
@@ -632,15 +633,18 @@ asleep". The helper is named **once, in the global config**: whether everyone is
 fact about the household, not about a room.
 
 What each room does about it is per room, because a bedroom and a hallway should not react the
-same way: dim and warm, apply a designated night scene, **switch off once the room is empty**,
-or ignore night entirely.
+same way: **dim while occupied and switch off once empty** (the default), only dim, or ignore
+night entirely. How it is dimmed is a second choice — the global night brightness and colour,
+the room's own, or a night scene that can light only some of its lights.
 
 Switching night mode on never lights a room that is dark. It adjusts the lights that are
 already on and leaves the rest alone.
 
-That last one waits: if somebody is still in the room when the house goes to bed, the light
-stays exactly as it is and only goes out once they leave. Reaching for the switch meanwhile
-cancels it — that is you saying you want the light.
+An empty room goes dark at once — empty meaning its sensors say nobody is there right now, so a
+room whose sensor has just gone quiet does not wait out its delay. An occupied room is dimmed at
+once and goes out when they leave. Reaching for the switch meanwhile cancels it — that is you
+saying you want the light. A room can also have **a shorter wait at night**, set on its Presence
+screen.
 
 The waiting only applies when the **helper** turns on, which is the house going to bed. The
 room's own night switch always dims rather than darkens, because reaching for it is a person

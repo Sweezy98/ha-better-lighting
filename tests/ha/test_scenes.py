@@ -753,14 +753,15 @@ class TestConditionalAndDescribedFields:
         assert "insect_rgb_color" in keys
         assert "insect_color_temp_k" not in keys
 
-    async def test_the_night_scene_picker_waits_for_the_scene_behaviour(
+    async def test_the_night_scene_picker_waits_for_the_scene_look(
         self, hass: HomeAssistant
     ) -> None:
         result = await self._open(hass, "night")
         keys = self._keys(result)
-        # Dim and warm is the default, so its two settings show and the scene
-        # picker does not.
-        assert "night_brightness_pct" in keys
+        # The global night settings are the default, so neither the room's own
+        # values nor the scene picker show.
+        assert "night_look" in keys
+        assert "night_brightness_pct" not in keys
         assert "night_scene_id" not in keys
 
 

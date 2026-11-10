@@ -203,21 +203,32 @@ Each room then decides for itself what that means:
 
 | Room behaviour | What happens at night |
 |---|---|
-| **Minimum settings** | Brightness clamped down, colour warmed. |
-| **A scene** | This room shows its night scene. |
-| **Off** | Night mode does nothing here. |
+| **Dim while occupied, switch off once empty** (the default) | An empty room goes dark at once. An occupied one is dimmed at once and goes dark when it empties. |
+| **Dim only** | Brightness down, colour warmed; the room stays lit. |
+| **Do nothing** | Night mode does nothing here. |
+
+*How it is dimmed* is a second choice: the **global night settings**, the
+room's **own brightness and colour** (shown only when chosen), or **a scene**
+(the scene picker shows only then). A night scene can name just the lights it
+wants — the lamp by the bed in a deep orange, say — and set *the rest of the
+room* to off. Whatever turns the room on at night then lights only those.
+
+"Empty" means its sensors say nobody is there right now: a room whose sensor
+has just gone quiet goes dark without waiting out its delay. On the Presence
+screen a room can also have **a different wait at night** — the hallway lit
+for a glass of water needs less than it does in the evening.
 
 `switch.<room>_night` mirrors the helper and can also be flipped by hand;
-the helper wins again the next time it changes.
+the helper wins again the next time it changes. Flipping it never darkens a
+room — that only happens when the helper turns on, the house going to bed.
 
 A switch's double press (or any press) can be **Night mode on, or ask for it
-again**: the first time it puts the room into night mode, and while night
-mode is already on it repeats what night mode did when it came on — the same
-as the *Night: lights off* button, for this room.
-
-A **night scene** can name just the lights it wants — the lamp by the bed in
-a deep orange, say — and set *the rest of the room* to off. Whatever turns the
-room on at night then lights only those.
+again**. The first time it switches **the helper itself** on — an
+`input_boolean` or a `switch` — so the whole house goes to bed, not only the
+room. While night mode is already on it asks every room again, like the
+*Night: lights off* button: empty rooms go dark at once, occupied ones wait.
+A helper that cannot be switched (a sensor, a schedule) puts just this room
+into night mode instead.
 
 Whether a sensor is **ignored at night** is set on each trigger (step 8), not
 here: the presence sensor over the bed stands aside, while the motion sensor

@@ -118,8 +118,11 @@ from .const import (
     CONF_NAME,
     CONF_NIGHT_BEHAVIOR,
     CONF_NIGHT_BRIGHTNESS_PCT,
+    CONF_NIGHT_CLEAR_DELAY,
     CONF_NIGHT_COLOR_TEMP_K,
     CONF_NIGHT_IGNORE_PRESENCE,
+    CONF_NIGHT_LOOK,
+    CONF_NIGHT_OWN_CLEAR_DELAY,
     CONF_NIGHT_SCENE,
     CONF_NIGHT_SOURCE,
     CONF_NIGHT_TRANSITION,
@@ -219,6 +222,7 @@ from .const import (
     CoverCondition,
     InsectAction,
     NightBehavior,
+    NightLook,
     OptedOutOnExit,
     PresenceOffAction,
     PresenceOnAction,
@@ -257,6 +261,22 @@ if TYPE_CHECKING:
 
 _HUB_DEFAULTS = defaults_for(HUB_SPECS)
 _ROOM_DEFAULTS = defaults_for(ROOM_SPECS)
+
+
+def _night_behavior(raw: dict[str, Any]) -> NightBehavior:
+    behavior = NightBehavior(raw[CONF_NIGHT_BEHAVIOR])
+    # "Apply a night scene" became dimming with a scene for its look.
+    if behavior is NightBehavior.SCENE:
+        return NightBehavior.MIN_SETTINGS
+    return behavior
+
+
+def _night_look(raw: dict[str, Any]) -> NightLook:
+    if raw.get(CONF_NIGHT_BEHAVIOR) == NightBehavior.SCENE.value:
+        return NightLook.SCENE
+    return NightLook(raw[CONF_NIGHT_LOOK])
+
+
 _PROFILE_DEFAULTS = defaults_for(LIGHT_PROFILE_SPECS)
 _SCENE_DEFAULTS = defaults_for(SCENE_SPECS)
 _CONTROLLER_DEFAULTS = defaults_for(CONTROLLER_SPECS)
@@ -389,6 +409,7 @@ class RoomConfig:
     # Night mode, driven by an external entity rather than a schedule.
     night_source_entity: str | None
     night_behavior: NightBehavior
+    night_look: NightLook
     night_scene_id: str | None
     night_brightness_pct: float
     night_color_temp_k: int
@@ -404,6 +425,8 @@ class RoomConfig:
     # the single sensor a room used to hold when there is no list yet.
     triggers: tuple[SensorTrigger, ...]
     presence_clear_delay: int
+    # None means the same wait as by day.
+    night_presence_clear_delay: int | None
     presence_covers: tuple[str, ...]
     cover_condition: CoverCondition
     cover_unknown_blocks: bool
@@ -560,7 +583,8 @@ class RoomConfig:
             transition=float(raw[CONF_TRANSITION]),
             interval=int(raw[CONF_INTERVAL]),
             night_source_entity=raw.get(CONF_NIGHT_SOURCE) or None,
-            night_behavior=NightBehavior(raw[CONF_NIGHT_BEHAVIOR]),
+            night_behavior=_night_behavior(raw),
+            night_look=_night_look(raw),
             night_scene_id=raw.get(CONF_NIGHT_SCENE) or None,
             night_brightness_pct=float(raw[CONF_NIGHT_BRIGHTNESS_PCT]),
             night_color_temp_k=int(raw[CONF_NIGHT_COLOR_TEMP_K]),
@@ -591,6 +615,11 @@ class RoomConfig:
             resume_max_age_minutes=int(raw[CONF_RESUME_MAX_AGE_MIN]),
             triggers=_triggers(raw),
             presence_clear_delay=int(raw[CONF_PRESENCE_CLEAR_DELAY]),
+            night_presence_clear_delay=(
+                int(raw[CONF_NIGHT_CLEAR_DELAY])
+                if raw.get(CONF_NIGHT_OWN_CLEAR_DELAY)
+                else None
+            ),
             presence_covers=tuple(raw.get(CONF_PRESENCE_COVERS) or ()),
             cover_condition=CoverCondition(raw[CONF_COVER_CONDITION]),
             cover_unknown_blocks=bool(raw[CONF_COVER_UNKNOWN_BLOCKS]),
@@ -690,11 +719,16 @@ class RoomConfig:
             max_color_temp_k=(
                 self.max_color_temp_k if override else hub.max_color_temp_k
             ),
-            # Night values are always the room's own: a bedroom and a hallway
-            # rarely want the same thing after dark, and the hub value is only
-            # the seed the room form was pre-filled with.
-            night_brightness_pct=self.night_brightness_pct,
-            night_color_temp_k=self.night_color_temp_k,
+            night_brightness_pct=(
+                self.night_brightness_pct
+                if self.night_look is NightLook.CUSTOM
+                else hub.night_brightness_pct
+            ),
+            night_color_temp_k=(
+                self.night_color_temp_k
+                if self.night_look is NightLook.CUSTOM
+                else hub.night_color_temp_k
+            ),
             time_dark=datetime.timedelta(seconds=hub.time_dark),
             time_light=datetime.timedelta(seconds=hub.time_light),
             sunrise_offset=datetime.timedelta(seconds=hub.sunrise_offset),

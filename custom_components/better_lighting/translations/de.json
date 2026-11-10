@@ -138,7 +138,9 @@
           "night_brightness_pct": "Helligkeit im Nachtmodus",
           "night_color_temp_k": "Farbtemperatur im Nachtmodus"
         },
-        "data_description": {}
+        "data_description": {
+          "night_brightness_pct": "Gilt für jeden Raum, der keine eigene festlegt."
+        }
       },
       "advanced": {
         "title": "Erweitert",
@@ -751,14 +753,16 @@
           "description": "",
           "data": {
             "night_behavior": "Was der Nachtmodus tut",
+            "night_look": "Wie gedimmt wird",
             "night_brightness_pct": "Helligkeit im Nachtmodus",
             "night_color_temp_k": "Farbtemperatur im Nachtmodus",
             "night_transition": "Übergangsdauer im Nachtmodus",
             "night_scene_id": "Nachtszene"
           },
           "data_description": {
-            "night_scene_id": "Wird verwendet, wenn „Was der Nachtmodus tut“ auf eine Szene eingestellt ist.",
-            "night_behavior": "„Den Raum ausschalten“ wartet, bis der Raum leer ist, und gilt nur, wenn der Helfer oben angeht — der Nachtschalter des Raums dimmt immer, statt zu verdunkeln."
+            "night_scene_id": "Kann nur die Lampen nennen, die sie will, und den Rest des Raums ausschalten.",
+            "night_behavior": "Ausgeschaltet wird nur, wenn der Helfer oben angeht, nie über den Nachtschalter des Raums. Ein belegter Raum wird sofort gedimmt und ausgeschaltet, sobald er leer ist.",
+            "night_look": "Die globale Nachthelligkeit und -farbe, die eigene dieses Raums oder eine Szene — die auch nur einige Lampen des Raums einschalten kann."
           }
         },
         "power": {
@@ -778,6 +782,8 @@
           "data": {
             "presence_entity": "Anwesenheitssensor",
             "presence_clear_delay": "Raum als leer betrachten nach",
+            "night_own_clear_delay": "Nachts eine andere Wartezeit",
+            "night_presence_clear_delay": "Raum nachts als leer betrachten nach",
             "presence_on_action": "Wenn jemand hereinkommt",
             "presence_on_scene_id": "Anzuwendende Szene",
             "presence_off_action": "Wenn der Raum leer wird",
@@ -792,7 +798,8 @@
             "presence_covers": "Damit das Licht nur angeht, wenn die Rollläden unten und der Raum wirklich dunkel ist. Ein Rollladen, der geschlossen wird, während jemand schon im Raum ist, zählt ebenfalls.",
             "presence_on_only_when_off": "Wer einen bereits von Hand beleuchteten Raum betritt, soll ihn nicht umgestellt vorfinden.",
             "presence_respects_manual": "Hinter jemandem auszuschalten, der den Raum von Hand eingestellt hat, ist die unfreundlichste Auslegung eines leeren Raums.",
-            "cover_unknown_blocks": "Die Bedingung steht für „hier ist es dunkel“, und ein nicht auslesbarer Rollladen ist dafür kein Beleg."
+            "cover_unknown_blocks": "Die Bedingung steht für „hier ist es dunkel“, und ein nicht auslesbarer Rollladen ist dafür kein Beleg.",
+            "night_own_clear_delay": "Wer ein Glas Wasser holt, braucht das Licht nicht so lange wie am Abend."
           }
         },
         "insect": {
@@ -1271,10 +1278,17 @@
     },
     "night_behavior": {
       "options": {
-        "min_settings": "Dimmen und wärmen (Minimalwerte)",
+        "turn_off": "Dimmen, solange belegt, ausschalten, sobald leer",
+        "min_settings": "Nur dimmen",
         "scene": "Eine Nachtszene anwenden",
-        "off": "Nichts tun",
-        "turn_off": "Den Raum ausschalten, sobald er leer ist"
+        "off": "Nichts tun"
+      }
+    },
+    "night_look": {
+      "options": {
+        "global": "Die globalen Nachteinstellungen",
+        "custom": "Eigene Helligkeit und Farbe dieses Raums",
+        "scene": "Eine Szene"
       }
     },
     "override_mode": {

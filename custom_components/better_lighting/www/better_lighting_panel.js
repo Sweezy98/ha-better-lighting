@@ -678,6 +678,9 @@ class BlForm extends HTMLElement {
     // The other field's default when nothing is stored, since that is what
     // the form beside this one is showing.
     const other = this._fields.find((candidate) => candidate.key === key);
+    // A field that depends on a hidden one is hidden with it: the night
+    // scene means nothing in a room night mode does nothing in.
+    if (other && !this._visible(other)) return false;
     const value = this._values[key] ?? other?.default;
     return field.depends_on.values.includes(value);
   }
@@ -2538,7 +2541,6 @@ class BetterLightingPanel extends HTMLElement {
         .day-strip .day-bar .off { background:var(--error-color,#db4437); }
         .day-strip .day-ticks { display:flex; justify-content:space-between;
                                 font-size:12px; opacity:.6; margin-top:4px; }
-        .page-body li.step .nested-caption { flex:1 0 100%; order:-1; }
         li[draggable="true"] { cursor:grab; }
         li.dragging { opacity:.4; }
         li.drop-target { outline:2px dashed var(--primary-color); }
@@ -4906,54 +4908,112 @@ class BetterLightingPanel extends HTMLElement {
     fold.innerHTML = `<summary>${title}</summary>
       <div class="fold-body">
         ${hint ? `<p class="muted">${hint}</p>` : ""}
-        <ul class="nested"></ul>
+        <div class="nested-items"></div>
       </div>`;
     into.appendChild(fold);
-    const list = fold.querySelector("ul");
+    const list = fold.querySelector(".nested-items");
+    // Which rows are open, by position, so a redraw leaves open what was.
+    const open = new Set();
+
+    const changed = () => {
+      this._touch();
+      onChange?.();
+      if (formKey === "condition") this._paintDayStrip(fold, items);
+    };
+
+    const formFor = (at) => {
+      const form = document.createElement("bl-form");
+      form.configure({
+        fields: (this._schema?.forms[formKey] || []).flatMap((g) => g.fields),
+        values: items[at],
+        labels: this._labels,
+        choices: {},
+        states: this._hass.states,
+        hass: this._hass,
+      });
+      return form;
+    };
+
+    const dropButton = (at, className) => {
+      const drop = document.createElement("button");
+      drop.className = className;
+      drop.dataset.delete = "";
+      drop.title = this._t("delete");
+      drop.addEventListener("click", () => {
+        items.splice(at, 1);
+        const shifted = [...open]
+          .filter((index) => index !== at)
+          .map((index) => (index > at ? index - 1 : index));
+        open.clear();
+        shifted.forEach((index) => open.add(index));
+        changed();
+        draw();
+      });
+      return drop;
+    };
+
+    // A described item is a fold that reads as one line until opened. Its
+    // line is rewritten as it is edited rather than the list redrawn, which
+    // would take the cursor out of whatever field was being typed in.
+    const foldedRow = (at) => {
+      const row = document.createElement("details");
+      row.className = "trigger";
+      row.open = open.has(at);
+      row.addEventListener("toggle", () =>
+        row.open ? open.add(at) : open.delete(at)
+      );
+      row.innerHTML = `<summary>
+          <span class="trigger-head">${this._icon("mdi:filter-outline")}
+            <span class="grow">
+              <span class="trigger-name"></span>
+              <div class="muted trigger-notes"></div>
+            </span>
+          </span>
+        </summary>
+        <div class="fold-body"></div>`;
+      const caption = () => {
+        const item = items[at];
+        row.querySelector(".trigger-name").textContent = item.name || describe(item);
+        row.querySelector(".trigger-notes").textContent = item.name
+          ? describe(item)
+          : "";
+      };
+      caption();
+      const form = formFor(at);
+      form.addEventListener("value-changed", (event) => {
+        items[at] = { ...items[at], [event.detail.key]: event.detail.value };
+        caption();
+        changed();
+      });
+      const drop = dropButton(at, "flat drop-trigger");
+      drop.innerHTML = `${this._icon("mdi:delete-outline")}<span>${this._t(
+        "delete"
+      )}</span>`;
+      row.querySelector(".fold-body").append(form, drop);
+      return row;
+    };
+
+    const plainRow = (at) => {
+      const row = document.createElement("li");
+      row.className = "step";
+      const form = formFor(at);
+      form.addEventListener("value-changed", (event) => {
+        items[at] = { ...items[at], [event.detail.key]: event.detail.value };
+        changed();
+      });
+      const drop = dropButton(at, "flat");
+      drop.innerHTML = this._icon("mdi:delete-outline") || "\u2715";
+      row.append(form, drop);
+      return row;
+    };
 
     const draw = () => {
       list.innerHTML = "";
-      items.forEach((item, at) => {
-        const row = document.createElement("li");
-        row.className = "step";
-        if (describe) {
-          const caption = document.createElement("div");
-          caption.className = "muted nested-caption";
-          caption.textContent = describe(item);
-          row.appendChild(caption);
-        }
-        const form = document.createElement("bl-form");
-        form.configure({
-          fields: (this._schema?.forms[formKey] || []).flatMap((g) => g.fields),
-          values: item,
-          labels: this._labels,
-          choices: {},
-          states: this._hass.states,
-          hass: this._hass,
-        });
-        form.addEventListener("value-changed", (event) => {
-          items[at] = { ...items[at], [event.detail.key]: event.detail.value };
-          this._touch();
-          onChange?.();
-          // Redrawn because a field can decide which other fields apply --
-          // a rule between two times asks nothing about an entity.
-          if (describe) draw();
-        });
-        row.appendChild(form);
-
-        const drop = document.createElement("button");
-        drop.className = "flat";
-        drop.dataset.delete = "";
-        drop.title = this._t("delete");
-        drop.innerHTML = this._icon("mdi:delete-outline") || "\u2715";
-        drop.addEventListener("click", () => {
-          items.splice(at, 1);
-          this._touch();
-          onChange?.();
-          draw();
-        });
-        row.appendChild(drop);
-        list.appendChild(row);
+      const rows = document.createElement("ul");
+      rows.className = "nested";
+      items.forEach((_item, at) => {
+        if (describe) list.appendChild(foldedRow(at));
+        else rows.appendChild(plainRow(at));
       });
 
       const adder = document.createElement("li");
@@ -4961,15 +5021,15 @@ class BetterLightingPanel extends HTMLElement {
       adder.innerHTML = `${this._icon("mdi:plus")}<span class="grow">${addLabel}</span>`;
       adder.addEventListener("click", () => {
         items.push({ ...blank });
-        this._touch();
-        onChange?.();
+        open.add(items.length - 1);
+        changed();
         draw();
       });
-      list.appendChild(adder);
-
-      if (formKey === "condition") this._paintDayStrip(fold, items);
+      rows.appendChild(adder);
+      list.appendChild(rows);
     };
     draw();
+    if (formKey === "condition") this._paintDayStrip(fold, items);
   }
 
   /**

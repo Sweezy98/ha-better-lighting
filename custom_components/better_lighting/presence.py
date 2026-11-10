@@ -122,10 +122,13 @@ class RoomPresence:
         on_cleared: Callable[[], None] | None = None,
         on_gate_opened: Callable[[], None] | None = None,
         on_countdown: Callable[[], None] | None = None,
+        clear_delay: Callable[[], float] | None = None,
     ) -> None:
         self.hass = hass
         self.room = room
         self._latch = TriggerLatch(hass, room.triggers, may_count)
+        # Asked each time the room goes quiet, since night can have its own.
+        self._clear_delay = clear_delay or (lambda: room.presence_clear_delay)
         self._on_occupied = on_occupied
         self._on_cleared = on_cleared
         self._on_gate_opened = on_gate_opened
@@ -301,7 +304,7 @@ class RoomPresence:
     @callback
     def _arm_clear_timer(self) -> None:
         self._cancel_timer()
-        delay = self.room.presence_clear_delay
+        delay = self._clear_delay()
 
         @callback
         def _cleared(_now) -> None:

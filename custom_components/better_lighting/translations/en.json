@@ -138,7 +138,9 @@
           "night_brightness_pct": "Night brightness",
           "night_color_temp_k": "Night colour temperature"
         },
-        "data_description": {}
+        "data_description": {
+          "night_brightness_pct": "Used by every room that does not set its own."
+        }
       },
       "advanced": {
         "title": "Advanced",
@@ -751,14 +753,16 @@
           "description": "",
           "data": {
             "night_behavior": "What night mode does",
+            "night_look": "How it is dimmed",
             "night_brightness_pct": "Night brightness",
             "night_color_temp_k": "Night colour temperature",
             "night_transition": "Night transition",
             "night_scene_id": "Night scene"
           },
           "data_description": {
-            "night_scene_id": "Used when 'What night mode does' is set to apply a scene.",
-            "night_behavior": "'Switch the room off' waits until the room is empty before darkening it, and only when the helper above turns on — the room's own night switch always dims rather than darkens."
+            "night_scene_id": "Can name only the lights it wants, with the rest of the room off.",
+            "night_behavior": "Switching off happens only when the helper above turns on, never from the room's own night switch. An occupied room is dimmed at once and switched off once it is empty.",
+            "night_look": "The global night brightness and colour, this room's own, or a scene — which can light only some of the room's lights."
           }
         },
         "power": {
@@ -778,6 +782,8 @@
           "data": {
             "presence_entity": "Occupancy sensor",
             "presence_clear_delay": "Consider the room empty after",
+            "night_own_clear_delay": "A different wait at night",
+            "night_presence_clear_delay": "Consider the room empty at night after",
             "presence_on_action": "When somebody walks in",
             "presence_on_scene_id": "Scene to apply",
             "presence_off_action": "When the room empties",
@@ -792,7 +798,8 @@
             "presence_covers": "So the lights only come on when the blinds are down and the room is actually dark. Closing a cover while somebody is already in the room counts too.",
             "presence_on_only_when_off": "Walking into a room you already lit by hand should not restyle it.",
             "presence_respects_manual": "Switching off behind somebody who set the room by hand is the rudest possible reading of an empty room.",
-            "cover_unknown_blocks": "The point of the gate is 'it is dark in here', and a cover we cannot read is not evidence of that."
+            "cover_unknown_blocks": "The point of the gate is 'it is dark in here', and a cover we cannot read is not evidence of that.",
+            "night_own_clear_delay": "Somebody fetching a glass of water does not need the room lit as long as the evening does."
           }
         },
         "insect": {
@@ -1271,10 +1278,17 @@
     },
     "night_behavior": {
       "options": {
-        "min_settings": "Dim and warm (minimum settings)",
+        "turn_off": "Dim while occupied, switch off once empty",
+        "min_settings": "Dim only",
         "scene": "Apply a night scene",
-        "off": "Do nothing",
-        "turn_off": "Switch the room off once it is empty"
+        "off": "Do nothing"
+      }
+    },
+    "night_look": {
+      "options": {
+        "global": "The global night settings",
+        "custom": "This room's own brightness and colour",
+        "scene": "A scene"
       }
     },
     "override_mode": {

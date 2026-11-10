@@ -6,7 +6,7 @@ import importlib.util
 import pathlib
 
 import pytest
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
@@ -982,7 +982,7 @@ class TestThePanelScriptIsNotCachedForever:
         not importlib.util.find_spec("hass_frontend"),
         reason="no frontend installed",
     )
-    async def test_unloading_takes_the_page_out_of_the_sidebar(
+    async def test_removing_takes_the_page_out_of_the_sidebar(
         self, hass: HomeAssistant
     ) -> None:
         """Uninstalling otherwise left a sidebar item loading a dead script."""
@@ -990,10 +990,55 @@ class TestThePanelScriptIsNotCachedForever:
         entry = await setup_hub(hass, hub_entry())
         assert DOMAIN in hass.data["frontend_panels"]
 
-        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.config_entries.async_remove(entry.entry_id)
         await hass.async_block_till_done()
 
         assert DOMAIN not in hass.data["frontend_panels"]
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_disabling_takes_the_page_out_of_the_sidebar(
+        self, hass: HomeAssistant
+    ) -> None:
+        await setup_members(hass, [MemberLight("One")])
+        entry = await setup_hub(hass, hub_entry())
+
+        await hass.config_entries.async_set_disabled_by(
+            entry.entry_id, ConfigEntryDisabler.USER
+        )
+        await hass.async_block_till_done()
+
+        assert DOMAIN not in hass.data["frontend_panels"]
+
+    @pytest.mark.skipif(
+        not importlib.util.find_spec("hass_frontend"),
+        reason="no frontend installed",
+    )
+    async def test_a_reload_never_takes_the_page_away(
+        self, hass: HomeAssistant, monkeypatch
+    ) -> None:
+        """Every saved setting reloads the entry. A panel removed and added
+        back sent the browser to the default dashboard, and the page that
+        returned started again from its first room."""
+        from homeassistant.components import frontend
+
+        await setup_members(hass, [MemberLight("One")])
+        entry = await setup_hub(hass, hub_entry())
+        removed = []
+        original = frontend.async_remove_panel
+        monkeypatch.setattr(
+            frontend,
+            "async_remove_panel",
+            lambda hass, path, **kw: (removed.append(path), original(hass, path, **kw)),
+        )
+
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert removed == []
+        assert DOMAIN in hass.data["frontend_panels"]
 
     @pytest.mark.skipif(
         not importlib.util.find_spec("hass_frontend"),
@@ -1019,7 +1064,11 @@ class TestThePanelScriptIsNotCachedForever:
         fields = {f["key"]: f for group in room for f in group["fields"]}
 
         assert fields["night_scene_id"]["depends_on"] == {
-            "key": "night_behavior",
+            "key": "night_look",
+            "values": ["scene"],
+        }
+        assert fields["presence_on_scene_id"]["depends_on"] == {
+            "key": "presence_on_action",
             "values": ["scene"],
         }
         assert fields["resume_max_age_minutes"]["depends_on"]["values"] == [
@@ -1201,4 +1250,6 @@ class TestThePanelScriptIsNotCachedForever:
         options = fields["night_behavior"]["selector"]["select"]["options"]
         assert all(isinstance(option, dict) for option in options)
         by_value = {option["value"]: option["label"] for option in options}
-        assert by_value["scene"] == "Eine Nachtszene anwenden"
+        assert by_value["min_settings"] == "Nur dimmen"
+        # Stored once, offered no more.
+        assert "scene" not in by_value

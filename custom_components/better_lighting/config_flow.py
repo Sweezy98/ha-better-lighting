@@ -101,6 +101,7 @@ from .const import (
     scene_light_specs,
 )
 from .groups import find_cycle
+from .migrate import CURRENT_MINOR_VERSION
 from .models import room_light_group, room_zone
 from .scenes import ALL_LIGHTS
 from .schemas import build_schema, flatten_sections, post_validate
@@ -183,7 +184,7 @@ class BetterLightingConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up the single hub entry."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = CURRENT_MINOR_VERSION
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

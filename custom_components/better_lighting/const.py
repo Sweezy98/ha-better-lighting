@@ -157,16 +157,36 @@ class RestoreOnPowerCycle(StrEnum):
 class NightBehavior(StrEnum):
     """What night mode does to a zone once its source entity turns on."""
 
-    # Clamp to the configured night brightness and a warm colour temperature.
+    # Dim the room to its night look, and leave it lit.
     MIN_SETTINGS = "min_settings"
-    # Apply a designated night scene instead.
+    # Only ever stored before the look became a setting of its own: read as
+    # MIN_SETTINGS with a night scene, and rewritten so by the migration.
     SCENE = "scene"
-    # Switch the room off entirely -- but only once it is empty. Driven by the
-    # source entity only: reaching for the zone's own night switch is a
-    # deliberate act and dims the room rather than darkening it.
+    # Darken an empty room at once, and dim an occupied one until it empties.
+    # Driven by the source entity only: reaching for the room's own night
+    # switch is a deliberate act and dims the room rather than darkening it.
     TURN_OFF = "turn_off"
     # Night mode is configured but does nothing to this zone.
     OFF = "off"
+
+
+# What a room chooses between, rather than everything ever stored.
+NIGHT_BEHAVIORS = [
+    NightBehavior.TURN_OFF.value,
+    NightBehavior.MIN_SETTINGS.value,
+    NightBehavior.OFF.value,
+]
+
+
+class NightLook(StrEnum):
+    """How a room looks while night mode dims it."""
+
+    # The house-wide night brightness and colour from the global settings.
+    GLOBAL = "global"
+    # The room's own brightness and colour.
+    CUSTOM = "custom"
+    # A scene of the room's, which can light only some of its lights.
+    SCENE = "scene"
 
 
 @dataclass(frozen=True, slots=True)
@@ -447,6 +467,7 @@ CONF_ADAPTIVE_COLOR_ON = "adaptive_color_default_on"
 # --- zone night mode ---------------------------------------------------------
 
 CONF_NIGHT_BEHAVIOR = "night_behavior"
+CONF_NIGHT_LOOK = "night_look"
 CONF_NIGHT_SCENE = "night_scene_id"
 # No longer a field: each trigger says whether it stands aside at night. Read
 # only as the default for triggers stored before they could say so.
@@ -555,14 +576,42 @@ ROOM_ADAPTIVE_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec(CONF_ADAPTIVE_COLOR_ON, True, _boolean(), section=Section.ADAPTIVE),
 )
 
+# Every night setting but the transition means nothing in a room night mode
+# leaves alone; and a look is only asked for by a room night mode dims.
+_NIGHT_DIMS = (
+    CONF_NIGHT_BEHAVIOR,
+    (NightBehavior.MIN_SETTINGS.value, NightBehavior.TURN_OFF.value),
+)
+
 ROOM_NIGHT_SPECS: tuple[FieldSpec, ...] = (
     # Night mode follows an existing helper rather than a schedule of its own,
     # so the user keeps one source of truth for "the house is asleep".
     FieldSpec(
         CONF_NIGHT_BEHAVIOR,
-        NightBehavior.MIN_SETTINGS.value,
-        _select([b.value for b in NightBehavior], "night_behavior"),
+        NightBehavior.TURN_OFF.value,
+        _select(NIGHT_BEHAVIORS, "night_behavior"),
         section=Section.NIGHT,
+    ),
+    FieldSpec(
+        CONF_NIGHT_LOOK,
+        NightLook.GLOBAL.value,
+        _select([look.value for look in NightLook], "night_look"),
+        section=Section.NIGHT,
+        depends_on=_NIGHT_DIMS,
+    ),
+    FieldSpec(
+        CONF_NIGHT_BRIGHTNESS_PCT,
+        1,
+        _pct(),
+        section=Section.NIGHT,
+        depends_on=(CONF_NIGHT_LOOK, (NightLook.CUSTOM.value,)),
+    ),
+    FieldSpec(
+        CONF_NIGHT_COLOR_TEMP_K,
+        1800,
+        _kelvin(),
+        section=Section.NIGHT,
+        depends_on=(CONF_NIGHT_LOOK, (NightLook.CUSTOM.value,)),
     ),
     FieldSpec(
         CONF_NIGHT_SCENE,
@@ -570,21 +619,7 @@ ROOM_NIGHT_SPECS: tuple[FieldSpec, ...] = (
         _select([], "night_scene"),
         section=Section.NIGHT,
         options_key="scenes",
-        depends_on=(CONF_NIGHT_BEHAVIOR, (NightBehavior.SCENE.value,)),
-    ),
-    FieldSpec(
-        CONF_NIGHT_BRIGHTNESS_PCT,
-        1,
-        _pct(),
-        section=Section.NIGHT,
-        depends_on=(CONF_NIGHT_BEHAVIOR, (NightBehavior.MIN_SETTINGS.value,)),
-    ),
-    FieldSpec(
-        CONF_NIGHT_COLOR_TEMP_K,
-        1800,
-        _kelvin(),
-        section=Section.NIGHT,
-        depends_on=(CONF_NIGHT_BEHAVIOR, (NightBehavior.MIN_SETTINGS.value,)),
+        depends_on=(CONF_NIGHT_LOOK, (NightLook.SCENE.value,)),
     ),
     FieldSpec(
         CONF_NIGHT_TRANSITION,
@@ -1503,6 +1538,10 @@ CONTROLLER_SPECS: tuple[FieldSpec, ...] = (
 
 CONF_PRESENCE_ENTITY = "presence_entity"
 CONF_PRESENCE_CLEAR_DELAY = "presence_clear_delay"
+# A shorter wait at night: somebody fetching a glass of water does not need
+# the hallway lit for the two minutes the evening wants.
+CONF_NIGHT_OWN_CLEAR_DELAY = "night_own_clear_delay"
+CONF_NIGHT_CLEAR_DELAY = "night_presence_clear_delay"
 
 
 CONF_PRESENCE_COVERS = "presence_covers"
@@ -1608,6 +1647,14 @@ ROOM_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
         _seconds(0, 3600),
         section=Section.PRESENCE,
     ),
+    FieldSpec(CONF_NIGHT_OWN_CLEAR_DELAY, False, _boolean(), section=Section.PRESENCE),
+    FieldSpec(
+        CONF_NIGHT_CLEAR_DELAY,
+        30,
+        _seconds(0, 3600),
+        section=Section.PRESENCE,
+        depends_on=(CONF_NIGHT_OWN_CLEAR_DELAY, (True,)),
+    ),
     FieldSpec(
         CONF_PRESENCE_ON_ACTION,
         PresenceOnAction.RESTORE.value,
@@ -1620,6 +1667,7 @@ ROOM_PRESENCE_SPECS: tuple[FieldSpec, ...] = (
         _select([], "scene"),
         section=Section.PRESENCE,
         options_key="scenes",
+        depends_on=(CONF_PRESENCE_ON_ACTION, (PresenceOnAction.SCENE.value,)),
     ),
     FieldSpec(
         CONF_PRESENCE_OFF_ACTION,

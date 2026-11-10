@@ -211,22 +211,35 @@ Jeder Raum entscheidet dann selbst, was das heißt:
 
 | Raumverhalten | Was nachts passiert |
 |---|---|
-| **Minimale Einstellungen** | Helligkeit heruntergedeckelt, Farbe erwärmt. |
-| **Eine Szene** | Dieser Raum zeigt seine Nachtszene. |
-| **Aus** | Der Nachtmodus tut hier nichts. |
+| **Dimmen, solange belegt, ausschalten, sobald leer** (Standard) | Ein leerer Raum wird sofort dunkel. Ein belegter wird sofort gedimmt und dunkel, sobald er leer ist. |
+| **Nur dimmen** | Helligkeit herunter, Farbe wärmer; der Raum bleibt an. |
+| **Nichts tun** | Der Nachtmodus tut hier nichts. |
+
+*Wie gedimmt wird* ist eine zweite Wahl: die **globalen Nachteinstellungen**,
+die **eigene Helligkeit und Farbe** des Raums (nur sichtbar, wenn gewählt)
+oder **eine Szene** (die Szenenauswahl erscheint nur dann). Eine Nachtszene
+kann genau die Lampen nennen, die sie will — die Lampe am Bett in tiefem
+Orange etwa — und *den Rest des Raums* auf aus setzen. Was den Raum nachts
+einschaltet, schaltet dann nur diese ein.
+
+„Leer“ heißt: Seine Sensoren melden gerade niemanden. Ein Raum, dessen Sensor
+eben still geworden ist, wird dunkel, ohne seine Wartezeit abzuwarten. Auf
+der Seite Anwesenheit kann ein Raum außerdem **nachts eine andere Wartezeit**
+haben — der Flur braucht für ein Glas Wasser weniger Licht als am Abend.
 
 `switch.<raum>_night` spiegelt den Helfer und lässt sich auch von Hand
-umlegen; beim nächsten Wechsel gewinnt der Helfer wieder.
+umlegen; beim nächsten Wechsel gewinnt der Helfer wieder. Er schaltet einen
+Raum nie dunkel — das passiert nur, wenn der Helfer angeht und das Haus
+schlafen geht.
 
 Der Doppeldruck eines Schalters (oder jeder andere Druck) kann **Nachtmodus
-an oder erneut anfordern** sein: Beim ersten Mal schaltet er den Raum in den
-Nachtmodus, und solange der Nachtmodus schon an ist, wiederholt er, was der
-Nachtmodus beim Einschalten getan hat — wie die Taste *Nacht: Licht aus*,
-für diesen Raum.
-
-Eine **Nachtszene** kann genau die Lampen nennen, die sie will — die Lampe
-am Bett in tiefem Orange etwa — und *den Rest des Raums* auf aus setzen. Was
-den Raum nachts einschaltet, schaltet dann nur diese ein.
+an oder erneut anfordern** sein. Beim ersten Mal schaltet er **den Helfer
+selbst** ein — einen `input_boolean` oder einen `switch` —, damit das ganze
+Haus schlafen geht und nicht nur der Raum. Ist der Nachtmodus schon an,
+fragt er jeden Raum erneut, wie die Taste *Nacht: Licht aus*: Leere Räume
+werden sofort dunkel, belegte warten. Ein Helfer, der sich nicht schalten
+lässt (ein Sensor, ein Zeitplan), versetzt stattdessen nur diesen Raum in
+den Nachtmodus.
 
 Ob ein Sensor **nachts ignoriert** wird, stellst du an jedem Auslöser ein
 (Schritt 8), nicht hier: Der Präsenzsensor über dem Bett tritt zurück,

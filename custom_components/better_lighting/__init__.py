@@ -35,6 +35,7 @@ from .const import (
 from .context import ContextRegistry
 from .controllers import ControllerRuntime
 from .cycle import ADAPTIVE_STEP
+from .migrate import async_migrate
 from .models import (
     ControllerConfig,
     HubConfig,
@@ -317,6 +318,13 @@ def _async_prune_devices(
             )
 
 
+async def async_migrate_entry(
+    hass: HomeAssistant, entry: BetterLightingConfigEntry
+) -> bool:
+    """Rewrite settings stored before their meaning moved."""
+    return await async_migrate(hass, entry)
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: BetterLightingConfigEntry
 ) -> bool:
@@ -344,6 +352,7 @@ async def async_setup_entry(
             {scene.scene_id: scene for scene in room.scenes},
         )
         runtime.controllers[subentry_id] = controller
+        controller.house = runtime.controllers.values
         await controller.async_setup()
         entry.async_on_unload(controller.async_shutdown)
 
@@ -355,6 +364,7 @@ async def async_setup_entry(
             on_cleared=_room_cleared(hass, runtime, subentry_id),
             on_gate_opened=_gate_opened(hass, controller),
             on_countdown=controller.async_notify,
+            clear_delay=lambda c=controller: c.presence_clear_delay,
         )
         controller.presence = presence
         await presence.async_setup()
@@ -453,7 +463,12 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: BetterLightingConfigEntry
 ) -> bool:
     """Tear down the hub entry."""
-    async_remove_panel(hass)
+    # Not on a reload, which every saved setting is: the frontend reads a
+    # panel going away as the page it is showing ceasing to exist, sends the
+    # browser to the default dashboard, and the panel that comes back a moment
+    # later starts again from its first room.
+    if entry.disabled_by is not None:
+        async_remove_panel(hass)
     runtime = entry.runtime_data
     if runtime is not None and runtime.sessions is not None:
         # A reload is a restart in miniature. Flushing past the debounce here
@@ -532,6 +547,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     ours: the session file, and any repair issues we raised.
     """
     async_remove_services(hass)
+    async_remove_panel(hass)
     # The card's Lovelace resource outlives an unload on purpose, so this is
     # the only place it is taken away: a row pointing at a file nobody serves
     # any more would break every dashboard that still had the card on it.

@@ -58,6 +58,8 @@ class SensorTrigger:
     rules: tuple[Condition, ...] = ()
     # Stand aside while night mode is on: the presence sensor over the bed.
     ignore_at_night: bool = False
+    # Only while guests are staying: the sensor in the room they sleep in.
+    ignore_at_night_with_guests: bool = False
     # The scene this sensor lights, instead of whatever the room would.
     scene_id: str | None = None
 

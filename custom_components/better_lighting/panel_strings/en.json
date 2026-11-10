@@ -167,6 +167,7 @@
   "trigger_rules": "Rules for this trigger",
   "trigger_rules_hint": "Checked when this sensor goes active, on top of the room's rules. The hallway sensor that lights the living room only while night mode is off, say.",
   "ignored_at_night": "ignored at night",
+  "ignored_with_guests": "ignored at night with guests",
   "new_trigger": "New trigger",
   "act_why": "Because of",
   "act_presence_detected": "Presence detected",

@@ -39,6 +39,11 @@ async def async_setup_entry(
             ],
             config_subentry_id=subentry_id,
         )
+        # Only where there is something to switch off.
+        if room.triggers or any(zone.triggers for zone in room.zones):
+            async_add_entities(
+                [PresenceSwitch(room, controller)], config_subentry_id=subentry_id
+            )
     for subentry_id, mode_runtime in runtime.mode_runtimes.items():
         async_add_entities(
             [ModeEnabledSwitch(mode_runtime)], config_subentry_id=subentry_id
@@ -148,6 +153,7 @@ class NightSwitch(_RoomSwitch):
             "ignores_presence": any(
                 trigger.ignore_at_night for trigger in self.room.triggers
             ),
+            "guests_present": self.controller.guests_present,
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -157,6 +163,41 @@ class NightSwitch(_RoomSwitch):
     async def async_turn_off(self, **kwargs: Any) -> None:
         with caused_by("switch"):
             await self.controller.async_set_night(False)
+
+
+class PresenceSwitch(_RoomSwitch):
+    """Whether this room's sensors may light it and darken it.
+
+    A control rather than a setting, so it is not filed away under the
+    configuration entities: it is what a dashboard reaches for on the evening
+    the motion sensor should leave the room alone.
+    """
+
+    _attr_entity_category = None
+
+    def __init__(self, room: RoomConfig, controller: RoomController) -> None:
+        super().__init__(room, controller, "presence")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if (last := await self.async_get_last_state()) is not None:
+            await self.controller.async_set_presence_enabled(last.state == "on")
+
+    @property
+    def is_on(self) -> bool:
+        return self.controller.presence_enabled
+
+    @property
+    def icon(self) -> str:
+        return "mdi:motion-sensor" if self.is_on else "mdi:motion-sensor-off"
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        with caused_by("switch"):
+            await self.controller.async_set_presence_enabled(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        with caused_by("switch"):
+            await self.controller.async_set_presence_enabled(False)
 
 
 class ModeEnabledSwitch(SwitchEntity, RestoreEntity):

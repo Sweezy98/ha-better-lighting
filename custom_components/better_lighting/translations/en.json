@@ -135,11 +135,13 @@
         "description": "The helper that says the house is asleep. Each room decides for itself whether that dims it, darkens it or does nothing.",
         "data": {
           "night_source_entity": "Night mode follows",
+          "guest_source_entity": "Guests are staying when",
           "night_brightness_pct": "Night brightness",
           "night_color_temp_k": "Night colour temperature"
         },
         "data_description": {
-          "night_brightness_pct": "Used by every room that does not set its own."
+          "night_brightness_pct": "Used by every room that does not set its own.",
+          "guest_source_entity": "A helper that is on while somebody sleeps over. Sensors set to stand aside at night with guests do so only while it is on."
         }
       },
       "advanced": {
@@ -191,6 +193,7 @@
           "trigger_entity": "Sensor",
           "active_state": "Counts as active when",
           "ignore_at_night": "Ignore while night mode is on",
+          "ignore_at_night_with_guests": "Ignore at night while guests are staying",
           "trigger_scene_id": "Scene this sensor lights"
         },
         "data_description": {
@@ -204,7 +207,8 @@
           "trigger_entity": "A motion sensor, a door, a cover, a presence toggle, a media player — anything that says something is happening here.",
           "active_state": "Leave empty for the usual: on, open, home, detected, or a player that is playing or paused. Name a state for a sensor that reports something else.",
           "ignore_at_night": "For the presence sensor over a bed: it stops lighting the room at night, while another sensor — one under the bed, say — still can.",
-          "trigger_scene_id": "Leave empty for whatever the room's presence settings say. Set, this sensor lights this scene instead — the path to the door, from the sensor under the bed."
+          "trigger_scene_id": "Leave empty for whatever the room's presence settings say. Set, this sensor lights this scene instead — the path to the door, from the sensor under the bed.",
+          "ignore_at_night_with_guests": "For the living room, on the nights somebody sleeps on its sofa: the same as the bedroom sensor, but only while the guest helper is on."
         }
       },
       "simulation": {
@@ -975,13 +979,15 @@
             "trigger_entity": "Sensor",
             "active_state": "Counts as active when",
             "ignore_at_night": "Ignore while night mode is on",
+            "ignore_at_night_with_guests": "Ignore at night while guests are staying",
             "trigger_scene_id": "Scene this sensor lights"
           },
           "data_description": {
             "trigger_entity": "A motion sensor, a door, a cover, a presence toggle, a media player — anything that says something is happening here.",
             "active_state": "Leave empty for the usual: on, open, home, detected, or a player that is playing or paused. Name a state for a sensor that reports something else.",
             "ignore_at_night": "For the presence sensor over a bed: it stops lighting the room at night, while another sensor — one under the bed, say — still can.",
-            "trigger_scene_id": "Leave empty for whatever the room's presence settings say. Set, this sensor lights this scene instead — the path to the door, from the sensor under the bed."
+            "trigger_scene_id": "Leave empty for whatever the room's presence settings say. Set, this sensor lights this scene instead — the path to the door, from the sensor under the bed.",
+            "ignore_at_night_with_guests": "For the living room, on the nights somebody sleeps on its sofa: the same as the bedroom sensor, but only while the guest helper is on."
           }
         },
         "trigger_form": {
@@ -991,13 +997,15 @@
             "trigger_entity": "Sensor",
             "active_state": "Counts as active when",
             "ignore_at_night": "Ignore while night mode is on",
+            "ignore_at_night_with_guests": "Ignore at night while guests are staying",
             "trigger_scene_id": "Scene this sensor lights"
           },
           "data_description": {
             "trigger_entity": "A motion sensor, a door, a cover, a presence toggle, a media player — anything that says something is happening here.",
             "active_state": "Leave empty for the usual: on, open, home, detected, or a player that is playing or paused. Name a state for a sensor that reports something else.",
             "ignore_at_night": "For the presence sensor over a bed: it stops lighting the room at night, while another sensor — one under the bed, say — still can.",
-            "trigger_scene_id": "Leave empty for whatever the room's presence settings say. Set, this sensor lights this scene instead — the path to the door, from the sensor under the bed."
+            "trigger_scene_id": "Leave empty for whatever the room's presence settings say. Set, this sensor lights this scene instead — the path to the door, from the sensor under the bed.",
+            "ignore_at_night_with_guests": "For the living room, on the nights somebody sleeps on its sofa: the same as the bedroom sensor, but only while the guest helper is on."
           }
         },
         "edit_trigger": {
@@ -1484,6 +1492,9 @@
       "night": {
         "name": "Night",
         "state_attributes": {}
+      },
+      "presence": {
+        "name": "Presence detection"
       },
       "mode_enabled": {
         "name": "Enabled",

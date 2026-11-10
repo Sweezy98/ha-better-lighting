@@ -182,6 +182,9 @@ class RoomController:
         self.adapt_brightness = room.adaptive_brightness_on
         self.adapt_color = room.adaptive_color_on
         self.night_active = False
+        # Presence switched off for this room: its sensors count for nothing,
+        # as though it had none. Restored by its switch across a restart.
+        self.presence_enabled = True
         # A running effect: the timer for its next frame, which lights it is
         # playing on, and which of those were off when it started.
         self._effect_cancel: CALLBACK_TYPE | None = None
@@ -262,6 +265,11 @@ class RoomController:
                 async_track_state_change_event(
                     self.hass, [source], self._handle_night_source
                 )
+            )
+
+        if guests := self.hub.guest_source_entity:
+            self._unsubscribers.append(
+                async_track_state_change_event(self.hass, [guests], self._handle_guests)
             )
 
         if self.room.lights:
@@ -440,6 +448,21 @@ class RoomController:
 
         return _cleared
 
+    @property
+    def guests_present(self) -> bool:
+        """Whether the guest helper says somebody is staying over."""
+        source = self.hub.guest_source_entity
+        state = self.hass.states.get(source) if source else None
+        return state is not None and state.state == STATE_ON
+
+    def _stands_aside(self, trigger: SensorTrigger) -> bool:
+        """Whether night mode silences this sensor right now."""
+        if not self.is_night:
+            return False
+        return trigger.ignore_at_night or (
+            trigger.ignore_at_night_with_guests and self.guests_present
+        )
+
     def trigger_may_count(self, trigger: SensorTrigger) -> bool:
         """Whether one sensor may speak for these lights as it goes active.
 
@@ -447,9 +470,15 @@ class RoomController:
         lights the living room only while night mode is off, the one over the
         bed that stands aside at night.
         """
-        if trigger.ignore_at_night and self.is_night:
+        if not self.presence_enabled:
+            self._note(
+                "trigger_ignored", trigger=trigger.entity_id, reason="presence_off"
+            )
+            return False
+        if self._stands_aside(trigger):
             _LOGGER.debug("%s: %s ignored at night", self.room.name, trigger.entity_id)
-            self._note("trigger_ignored", trigger=trigger.entity_id, reason="night")
+            reason = "night" if trigger.ignore_at_night else "night_guests"
+            self._note("trigger_ignored", trigger=trigger.entity_id, reason=reason)
             return False
         verdict = self.rules_allow(trigger.rules)
         if not verdict:
@@ -646,6 +675,38 @@ class RoomController:
         if enabled:
             await self.async_render(Trigger.ACTIVATE, only_lit=True)
 
+    @callback
+    def _release(self, predicate: Callable[[SensorTrigger], bool]) -> None:
+        """Let go of the sensors ``predicate`` names, quietly, room and zones."""
+        if self.presence is not None:
+            self.presence.async_release(predicate)
+        for watch in self._zone_watches:
+            watch.async_release(predicate)
+
+    @callback
+    def _handle_guests(self, event: Event[EventStateChangedData]) -> None:
+        """Guests arriving mid-night: their room's sensor stands aside now."""
+        new_state = event.data["new_state"]
+        guests = new_state is not None and new_state.state == STATE_ON
+        self._note("guests", present=guests)
+        if guests:
+            self._release(self._stands_aside)
+
+    async def async_set_presence_enabled(self, enabled: bool) -> None:
+        """Switch this room's presence detection on or off.
+
+        Off, the room behaves as one with no sensors: nothing lights it or
+        darkens it on presence, and night mode treats it as empty. Whatever
+        presence had lit is left as it is.
+        """
+        if enabled == self.presence_enabled:
+            return
+        self.presence_enabled = enabled
+        self._note("presence_enabled", enabled=enabled)
+        if not enabled:
+            self._release(lambda _trigger: True)
+        self.async_notify()
+
     async def async_set_night(self, active: bool) -> None:
         """Set night mode from the room's own switch.
 
@@ -686,13 +747,7 @@ class RoomController:
             # The sensors that stand aside at night stop holding the room now
             # rather than whenever they next go quiet, which for a presence
             # sensor over a bed is the morning.
-            def _night_ignored(trigger: SensorTrigger) -> bool:
-                return trigger.ignore_at_night
-
-            if self.presence is not None:
-                self.presence.async_release(_night_ignored)
-            for watch in self._zone_watches:
-                watch.async_release(_night_ignored)
+            self._release(self._stands_aside)
 
         if not self.night_active:
             self._night_turn_off_pending = False

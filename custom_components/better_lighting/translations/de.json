@@ -135,11 +135,13 @@
         "description": "Der Helfer, der meldet, dass das Haus schläft. Jeder Raum entscheidet selbst, ob er dadurch gedimmt, dunkel geschaltet wird oder unverändert bleibt.",
         "data": {
           "night_source_entity": "Nachtmodus folgt",
+          "guest_source_entity": "Gäste übernachten, wenn",
           "night_brightness_pct": "Helligkeit im Nachtmodus",
           "night_color_temp_k": "Farbtemperatur im Nachtmodus"
         },
         "data_description": {
-          "night_brightness_pct": "Gilt für jeden Raum, der keine eigene festlegt."
+          "night_brightness_pct": "Gilt für jeden Raum, der keine eigene festlegt.",
+          "guest_source_entity": "Ein Helfer, der an ist, solange jemand übernachtet. Sensoren, die nachts bei Gästen zurücktreten sollen, tun das nur, solange er an ist."
         }
       },
       "advanced": {
@@ -191,6 +193,7 @@
           "trigger_entity": "Sensor",
           "active_state": "Gilt als aktiv bei",
           "ignore_at_night": "Im Nachtmodus ignorieren",
+          "ignore_at_night_with_guests": "Nachts ignorieren, wenn Gäste übernachten",
           "trigger_scene_id": "Szene dieses Sensors"
         },
         "data_description": {
@@ -204,7 +207,8 @@
           "trigger_entity": "Ein Bewegungsmelder, eine Tür, ein Rollladen, ein Anwesenheitsschalter, ein Mediaplayer — alles, was sagt, dass hier etwas passiert.",
           "active_state": "Leer lassen für die üblichen Werte: on, open, home, detected oder ein Player, der spielt oder pausiert. Einen Zustand angeben, wenn der Sensor etwas anderes meldet.",
           "ignore_at_night": "Für den Präsenzsensor über dem Bett: Er schaltet nachts kein Licht mehr, während ein anderer Sensor — etwa einer unter dem Bett — es weiterhin kann.",
-          "trigger_scene_id": "Leer lassen für das, was die Präsenzeinstellungen des Raums sagen. Gesetzt, schaltet dieser Sensor stattdessen diese Szene — den Weg zur Tür, vom Sensor unter dem Bett."
+          "trigger_scene_id": "Leer lassen für das, was die Präsenzeinstellungen des Raums sagen. Gesetzt, schaltet dieser Sensor stattdessen diese Szene — den Weg zur Tür, vom Sensor unter dem Bett.",
+          "ignore_at_night_with_guests": "Für das Wohnzimmer in den Nächten, in denen jemand auf dem Sofa schläft: wie der Sensor im Schlafzimmer, aber nur, solange der Gäste-Helfer an ist."
         }
       },
       "simulation": {
@@ -975,13 +979,15 @@
             "trigger_entity": "Sensor",
             "active_state": "Gilt als aktiv bei",
             "ignore_at_night": "Im Nachtmodus ignorieren",
+            "ignore_at_night_with_guests": "Nachts ignorieren, wenn Gäste übernachten",
             "trigger_scene_id": "Szene dieses Sensors"
           },
           "data_description": {
             "trigger_entity": "Ein Bewegungsmelder, eine Tür, ein Rollladen, ein Anwesenheitsschalter, ein Mediaplayer — alles, was sagt, dass hier etwas passiert.",
             "active_state": "Leer lassen für die üblichen Werte: on, open, home, detected oder ein Player, der spielt oder pausiert. Einen Zustand angeben, wenn der Sensor etwas anderes meldet.",
             "ignore_at_night": "Für den Präsenzsensor über dem Bett: Er schaltet nachts kein Licht mehr, während ein anderer Sensor — etwa einer unter dem Bett — es weiterhin kann.",
-            "trigger_scene_id": "Leer lassen für das, was die Präsenzeinstellungen des Raums sagen. Gesetzt, schaltet dieser Sensor stattdessen diese Szene — den Weg zur Tür, vom Sensor unter dem Bett."
+            "trigger_scene_id": "Leer lassen für das, was die Präsenzeinstellungen des Raums sagen. Gesetzt, schaltet dieser Sensor stattdessen diese Szene — den Weg zur Tür, vom Sensor unter dem Bett.",
+            "ignore_at_night_with_guests": "Für das Wohnzimmer in den Nächten, in denen jemand auf dem Sofa schläft: wie der Sensor im Schlafzimmer, aber nur, solange der Gäste-Helfer an ist."
           }
         },
         "trigger_form": {
@@ -991,13 +997,15 @@
             "trigger_entity": "Sensor",
             "active_state": "Gilt als aktiv bei",
             "ignore_at_night": "Im Nachtmodus ignorieren",
+            "ignore_at_night_with_guests": "Nachts ignorieren, wenn Gäste übernachten",
             "trigger_scene_id": "Szene dieses Sensors"
           },
           "data_description": {
             "trigger_entity": "Ein Bewegungsmelder, eine Tür, ein Rollladen, ein Anwesenheitsschalter, ein Mediaplayer — alles, was sagt, dass hier etwas passiert.",
             "active_state": "Leer lassen für die üblichen Werte: on, open, home, detected oder ein Player, der spielt oder pausiert. Einen Zustand angeben, wenn der Sensor etwas anderes meldet.",
             "ignore_at_night": "Für den Präsenzsensor über dem Bett: Er schaltet nachts kein Licht mehr, während ein anderer Sensor — etwa einer unter dem Bett — es weiterhin kann.",
-            "trigger_scene_id": "Leer lassen für das, was die Präsenzeinstellungen des Raums sagen. Gesetzt, schaltet dieser Sensor stattdessen diese Szene — den Weg zur Tür, vom Sensor unter dem Bett."
+            "trigger_scene_id": "Leer lassen für das, was die Präsenzeinstellungen des Raums sagen. Gesetzt, schaltet dieser Sensor stattdessen diese Szene — den Weg zur Tür, vom Sensor unter dem Bett.",
+            "ignore_at_night_with_guests": "Für das Wohnzimmer in den Nächten, in denen jemand auf dem Sofa schläft: wie der Sensor im Schlafzimmer, aber nur, solange der Gäste-Helfer an ist."
           }
         },
         "edit_trigger": {
@@ -1484,6 +1492,9 @@
       "night": {
         "name": "Nacht",
         "state_attributes": {}
+      },
+      "presence": {
+        "name": "Präsenzerkennung"
       },
       "mode_enabled": {
         "name": "Aktiviert",

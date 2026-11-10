@@ -204,3 +204,120 @@ class TestNightScene:
         await set_state(hass, LOUNGE, "on")
         assert lit(hass, "light.two")
         assert not lit(hass, "light.one")
+
+
+GUESTS = "input_boolean.guests"
+
+
+async def build_lounge(hass: HomeAssistant, **trigger) -> None:
+    """A living room whose sofa is a bed on the nights guests stay."""
+    hass.states.async_set(NIGHT, "off")
+    hass.states.async_set(GUESTS, "off")
+    hass.states.async_set(LOUNGE, "off")
+    await setup_members(hass, [MemberLight("One"), MemberLight("Two")])
+    entry = hub_entry(
+        options={"night_source_entity": NIGHT, "guest_source_entity": GUESTS},
+        subentries_data=[
+            room_subentry(
+                triggers=[{"trigger_entity": LOUNGE, **trigger}],
+                presence_clear_delay=0,
+                night_behavior="min_settings",
+            ),
+        ],
+    )
+    await setup_hub(hass, entry)
+
+
+class TestGuests:
+    async def test_without_guests_the_lounge_still_lights_at_night(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build_lounge(hass, ignore_at_night_with_guests=True)
+        await set_state(hass, NIGHT, "on")
+        await set_state(hass, LOUNGE, "on")
+        assert lit(hass)
+
+    async def test_with_guests_it_stands_aside_like_a_bedroom(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build_lounge(hass, ignore_at_night_with_guests=True)
+        await set_state(hass, GUESTS, "on")
+        await set_state(hass, NIGHT, "on")
+        await set_state(hass, LOUNGE, "on")
+        assert not lit(hass)
+
+    async def test_by_day_guests_change_nothing(self, hass: HomeAssistant) -> None:
+        await build_lounge(hass, ignore_at_night_with_guests=True)
+        await set_state(hass, GUESTS, "on")
+        await set_state(hass, LOUNGE, "on")
+        assert lit(hass)
+
+    async def test_guests_arriving_mid_night_let_go_of_the_sensor(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build_lounge(hass, ignore_at_night_with_guests=True)
+        await set_state(hass, NIGHT, "on")
+        await set_state(hass, LOUNGE, "on")
+        assert lit(hass)
+
+        await set_state(hass, GUESTS, "on")
+        # Nothing switched off, but the room is no longer held: quiet, then
+        # active again, and it is ignored.
+        await set_state(hass, LOUNGE, "off")
+        await hass.services.async_call(
+            "light", "turn_off", {"entity_id": "light.kitchen"}, blocking=True
+        )
+        await hass.async_block_till_done()
+        await set_state(hass, LOUNGE, "on")
+        assert not lit(hass)
+
+
+class TestPresenceSwitch:
+    async def test_switched_off_the_sensor_lights_nothing(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass, [{"trigger_entity": LOUNGE}])
+        assert hass.states.get("switch.kitchen_presence_detection").state == "on"
+
+        await hass.services.async_call(
+            "switch",
+            "turn_off",
+            {"entity_id": "switch.kitchen_presence_detection"},
+            blocking=True,
+        )
+        await set_state(hass, LOUNGE, "on")
+        assert not lit(hass)
+
+        await hass.services.async_call(
+            "switch",
+            "turn_on",
+            {"entity_id": "switch.kitchen_presence_detection"},
+            blocking=True,
+        )
+        await set_state(hass, LOUNGE, "off")
+        await set_state(hass, LOUNGE, "on")
+        assert lit(hass)
+
+    async def test_switching_it_off_leaves_the_light_on(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass, [{"trigger_entity": LOUNGE}])
+        await set_state(hass, LOUNGE, "on")
+        assert lit(hass)
+
+        await hass.services.async_call(
+            "switch",
+            "turn_off",
+            {"entity_id": "switch.kitchen_presence_detection"},
+            blocking=True,
+        )
+        await set_state(hass, LOUNGE, "off")
+        # Nobody's presence turned it on any more, so nobody's absence turns
+        # it off: the room is as it was left.
+        assert lit(hass)
+
+    async def test_a_room_without_sensors_has_no_switch(
+        self, hass: HomeAssistant
+    ) -> None:
+        await build(hass, [])
+        assert hass.states.get("switch.kitchen_presence_detection") is None

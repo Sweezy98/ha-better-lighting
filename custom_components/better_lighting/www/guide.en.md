@@ -46,6 +46,7 @@ That is the whole minimum. You now have:
 | `select.<room>_scene` | Which scene the room is showing, or *Adaptive*. |
 | `switch.<room>_adaptive` | Whether the sun is driving this room. |
 | `switch.<room>_night` | Night mode for this room. |
+| `switch.<room>_presence_detection` | Whether the room's sensors light and darken it. Off, the room behaves as one with no sensors; whatever is lit stays lit. Only on rooms with sensors. |
 | buttons | Next scene, previous scene, back to adaptive, clear manual control. |
 
 Turn the room on. It follows the sun from this moment, with no further
@@ -265,6 +266,10 @@ Every trigger is a fold of its own. Open it and, besides the sensor:
 - **Ignore while night mode is on.** The presence sensor over the bed stops
   lighting the bedroom at night — and stops keeping it lit, so it cannot hold
   the room on until morning.
+- **Ignore at night while guests are staying.** The living room's sensor, on
+  the nights somebody sleeps on its sofa: it behaves like the bedroom's, but
+  only while the guest helper from **Global settings → Night mode** is on.
+  Guests arriving mid-night count at once.
 - **Scene this sensor lights.** Empty means whatever the room's presence
   settings say. Set, this sensor lights that scene instead: the motion sensor
   under the bed lights only the path to the door.

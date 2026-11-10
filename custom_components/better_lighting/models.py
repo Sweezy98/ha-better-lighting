@@ -86,6 +86,7 @@ from .const import (
     CONF_GROUP_ID,
     CONF_GROUP_LIGHTS,
     CONF_GROUP_SEND_ENTITY,
+    CONF_GUEST_SOURCE,
     CONF_HIDE_MEMBERS,
     CONF_HOLD_INTERVAL_MS,
     CONF_HOLD_RAMP,
@@ -200,6 +201,7 @@ from .const import (
     CONF_TRIGGER_ACTIVE_STATE,
     CONF_TRIGGER_ENTITY,
     CONF_TRIGGER_IGNORE_AT_NIGHT,
+    CONF_TRIGGER_IGNORE_WITH_GUESTS,
     CONF_TRIGGER_SCENE,
     CONF_TRIGGERS,
     CONF_WARM_WHITE,
@@ -300,6 +302,8 @@ class HubConfig:
     # about it; a room that still carries its own from an older version keeps
     # using that until this one is set.
     night_source_entity: str | None
+    # Says guests are staying, for the sensors that stand aside only then.
+    guest_source_entity: str | None
     # How long the activity log is kept across restarts. Zero keeps nothing.
     log_retention_hours: int
     # Effects the user has written, by id. The built-in ones are not here:
@@ -341,6 +345,7 @@ class HubConfig:
             max_color_temp_k=int(raw[CONF_MAX_COLOR_TEMP_K]),
             brightness_mode=BrightnessMode(raw[CONF_BRIGHTNESS_MODE]),
             night_source_entity=raw.get(CONF_NIGHT_SOURCE) or None,
+            guest_source_entity=raw.get(CONF_GUEST_SOURCE) or None,
             log_retention_hours=int(raw.get(CONF_LOG_RETENTION_H, 48)),
             away_entity=raw.get(CONF_AWAY_ENTITY) or None,
             simulation_days_back=int(raw.get(CONF_SIMULATION_DAYS_BACK, 7)),
@@ -1263,6 +1268,9 @@ def _triggers(raw: dict[str, Any]) -> tuple[SensorTrigger, ...]:
             rules=_rules(entry),
             ignore_at_night=bool(
                 entry.get(CONF_TRIGGER_IGNORE_AT_NIGHT, night_default)
+            ),
+            ignore_at_night_with_guests=bool(
+                entry.get(CONF_TRIGGER_IGNORE_WITH_GUESTS, False)
             ),
             scene_id=str(entry.get(CONF_TRIGGER_SCENE) or "") or None,
         )

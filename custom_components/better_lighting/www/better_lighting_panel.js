@@ -5231,6 +5231,9 @@ class BetterLightingPanel extends HTMLElement {
     const summary = (trigger) => {
       const notes = [];
       if (trigger.ignore_at_night) notes.push(this._t("ignored_at_night"));
+      else if (trigger.ignore_at_night_with_guests) {
+        notes.push(this._t("ignored_with_guests"));
+      }
       const scene = choices.scenes.find(
         (option) => option.value === trigger.trigger_scene_id
       );

@@ -47,6 +47,7 @@ Mehr ist nicht nötig. Du hast jetzt:
 | `light.<raum>` | Der Raum als eine Lampe. Dimmen dimmt den Raum *relativ*: eine Lampe auf 20 % und ein Spot auf 80 % gehen beide herunter und behalten ihren Abstand. |
 | `select.<raum>_scene` | Welche Szene der Raum zeigt, oder *Adaptiv*. |
 | `switch.<raum>_adaptive` | Ob die Sonne diesen Raum steuert. |
+| `switch.<raum>_presence_detection` | Ob die Sensoren den Raum ein- und ausschalten. Aus verhält sich der Raum wie einer ohne Sensoren; was an ist, bleibt an. Nur bei Räumen mit Sensoren. |
 | `switch.<raum>_night` | Nachtmodus für diesen Raum. |
 | Schaltflächen | Nächste Szene, vorherige Szene, zurück zu adaptiv, manuelle Steuerung vergessen. |
 
@@ -280,6 +281,11 @@ Sensor:
 - **Im Nachtmodus ignorieren.** Der Präsenzsensor über dem Bett schaltet das
   Schlafzimmer nachts nicht mehr ein — und hält es auch nicht mehr an, kann
   den Raum also nicht bis zum Morgen beleuchten.
+- **Nachts ignorieren, wenn Gäste übernachten.** Der Sensor im Wohnzimmer in
+  den Nächten, in denen jemand auf dem Sofa schläft: Er verhält sich wie der
+  im Schlafzimmer, aber nur, solange der Gäste-Helfer aus **Globale
+  Einstellungen → Nachtmodus** an ist. Kommen Gäste mitten in der Nacht, gilt
+  das sofort.
 - **Szene dieses Sensors.** Leer heißt: was die Präsenzeinstellungen des
   Raums sagen. Gesetzt, schaltet dieser Sensor stattdessen diese Szene: der
   Bewegungsmelder unter dem Bett schaltet nur den Weg zur Tür.

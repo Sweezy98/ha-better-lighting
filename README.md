@@ -114,7 +114,7 @@ In the global config:
 | Global | What it is |
 |---|---|
 | **Colour presets** | The house's named colours — "TV orange", "candle" — so a colour used in several scenes is described once and picked by name. |
-| **Night mode helper** | The one helper that says the house is asleep, and the night brightness and colour every room uses unless it sets its own. Each room decides for itself whether that dims it, darkens it once empty, or does nothing. |
+| **Night mode helper** | The one helper that says the house is asleep, an optional guest helper, and the night brightness and colour every room uses unless it sets its own. Each room decides for itself whether that dims it, darkens it once empty, or does nothing. |
 
 ### Zones: the desk that does not go dark for the film
 
@@ -236,6 +236,8 @@ Each trigger folds open to three settings of its own:
 
 - **Ignore while night mode is on** — the presence sensor over the bed stops
   lighting the bedroom at night, and stops holding it lit.
+- **Ignore at night while guests are staying** — the same, for the living room, but only while
+  the guest helper named in the global night settings is on.
 - **Scene this sensor lights** — the motion sensor under the bed lights only the
   path to the door, whatever the room would otherwise do.
 - **Rules for this trigger**, on top of the room's — the hallway sensor that
@@ -658,7 +660,12 @@ An optional occupancy sensor lights a room and darkens it again, but only when a
 list of covers is **closed** — so a sunlit room is left alone. Closing a blind while somebody
 is already in the room counts just as much as somebody walking into a dark one.
 
-Presence can be silenced three ways, all meaning the same thing:
+Each room with sensors gets a **presence detection** switch
+(`switch.<room>_presence_detection`). Off, the room behaves as one with no sensors — nothing
+lights or darkens it on presence, and night mode treats it as empty — and whatever is lit stays
+lit. It survives a restart.
+
+Presence can also be silenced three ways, all meaning the same thing:
 
 - **A trigger ignored at night** — for the presence sensor over a bed.
 - **A scene ignores presence** — for the living room during a film.

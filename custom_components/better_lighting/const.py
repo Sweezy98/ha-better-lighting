@@ -303,6 +303,8 @@ CONF_TIME_LIGHT = "brightness_mode_time_light"
 CONF_SUNRISE_OFFSET = "sunrise_offset"
 CONF_SUNSET_OFFSET = "sunset_offset"
 CONF_NIGHT_SOURCE = "night_source_entity"
+# Somebody is staying over: the sofa is a bed tonight.
+CONF_GUEST_SOURCE = "guest_source_entity"
 CONF_NIGHT_BRIGHTNESS_PCT = "night_brightness_pct"
 CONF_NIGHT_COLOR_TEMP_K = "night_color_temp_k"
 CONF_PREFER_RGB_COLOR = "prefer_rgb_color"
@@ -353,6 +355,16 @@ HUB_SPECS: tuple[FieldSpec, ...] = (
         selector.EntitySelector(
             selector.EntitySelectorConfig(
                 domain=["binary_sensor", "input_boolean", "schedule", "switch"]
+            )
+        ),
+        section=Section.NIGHT,
+    ),
+    FieldSpec(
+        CONF_GUEST_SOURCE,
+        None,
+        selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["binary_sensor", "input_boolean", "switch"]
             )
         ),
         section=Section.NIGHT,
@@ -901,6 +913,7 @@ CONF_TRIGGERS = "triggers"
 CONF_TRIGGER_ENTITY = "trigger_entity"
 CONF_TRIGGER_ACTIVE_STATE = "active_state"
 CONF_TRIGGER_IGNORE_AT_NIGHT = "ignore_at_night"
+CONF_TRIGGER_IGNORE_WITH_GUESTS = "ignore_at_night_with_guests"
 CONF_TRIGGER_SCENE = "trigger_scene_id"
 CONF_RULES = "rules"
 CONF_CONDITION_ID = "condition_id"
@@ -961,6 +974,13 @@ TRIGGER_SPECS: tuple[FieldSpec, ...] = (
     # Per sensor rather than per room: the presence sensor over the bed stands
     # aside at night while the one under it still lights the way out.
     FieldSpec(CONF_TRIGGER_IGNORE_AT_NIGHT, False, _boolean()),
+    # The living room's sensor, on a night somebody sleeps on its sofa.
+    FieldSpec(
+        CONF_TRIGGER_IGNORE_WITH_GUESTS,
+        False,
+        _boolean(),
+        depends_on=(CONF_TRIGGER_IGNORE_AT_NIGHT, (False,)),
+    ),
     # Empty means whatever the room's presence settings say.
     FieldSpec(
         CONF_TRIGGER_SCENE,

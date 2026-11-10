@@ -167,6 +167,7 @@
   "trigger_rules": "Regeln für diesen Auslöser",
   "trigger_rules_hint": "Geprüft, wenn dieser Sensor aktiv wird, zusätzlich zu den Regeln des Raums. Etwa der Flursensor, der das Wohnzimmer nur einschaltet, solange der Nachtmodus aus ist.",
   "ignored_at_night": "nachts ignoriert",
+  "ignored_with_guests": "nachts bei Gästen ignoriert",
   "new_trigger": "Neuer Auslöser",
   "act_why": "Ausgelöst durch",
   "act_presence_detected": "Anwesenheit erkannt",
